@@ -4,7 +4,7 @@ This module is intentionally separate from normal TEK dispatch.  It can only
 send one tester-selected supported key to a foreground *non-WoW* process after
 an exact confirmation phrase.  The documented PowerShell gate launches
 Notepad, asks the tester to visually confirm the character, and preserves a
-JSON evidence record under %LOCALAPPDATA%\\TacticEcho\\diagnostics.
+JSON evidence record under %LOCALAPPDATA%\\TacticEchoForever\\diagnostics.
 """
 from __future__ import annotations
 

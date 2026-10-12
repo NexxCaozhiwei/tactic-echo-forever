@@ -111,7 +111,7 @@ def _summary_markdown(snapshot: dict[str, Any], mapping: dict[str, Any] | None, 
             + "；最近=" + str(decision.get("reason") or auto.get("ruleReason") or "无")
         )
     return "\n".join([
-        "# Tactic Echo 诊断摘要",
+        "# Tactic Echo Forever / TEF TEK 诊断摘要",
         "",
         f"- 运行状态：`{state}`",
         f"- 最近动作：`{action}`",
@@ -181,7 +181,8 @@ def create_diagnostic_bundle(
 
     manifest = {
         "schemaVersion": BUNDLE_SCHEMA_VERSION,
-        "component": "TEK",
+        "component": "TEF-TEK",
+        "project": "TEF",
         "eventType": "diagnostic_bundle",
         "createdAt": utc_now_iso(),
         "redacted": True,

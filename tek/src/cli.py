@@ -17,7 +17,7 @@ from tek.src.windows_sendinput import WindowsSendInputDispatcher
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(prog="tek", description="Tactic Echo Key POC runner")
+    parser = argparse.ArgumentParser(prog="tek", description="Tactic Echo Forever — TEF TEK runner")
     parser.add_argument("--profile", default="examples/profiles/laptop.json")
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--fields", help="Comma-separated 20 TEAP v3 byte fields")

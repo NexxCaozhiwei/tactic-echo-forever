@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import logging
 import json
 import shutil
 import sys
@@ -78,8 +79,9 @@ class AppPaths:
                 "project": "TEF", "source": str(legacy), "legacy_untouched": True,
                 "activation_requires_confirmation": True,
                 "original_settings": "legacy-settings-before-split.json"}, indent=2), encoding="utf-8")
-        except (OSError, ValueError):
-            # Preserve original data; startup can use defaults on migration error.
+        except (OSError, ValueError) as error:
+            # Original settings/profile files are always retained.
+            logging.warning("TEF settings migration was not completed (%s); legacy data remains untouched", type(error).__name__)
             return
 
     def trace_path_for_today(self) -> Path:

@@ -1,2 +1,2 @@
-"""Desktop host for Tactic Echo Key."""
+"""Desktop host for TEF TEK."""
 

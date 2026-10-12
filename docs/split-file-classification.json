@@ -504,7 +504,7 @@
   "tek/tests/test_settings_store.py": "Shared",
   "tek/tests/test_status_telemetry.py": "Shared",
   "tek/tests/test_te_savedvariables.py": "Shared",
-  "tek/tests/test_tef_colour_transport.py": "TEF-only",
+  "tek/tests/test_tef_colour_transport.py": "Shared: self-contained codec fixtures, no AddOn dependency",
   "tek/tests/test_tek_diagnostics.py": "Shared",
   "tek/tests/test_telemetry_flags.py": "Shared",
   "tek/tests/test_telemetry_stability.py": "Shared",

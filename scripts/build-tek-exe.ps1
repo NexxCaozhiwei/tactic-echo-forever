@@ -387,6 +387,7 @@ try {
         schemaVersion = 2
         component = "TEF-TEK"
         project = "TEF"
+        projectVersion = (Get-Content -LiteralPath (Join-Path $RepoRoot "VERSION") -Raw).Trim()
         sourceCommit = (& git rev-parse HEAD)
         builtAt = (Get-Date).ToUniversalTime().ToString("o")
         executable = (Resolve-Path -LiteralPath $exe).Path

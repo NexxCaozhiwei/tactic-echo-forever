@@ -33,7 +33,7 @@ Versions unchanged: TE 1.5.12, TEF 1.0.1. This task adds split metadata only.
 
 Deletion inventories and classification are in split-file-classification.json.
 TEF removed 370 confirmed Retail-only files from the clone.
-TE removes 141 TEF-only source/doc/test/tool files only after
+TE removes 140 TEF-only source/doc/test/tool files only after
 TEF loading, APL/Runtime/Dispatch/Transport and local TEK tests pass.
 Inherited catalog/protocol/parser fixtures are local compatibility assets,
 not a sibling AddOn/runtime dependency. Other cross-product mentions are history.
@@ -55,3 +55,5 @@ PASS: isolated TEK-TEF.exe build and AddOn source package.
 NOT_RUN: executable startup smoke and real Windows/game input (deliberately
 not launched, to preserve the active host and existing user state).
 No .git object alternates; TEK source files are distinct physical copies.
+
+Final classification correction: color/gamma tests are shared local codec fixtures, not TEF-only. Retail retains all seven cases under a neutral filename. Original shared-structure audit and the final classification are preserved in the external backup.
