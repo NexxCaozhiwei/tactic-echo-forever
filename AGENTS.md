@@ -2,7 +2,7 @@
 
 ## Current contract (2026-10-12)
 
-- Baseline 1.0.1, independent Forever/Infinite project. No Retail TE runtime,
+- Baseline 1.0.2, independent Forever/Infinite project. No Retail TE runtime,
   sibling checkout, shared directory, submodule or symlink dependency.
 - Class + Talent + Learned Skills; no modern specialization identity. Profiles
   use CLASS:base; Mage Class Pack MAGE_FOREVER_60. Spell ranks use independently
@@ -23,6 +23,9 @@
 - Default fixed sequence, APL explicit; automatic scene switching remains bypassed.
   Automatic standby previews are read-only and dispatch requires public combat.
   Auto-start creates new intent only; manual stop must not resurrect in combat.
+- Opt-in fixed-sequence ordinary cast-tail queue may offer one next attempt within
+  public min(0.20s, client SpellQueueWindow), retaining both exact receipt identities.
+  No APL/channel/Shoot look-ahead, no speculative success, no GCD query.
 - Setting/target/focus/cast/UNKNOWN temporary blocking preserves intent and zeroes
   tokens; lifecycle edits/reset/world/fatal fault clear intent. HUD hide is visual.
 - Preserve fixed attempt semantics and 5019 ShootActive/hand-off gates. Limits:

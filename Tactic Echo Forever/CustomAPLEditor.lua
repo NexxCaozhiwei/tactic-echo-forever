@@ -26,7 +26,8 @@ function U:CommitCustomNumbers()
 end
 function U:RefreshCustomAPL()
  local e=self.engine; local scene=self.customScene or e.scene
- if not self.customDraft or self.customClass~=e.classToken or self.customLoadedScene~=scene then
+ if not self.customDraft or self.customEngine~=e or self.customClass~=e.classToken or self.customLoadedScene~=scene then
+  self.customEngine=e
   self.customClass,self.customLoadedScene=e.classToken,scene
   self.customDraft=C.CleanRows(C:Rows(e,scene)); self.customSelected=1; self.customFormIndex=nil
  end

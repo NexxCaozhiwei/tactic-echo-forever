@@ -872,10 +872,10 @@ end)
 test("recommendation_sources_explicit_code_no_manual_fallback",function()
     local e=engine(); assert(T.Profiles:Save(e,"single",{{name="火球",spellID=143,matchIDs={143}}}))
     eq(T.Recommendation:Current(e).source,"manual"); eq(e.steps[1].spellID,143)
-    assert(T.Recommendation:SetSource(e,"code")); eq(e.steps[1].spellID,116)
+    eq(T.Recommendation:SetSource(e,"code"),false); eq(e.steps[1].spellID,143)
     UnitClass=function() return "战士","WARRIOR" end; e=engine()
     assert(T.Profiles:Save(e,"single",{{name="明确",spellID=100,matchIDs={100}}}))
-    eq(T.Recommendation:SetSource(e,"code"),false); eq(e.steps,nil); eq(T.Recommendation:Current(e),nil)
+    eq(T.Recommendation:SetSource(e,"code"),false); eq(e.steps[1].spellID,100); eq(T.Recommendation:Current(e).source,"manual")
 end)
 local function runtimeFixture(mode)
     continuousFixture(); T.Dispatch:SetContinuous(false); T.engine:Reset()
@@ -1102,6 +1102,30 @@ test("hud_visual_states_hover_pressed_and_right_click",function()
     eq(T.UI.settingsOpen,true); eq(T.Runtime.intent,true); eq(T.Runtime.state,"standby")
     T.UI:CloseSettings()
 end)
+test("hud_block_categories_show_reason_without_changing_dispatch",function()
+    deliveryFixture(); local h=T.HUD; local e=T.engine
+    local generation,index,serial=e.generation,e.index,e.receiptSerial
+    local cases={
+        {"CONTINUOUS_CAST_PRESENT_OR_UNKNOWN","施法"},
+        {"APL_WAIT_CURRENT_RECEIPT","回执"},
+        {"CONTINUOUS_TARGET_UNKNOWN_OR_BLOCKED","目标"},
+        {"CONTINUOUS_RANGE_UNKNOWN_OR_BLOCKED","距离"},
+        {"CONTINUOUS_USABLE_UNKNOWN_OR_BLOCKED","技能"},
+        {"CONTINUOUS_TEXT_FOCUS_OR_UNKNOWN","输入"},
+        {"APL_NO_CANDIDATE","APL"},
+        {"RUNTIME_COMBAT_UNKNOWN","模式"},
+        {"RUNTIME_PROFILE_UNCONFIGURED","配置"},
+        {"UNRECOGNIZED_BLOCK","其他"},
+    }
+    for _,case in ipairs(cases) do
+        T.Runtime:Changed("blocked",case[1])
+        eq(h.cards[1].state.text,"阻断·" .. case[2])
+        assert(h.status.text:find("阻断·" .. case[2],1,true))
+        eq(T.Runtime.reason,case[1])
+    end
+    eq(h:BlockCategory(secret),"未知")
+    eq(e.generation,generation); eq(e.index,index); eq(e.receiptSerial,serial)
+end)
 test("hud_lock_drag_and_primary_click_do_not_conflict",function()
     deliveryFixture(); local f=T.HUD.frame; local moves=rawget(f,"moves") or 0
     T.engine.db.hud.locked=true; f.scripts.OnDragStart(); eq(rawget(f,"moves") or 0,moves)
@@ -1115,7 +1139,7 @@ test("mode_controls_do_not_change_advanced_gates_and_hud_has_no_test_buttons",fu
     T.UI.modeControls.manual.scripts.OnClick(); eq(settings.mode,"manual")
     eq(settings.signal,true); eq(settings.permission,true)
     eq(T.HUD.permission,nil); eq(T.HUD.pause,nil)
-    eq(T.UI.testReset.parent,T.UI.pages.diagnostics); eq(T.UI.testSingle.parent,T.UI.pages.diagnostics)
+    eq(T.UI.testReset.parent,T.UI.pages.overview); eq(T.UI.testSingle.parent,T.UI.pages.diagnostics)
     eq(T.UI.signalToggle.parent,T.UI.pages.tek); eq(T.UI.intentToggle.parent,T.UI.pages.overview)
     T.UI:CloseSettings()
 end)
@@ -1449,7 +1473,7 @@ test("editor_class_scene_drafts_and_code_source_independent",function()
     T.UI.editScene="single"; T.UI:ShowPage("profiles"); eq(T.UI:DraftRows()[1].repeatCount,3)
     T.engine.db.sourceByProfile[T.engine.profileKey]={single="code"}
     assert(T.Profiles:Save(T.engine,"single",T.UI:DraftRows()))
-    eq(T.engine.db.sourceByProfile[T.engine.profileKey].single,"code"); eq(T.engine.steps[1].spellID,116)
+    eq(T.Recommendation:Source(T.engine),"manual"); eq(T.engine.steps[1].spellID,205)
     assert(T.Recommendation:SetSource(T.engine,"manual")); eq(T.engine.steps[1].repeatCount,3)
     UnitClass=function() return "战士","WARRIOR" end; T.Profiles:RefreshIdentity(T.engine); T.UI:ShowPage("profiles")
     eq(T.UI:DraftRows()[1],nil)
@@ -1763,7 +1787,7 @@ test("loop_selection_survives_hover_leave_and_page_refresh",function()
         eq(T.engine.db.loopMode,mode); eq(selected.tefControlSelected,true)
         selected.scripts.OnEnter(); selected.scripts.OnLeave()
         eq(selected.backdropBorderColor[2],.85); eq(selected.backdropColor[2],.23)
-        assert(selected.text:find("●",1,true)); assert(T.UI.readouts.looping.text:find("当前模式",1,true))
+        assert(selected.text:find("●",1,true)); eq(T.UI.page,"overview")
         for key,b in pairs(T.UI.loopModeControls) do eq(b.tefControlSelected,key==mode) end
         T.UI:ShowPage("hud"); T.UI:ShowPage("looping"); eq(selected.tefControlSelected,true)
         eq(T.Runtime.intent,false)
@@ -1787,6 +1811,42 @@ test("hud_no_settings_button_or_root_backdrop_right_click_still_opens",function(
     eq(T.UI.settingsOpen,true); eq(T.engine.index,index); eq(T.engine.generation,generation)
     T.UI:CloseSettings()
 end)
+test("simplified_pages_source_and_merged_control_ownership",function()
+    deliveryFixture("manual")
+    eq(T.UI.pages.apl,nil); eq(T.UI.pages.labels,nil); eq(T.UI.pages.looping,nil)
+    eq(T.UI.sourceSelect.code,nil); assert(T.UI.sourceSelect.manual and T.UI.sourceSelect.apl)
+    eq(T.UI.testReset.parent,T.UI.pages.overview)
+    eq(T.UI.loopModeControls.normal.parent,T.UI.pages.overview)
+    assert(T.UI.pageFrames.overview~=T.UI.pages.overview)
+    assert(T.UI.pageFrames.hud~=T.UI.pages.hud)
+    T.UI:ShowPage("labels"); eq(T.UI.page,"hud")
+    T.UI:ShowPage("looping"); eq(T.UI.page,"overview")
+    T.UI:ShowPage("apl"); eq(T.UI.page,"customapl")
+    eq(T.APL:Configure(T.engine,"template","fire"),false)
+end)
+test("retired_sources_migrate_without_losing_manual_or_custom_rows",function()
+    local old={profiles={single={{name="saved",spellID=143,matchIDs={143}}}},
+        sourceByProfile={["MAGE:base"]={single="code"}},aplByClass={MAGE={single=true}},
+        apl={template="fire"}}
+    local e=T.Engine.New(T.Config,old)
+    eq(T.Recommendation:Source(e),"manual"); eq(e.db.profiles.single[1].spellID,143)
+    eq(e.db.apl.template,"custom")
+    T.Recommendation:SetSource(e,"apl"); eq(e.db.apl.template,"custom")
+    local restored=T.Engine.New(T.Config,e.db); eq(T.Recommendation:Source(restored),"apl")
+end)
+test("merged_scroll_pages_keep_content_shown_across_navigation",function()
+    deliveryFixture("manual")
+    for _,key in ipairs({"overview","hud","profiles","overview","hud"}) do
+        T.UI:ShowPage(key)
+        eq(T.UI.pageFrames[key].shown,true)
+        eq(T.UI.pages.overview.shown,true); eq(T.UI.pages.hud.shown,true)
+        eq(T.UI.pages.overview.parent.shown,true); eq(T.UI.pages.hud.parent.shown,true)
+        if key~="overview" then eq(T.UI.pageFrames.overview.shown,false) end
+        if key~="hud" then eq(T.UI.pageFrames.hud.shown,false) end
+    end
+end)
+assert(loadfile(root .. "/tests/cast_queue.lua"))(T,{runtimeFixture=runtimeFixture,receipt=receipt,test=test,eq=eq,secret=secret})
+assert(loadfile(root .. "/tests/skip_unavailable.lua"))(T,{runtimeFixture=runtimeFixture,deliveryFixture=deliveryFixture,receipt=receipt,test=test,eq=eq,secret=secret})
 realprint("TEF simulated tests: " .. count .. " passed\n")
 
 assert(loadfile(root .. "/tests/apl.lua"))("Tactic Echo Forever",T,{runtimeFixture=runtimeFixture,deliveryFixture=deliveryFixture,receipt=receipt})

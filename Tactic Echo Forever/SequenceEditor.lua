@@ -35,6 +35,8 @@ function U:EditSequenceRow(index,operation,value)
         local dest=index+value
         if dest<1 or dest>#rows then return false end
         rows[index],rows[dest]=rows[dest],rows[index]
+    elseif operation=="skip" then
+        rows[index].skipUnavailable=S.Public(value,"boolean")==true
     elseif operation=="count" then
         local text=S.Public(value,"string")
         local n=text and text:match("^%s*(%d+)%s*$") and tonumber(text)
@@ -89,10 +91,11 @@ function U:RefreshSequenceEditor(force)
             self:Paint(widgets.icon,"SetTexture",view.icon)
             self:Paint(widgets.name,"SetText",i .. ". " .. view.name .. "\nID " .. row.spellID .. " · 匹配 " .. table.concat(row.matchIDs,"/"))
             self:Paint(widgets.count,"SetText",tostring(row.repeatCount or 1))
+            self:Paint(widgets.skip,"SetText",row.skipUnavailable and "不可用跳过：开" or "不可用跳过：关")
             self:SetControlEnabled(widgets.up,i>1); self:SetControlEnabled(widgets.down,i<#rows)
         end
     end
-    self:Paint(self.sequenceChild,"SetHeight",math.max(235,rows and math.min(#rows,16)*48 or 235))
+    self:Paint(self.sequenceChild,"SetHeight",math.max(235,rows and math.min(#rows,16)*72 or 235))
 end
 function U:CreateSequenceEditor(parent)
     self.sequenceAdvanced=false
@@ -117,7 +120,7 @@ function U:CreateSequenceEditor(parent)
     for i=1,16 do
         local index=i
         local row=self:Frame("Frame",child,"BackdropTemplate")
-        self:Paint(row,"SetPoint","TOPLEFT",child,"TOPLEFT",0,-(i-1)*48); self:Paint(row,"SetSize",540,44)
+        self:Paint(row,"SetPoint","TOPLEFT",child,"TOPLEFT",0,-(i-1)*72); self:Paint(row,"SetSize",540,68)
         self:Paint(row,"EnableMouse",true)
         self:Paint(row,"SetScript","OnReceiveDrag",function() self:Guard(function() self:ReceiveSequenceSpell(index) end) end)
         local made,icon=self:Invoke(row,"CreateTexture",nil,"ARTWORK")
@@ -134,10 +137,14 @@ function U:CreateSequenceEditor(parent)
         widgets.up=self:CreateActionButton(row,"上",350,-8,42,function() self:EditSequenceRow(index,"move",-1) end)
         widgets.down=self:CreateActionButton(row,"下",398,-8,42,function() self:EditSequenceRow(index,"move",1) end)
         self:CreateActionButton(row,"删除",447,-8,70,function() self:EditSequenceRow(index,"delete") end)
+        widgets.skip=self:CreateActionButton(row,"不可用跳过：关",41,-38,145,function()
+            local rows=self:DraftRows()
+            if rows and rows[index] then self:EditSequenceRow(index,"skip",not rows[index].skipUnavailable) end
+        end)
         self.sequenceRows[i]=widgets
     end
     self:CreateActionButton(parent,"高级文本",371,-377,110,function()
         self.sequenceAdvanced=not self.sequenceAdvanced; self:RefreshSequenceEditor(true)
-        self:SequenceMessage("每行 主ID:匹配ID/匹配ID*次数；例如205:205*3。保存才生效。")
+        self:SequenceMessage("每行 主ID:匹配ID/匹配ID*次数；例如205:205*3!skip表示不可用跳过；保存生效。")
     end)
 end

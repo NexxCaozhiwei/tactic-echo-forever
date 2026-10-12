@@ -46,7 +46,7 @@ function P:Clean(raw, limit)
             if not match or match == 7268 then return nil end
             matches[j] = match
         end
-        rows[i] = {name=name,spellID=id or 0,matchIDs=matches,unverified=pending or nil,repeatCount=repeats}
+        rows[i] = {name=name,spellID=id or 0,matchIDs=matches,unverified=pending or nil,repeatCount=repeats,skipUnavailable=S.Field(row,"skipUnavailable","boolean")==true}
     end
     return rows
 end
@@ -61,11 +61,13 @@ function P:Initialize(e, old)
         if conflicts and S.Field(conflicts,class,"boolean")==true then e.db.profileMigrationConflicts[class]=true end
     end
     e.db.apl=TEF.APL and TEF.APL.Clean(S.Field(old,"apl","table")) or nil
+    local retiredClassAPL=e.db.apl and e.db.apl.template~="custom"
+    if e.db.apl then e.db.apl.template="custom" end
     e.db.aplByClass={}
     local aplModes=S.Field(old,"aplByClass","table")
     for class in pairs(classes) do
         local mode=aplModes and S.Field(aplModes,class,"table")
-        if mode then e.db.aplByClass[class]={single=S.Field(mode,"single","boolean")==true,multi=S.Field(mode,"multi","boolean")==true} end
+        if mode then e.db.aplByClass[class]={single=not retiredClassAPL and S.Field(mode,"single","boolean")==true,multi=not retiredClassAPL and S.Field(mode,"multi","boolean")==true} end
     end
     local savedClasses=S.Field(old,"classProfiles","table")
     local sources=S.Field(old,"sourceByProfile","table")
@@ -84,7 +86,7 @@ function P:Initialize(e, old)
                         -- Engine.Validate refuses to run it until reduced to 16.
                         e.db.classProfiles[key][sceneKey]=self:Clean(S.Field(rawProfile,sceneKey,"table"),32) or {}
                         local source=savedSource and S.Field(savedSource,sceneKey,"string")
-                        e.db.sourceByProfile[key][sceneKey]=source=="code" and "code" or "manual"
+                        e.db.sourceByProfile[key][sceneKey]="manual"
                     end
                 end
             end
@@ -207,6 +209,7 @@ function P:RowsText(rows)
         for _, id in ipairs(row.matchIDs) do ids[#ids+1] = tostring(id) end
         lines[#lines+1] = row.unverified and ("?" .. row.name) or (row.spellID .. ":" .. table.concat(ids,"/"))
         if (row.repeatCount or 1)>1 then lines[#lines]=lines[#lines] .. "*" .. row.repeatCount end
+        if row.skipUnavailable then lines[#lines]=lines[#lines] .. "!skip" end
     end
     return table.concat(lines,"\n")
 end
@@ -217,12 +220,14 @@ function P:Parse(raw, limit)
     if not text or #text>4096 then return nil,"CONFIG_INVALID" end
     local rows = {}
     for line in text:gmatch("[^\r\n]+") do
+        local skipUnavailable=line:match("!skip%s*$")~=nil
+        if skipUnavailable then line=line:gsub("!skip%s*$","") end
         local repeats=1
         local body,count=line:match("^(.-)%s*%*%s*(%d+)%s*$")
         if body then line=body; repeats=tonumber(count) end
         local unresolved=line:match("^%?(.+)$")
         if unresolved then
-            rows[#rows+1]={name=unresolved,spellID=0,matchIDs={},unverified=true,repeatCount=repeats}
+            rows[#rows+1]={name=unresolved,spellID=0,matchIDs={},unverified=true,repeatCount=repeats,skipUnavailable=skipUnavailable}
         else
         local primary, rest = line:match("^%s*(%d+)%s*:%s*([%d/%s]+)%s*$")
         if not primary then primary=line:match("^%s*(%d+)%s*$"); rest=primary end
@@ -235,7 +240,7 @@ function P:Parse(raw, limit)
         rest=rest:gsub("%s","")
         if rest:sub(1,1)=="/" or rest:sub(-1)=="/" or rest:find("//",1,true) then return nil,"CONFIG_INVALID" end
         for value in rest:gmatch("%d+") do ids[#ids+1]=tonumber(value) end
-        rows[#rows+1]={name="技能 " .. id,spellID=id,matchIDs=ids,repeatCount=repeats}
+        rows[#rows+1]={name="技能 " .. id,spellID=id,matchIDs=ids,repeatCount=repeats,skipUnavailable=skipUnavailable}
         end
     end
     local clean=self:Clean(rows,limit)
@@ -256,7 +261,7 @@ function P:ConfirmObserved(e)
             if view.reason=="PUBLIC" and view.name==step.name then
                 local rows=self:Clean(e.db.profiles[e.scene])
                 if not rows then return false,"CONFIG_INVALID" end
-                rows[e.index]={name=step.name,spellID=row.spellID,matchIDs={row.spellID},repeatCount=step.repeatCount}
+                rows[e.index]={name=step.name,spellID=row.spellID,matchIDs={row.spellID},repeatCount=step.repeatCount,skipUnavailable=step.skipUnavailable}
                 return self:Save(e,e.scene,rows)
             end
         end

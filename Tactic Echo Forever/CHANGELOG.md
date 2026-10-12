@@ -1,3 +1,29 @@
+## 1.0.6 — 2026-10-12
+
+- HUD displays the active block category on the primary card and status line. Hover details explain the category and show the original Runtime reason code. The categorization is visual only; dispatch gates and receipt handling are unchanged.
+
+## 1.0.5 — 2026-10-12
+
+- Fix blank dispatch overview/HUD appearance pages: settings initialization hid the scroll children while navigation only showed their outer panels. Hide only outer panels, explicitly show and anchor scroll content, and test visibility across navigation. No execution behavior changed.
+
+## 1.0.4 — 2026-10-12
+
+- Recommendation settings now expose manual sequence and custom APL only. Code source is rejected and old saved code source uses the preserved manual configuration. Class APL page and its controls are removed; old active built-in templates migrate inactive to custom, preserving saved custom rules.
+- HUD appearance and label styles share a scrollable page. Loop modes and reset/stop move into the scrollable dispatch overview. Old page names redirect to the merged destinations; hotkeys and safety gates remain unchanged.
+- Custom editor drafts track the runtime instance as well as class/scene to prevent stale drafts after reload. Existing offline catalogue/rule fixtures remain as historical internal tests, not selectable runtime recommendations.
+
+## 1.0.3 — 2026-10-12
+
+- Manual sequence rows gain opt-in “不可用跳过”, default off. Saving, reordering, repeat edits and reload preserve the flag; advanced text uses `!skip` (for example `205:205*3!skip`).
+- Public unusable, insufficient resource, depleted charges or verified own cooldown can omit the remaining repetitions without recording success. Secret/UNKNOWN, target/range/focus/cast blocking and in-flight receipt ownership never authorize omission. GCD-only cooldown and Shoot retain existing behavior.
+- One omission per existing heartbeat; an all-unavailable loop waits instead of spinning. Existing cast-tail queue rechecks optional destination availability. TEK and TEAP wire unchanged; live acceptance pending.
+
+## 1.0.2 — 2026-10-12
+
+- Experimental opt-in fixed-sequence cast-tail queue, capped at 0.20 seconds and the public client SpellQueueWindow. Ordinary cast timing and all input gates are revalidated through the existing heartbeat and TEAP v3 chain.
+- One next-attempt reservation retains A and B's separate exact GUID/generation/index/receipt identities. A's exact success alone promotes B; queued failure, stop/reset and stale identities cannot advance steps.
+- Disabled by default; no GCD queries, APL speculation, channel/Shoot look-ahead, new timers or input paths. TEK is unchanged. Offline validation does not prove client queue acceptance or real input.
+
 # 1.0.1 — APL foundation
 
 Optional public-ready policy; learned rank resolver; class-base migration; conservative automatic source strategy; recommendation replacement preserving intent and receipts; 50ms dirty coalescing / 200ms fallback. No additional Hekili conditions or input paths. Live acceptance pending.

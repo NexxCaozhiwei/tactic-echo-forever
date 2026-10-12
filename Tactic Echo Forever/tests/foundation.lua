@@ -43,11 +43,11 @@ end)
 test("legacy_spec_profile_migration_safe",function()
  local rows={{name="Fireball",spellID=143,matchIDs={143}}}
  local e=T.Engine.New(T.Config,{classProfiles={["MAGE:62"]={single=rows,multi={}}},sourceByProfile={["MAGE:62"]={single="code"}}})
- eq(e.db.classProfiles["MAGE:base"].single[1].spellID,143); eq(e.db.sourceByProfile["MAGE:base"].single,"code")
+ eq(e.db.classProfiles["MAGE:base"].single[1].spellID,143); eq(e.db.sourceByProfile["MAGE:base"].single,"manual")
  e=T.Engine.New(T.Config,{classProfiles={["MAGE:62"]={single=rows,multi={}},["MAGE:63"]={single=rows,multi={}}}})
  eq(#e.db.classProfiles["MAGE:base"].single,0); eq(e.db.classProfiles["MAGE:63"].single[1].spellID,143)
 end)
-test("template_auto_does_not_infer_from_filler",function() eq(A.Clean({filler="frostbolt"}).template,"auto"); eq(A.Clean({filler="arcane_blast"}).template,"auto") end)
+test("template_auto_does_not_infer_from_filler",function() eq(A.Clean({filler="frostbolt"}).template,"custom"); eq(A.Clean({filler="arcane_blast"}).template,"custom") end)
 local function talents()
  local t={}; for _,k in ipairs({"arcane_power","presence_of_mind","pyroblast","combustion","cold_snap","ice_barrier","fingers_of_frost"}) do t[k]={known=false,rank=0} end
  return t

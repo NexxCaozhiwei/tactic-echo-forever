@@ -39,7 +39,7 @@ local function configuration(config)
         if not repeats or repeats<1 or repeats>99 or repeats%1~=0 then return nil end
         local pending = row.unverified == true and row.spellID == 0 and type(row.matchIDs)=="table" and #row.matchIDs==0
         if pending and name and #name>0 and #name<=128 then
-            steps[i]={name=name,spellID=0,matches={},unverified=true,repeatCount=repeats}
+            steps[i]={name=name,spellID=0,matches={},unverified=true,repeatCount=repeats,skipUnavailable=S.Field(row,"skipUnavailable","boolean")==true}
         else
         if not id or id==7268 or not name or #name == 0 or #name > 128 or type(row.matchIDs) ~= "table"
             or #row.matchIDs == 0 or #row.matchIDs > 16 then return nil end
@@ -50,7 +50,7 @@ local function configuration(config)
             if not match or match == 7268 then return nil end
             matches[match] = true
         end
-        steps[i] = {name = name, spellID = id, matches = matches,repeatCount=repeats}
+        steps[i] = {name = name, spellID = id, matches = matches,repeatCount=repeats,skipUnavailable=S.Field(row,"skipUnavailable","boolean")==true}
         end
     end
     return steps
@@ -135,7 +135,7 @@ end
 
 function Engine:Start()
     self:Invalidate("START")
-    self.index, self.completed, self.stepCasts = 1, false, 0
+    self.index, self.completed, self.stepCasts, self.skipStreak = 1, false, 0, 0
     self.running = self.steps ~= nil and not self.identitySaturated
 end
 function Engine:Pause()
@@ -152,7 +152,7 @@ end
 function Engine:Reset()
     self.running = false
     self:Invalidate("RESET")
-    self.index, self.completed, self.stepCasts = 1, false, 0
+    self.index, self.completed, self.stepCasts, self.skipStreak = 1, false, 0, 0
 end
 function Engine:RecommendationLocked()
     local step=self.steps and self.steps[self.index]
@@ -187,6 +187,22 @@ function Engine:SetLoopMode(mode)
     self:Log("lifecycle","LOOP_MODE_" .. mode:upper()); return true
 end
 
+-- Explicit optional step omission is distinct from a successful cast.
+function Engine:SkipUnavailable()
+    local step=self.steps and self.steps[self.index]
+    if not step or not step.skipUnavailable or step.spellID==5019 or step.unverified
+        or TEF.Recommendation:Source(self)~="manual" or self:RecommendationLocked() then return false end
+    if (self.skipStreak or 0)>=#self.steps then return false end
+    local previous=self.index
+    self:Invalidate("UNAVAILABLE_STEP_SKIPPED")
+    self.skipStreak=(self.skipStreak or 0)+1
+    self.stepCasts=0
+    if self.index<#self.steps then self.index=self.index+1
+    elseif self.db.loop then self.index=1
+    else self.completed=true; self.running=false end
+    self:Log("observed","UNAVAILABLE_STEP_SKIPPED",step.spellID,previous,self.index)
+    return true
+end
 function Engine:Handle(generation, event, unitRaw, guidRaw, spellRaw)
     if not observed[event] then return end
     local function log(kind, reason, spellID, current, nextStep)
@@ -245,6 +261,7 @@ function Engine:Handle(generation, event, unitRaw, guidRaw, spellRaw)
     if self.seenCount >= 4096 then
         self.running=false; self:Invalidate("IDENTITY_CAPACITY_PAUSED"); return
     end
+    self.skipStreak=0
     self.seen[guid], self.seenCount = true, self.seenCount+1
     self.receiptSerial=(self.receiptSerial or 0)+1
     self.associations[guid]=nil; self.associationCount=self.associationCount-1
@@ -257,6 +274,7 @@ function Engine:Handle(generation, event, unitRaw, guidRaw, spellRaw)
     self.stepCasts=self.stepCasts+1
     if self.stepCasts<self.steps[self.index].repeatCount then
         log("match","STEP_REPEAT_MATCH",spellID,self.index,self.index)
+        if TEF.Dispatch then TEF.Dispatch:SequenceSucceeded(guid) end
         return
     end
     local current, following = self.index, self.index+1
@@ -272,5 +290,6 @@ function Engine:Handle(generation, event, unitRaw, guidRaw, spellRaw)
         log("observed","SHOOT_SUCCESS_HANDOFF",spellID,current,following)
     else self.shootHandoff=nil end
     if not self.completed then self.stepCasts=0 end
+    if TEF.Dispatch then TEF.Dispatch:SequenceSucceeded(guid) end
     -- No polling, scheduled advance, cast-state write, or automatic input.
 end

@@ -9,7 +9,8 @@ function C.Clean(raw)
     return {mode=modes[mode] and mode or "auto",autoStart=S.Field(raw,"autoStart","boolean")~=false,
         permission=S.Field(raw,"permission","boolean")~=false,signal=S.Field(raw,"signal","boolean")~=false,
         hotkey=key and #key<=40 and key:match("^[A-Z0-9%-=]+$") and key or "",
-        hotkeyOverride=S.Field(raw,"hotkeyOverride","boolean")==true}
+        hotkeyOverride=S.Field(raw,"hotkeyOverride","boolean")==true,
+        castQueue=S.Field(raw,"castQueue","boolean")==true}
 end
 function C:SetLoopMode(mode)
     if mode~="none" and mode~="normal" and mode~="target" and mode~="combat" then return false end
@@ -109,6 +110,11 @@ function C:Reset()
     if self.state=="error" or not self:EngineCall("Reset") then return end
     self:Changed("paused","RUNTIME_RESET")
 end
+function C:SetCastQueue(value)
+    self:Stop("CAST_QUEUE_SETTING_CHANGED")
+    self.e.db.dispatch.castQueue=value==true
+    return true
+end
 function C:SetMode(mode)
     if not modes[mode] then return false end
     self.e.db.dispatch.mode=mode; self:Reconcile(); return true
@@ -154,6 +160,9 @@ function C:Reconcile()
     local idle=TEF.Dispatch:CastIdle()
     if not current() then return end
     if not idle then
+        if combat==true and TEF.Dispatch:CastQueueWindow() then
+            self:Changed("running","CAST_QUEUE_WINDOW"); return
+        end
         TEF.Dispatch:YieldCast("CONTINUOUS_CAST_PRESENT_OR_UNKNOWN")
         self:Changed("blocked","CONTINUOUS_CAST_PRESENT_OR_UNKNOWN"); return
     end
@@ -166,6 +175,32 @@ function C:Reconcile()
     if not TEF.Recommendation:Current(e) then self:Suspend("APL_NO_CANDIDATE"); return end
     local allowed,reason=TEF.Dispatch:ContinuousEvidence(e.steps[e.index].spellID)
     if not current() then return end
+    local step=e.steps[e.index]
+    if step.skipUnavailable and step.spellID~=5019 and TEF.Recommendation:Source(e)=="manual"
+        and (allowed or reason=="CONTINUOUS_USABLE_UNKNOWN_OR_BLOCKED") then
+        -- Focus/target/range and cast gates precede omission; an in-flight
+        -- initiation always owns its receipt, even if resources changed.
+        if e:RecommendationLocked() then
+            TEF.Dispatch:YieldCast("SKIP_WAIT_CURRENT_RECEIPT")
+            self:Changed("blocked","SKIP_WAIT_CURRENT_RECEIPT"); return
+        end
+        if not TEF.Dispatch.pending and TEF.Dispatch.waitReceipt~=(e.receiptSerial or 0) then
+            local unavailable=TEF.Dispatch:Unavailable(step.spellID)
+            if not current() then return end
+            if unavailable==nil then self:Suspend("SKIP_AVAILABILITY_UNKNOWN"); return end
+            if unavailable then
+                self.internal=true
+                local skippedOK,skipped=pcall(e.SkipUnavailable,e)
+                self.internal=false
+                if not skippedOK then self:Fault("SKIP_ENGINE_FAILED")
+                elseif not skipped then self:Suspend("SKIP_ALL_UNAVAILABLE")
+                elseif e.completed then self:Stop("RUNTIME_COMPLETED","completed")
+                else self:Changed("blocked","UNAVAILABLE_STEP_SKIPPED") end
+                return
+            end
+            e.skipStreak=0
+        end
+    end
     if not allowed then self:Suspend(reason); return end
     if TEF.Dispatch.bindingCache[e.steps[e.index].spellID]==false then self:Suspend("TEK_EXACT_DIRECT_BINDING_UNAVAILABLE"); return end
     if not e.running and not self:EngineCall("Resume") then return end
@@ -185,7 +220,7 @@ end
 function C:IsDispatchIntentEnabled() return self.intent end
 function C:View()
     local v=self:GetViewState()
-    return v.label .. " | " .. (v.source=="apl" and "法师 APL" or v.profileKey) .. " | " .. (v.source=="apl" and "APL" or v.source=="code" and "代码序列" or "人工序列")
+    return v.label .. " | " .. (v.source=="apl" and "自定义 APL" or v.profileKey) .. " | " .. (v.source=="apl" and "自定义APL" or "人工序列")
 end
 -- Internal compatibility, no additional public toggle or execution loop.
 C.Tick=C.Reconcile

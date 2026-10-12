@@ -9,7 +9,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = (ROOT / "VERSION").read_text().strip()
-TARGET = Path(r"E:\World of Warcraft\_cn_beta_\Interface\AddOns\Tactic Echo Forever")
+TARGET = Path(r"C:\Program Files (x86)\World of Warcraft\_cn_beta_\Interface\AddOns\Tactic Echo Forever")
 LOAD = ["Config.lua", "Safety.lua", "APL/Packs/Mage/Abilities.lua", "APL/Packs/Mage/Talents.lua", "APL/TalentState.lua", "APL/Registry.lua", "APL/PublicConditions.lua", "APL/Custom.lua", "APL/RankResolver.lua", "APL/Packs/Mage/BuildSelector.lua", "APL/State.lua", "APL/Conditions.lua", "APL/Trace.lua", "APL/Packs/Mage/Mage60.lua", "APL/Packs/Mage/Rules.lua", "APL/Engine.lua", "Sequence.lua", "HudStyles.lua", "Profiles.lua", "Recommendation.lua", "Research.lua", "UI.lua", "UIComponents.lua", "SequenceEditor.lua", "CustomAPLEditor.lua", "HUD.lua", "Dispatch.lua", "Presentation.lua", "Transport.lua", "Runtime.lua", "Hotkeys.lua", "Core/Bootstrap.lua"]
 RUNTIME = ["Tactic Echo Forever.toc", "VERSION", "Bindings.xml"] + LOAD + ["README.md", "CHANGELOG.md"]
 
@@ -34,7 +34,13 @@ def main():
     receipt = {"version": VERSION, "interface": 16001, "client_evidence_exe": "1.60.1.70338",
                "simulation_only": True, "target": str(TARGET), "backup": None}
     receipt["validation"] = {"performed_by_packager": False,
-        "report": "docs/APL_FOUNDATION_FIX_1.0.1.md", "in_game_verified": False}
+        "report": "docs/CAST_QUEUE_TRIAL_1.0.2.md", "in_game_verified": False}
+    receipt["skip_unavailable"] = {"default_enabled": False, "source": "manual",
+        "unknown_skipped": False, "skips_remaining_repetitions": True,
+        "counts_as_success": False, "in_game_verified": False}
+    receipt["cast_queue"] = {"default_enabled": False, "maximum_lead_seconds": 0.20,
+        "public_client_queue_window_required": True, "fixed_sequence_only": True,
+        "gcd_queried": False, "receipt_identity_preserved": True, "in_game_verified": False}
     receipt["sequence_editor"] = {"max_steps_per_scene": 16, "repeat_count_min": 1,
         "repeat_count_max": 99, "count_evidence": "public_current_initiation_and_succeeded",
         "legacy_17_32_steps_preserved_inactive": True, "drag_cursor_spell_id_position": 4,
@@ -72,7 +78,7 @@ def main():
         "default_enabled": True, "default_request_permission": True, "desktop_tek_ui_linked": True, "per_step_explicit_request": False, "continuous_default_enabled": False, "default_runtime_mode": "auto", "auto_start_preference": True, "runtime_in_game_verified": False, "continuous_requires_public_numeric_evidence": False}
     sources = sorted([ROOT / name for name in RUNTIME] +
                      list((ROOT / "docs").rglob("*.md")) + list((ROOT / "docs/references/wotlk").glob("*.json")) +
-                     [ROOT / "tests/run.lua", ROOT / "tests/run.py", ROOT / "tests/apl.lua", ROOT / "tests/foundation.lua", ROOT / "tests/custom_apl.lua", ROOT / "tests/public_conditions.lua", ROOT / "tests/test_acceptance_harness.py", ROOT / "scripts/deliver.py", ROOT / "scripts/import_apl_catalog.py", ROOT / "scripts/import_wotlk_apl.py", ROOT / "scripts/tek_acceptance.py"])
+                     [ROOT / "tests/run.lua", ROOT / "tests/run.py", ROOT / "tests/apl.lua", ROOT / "tests/foundation.lua", ROOT / "tests/custom_apl.lua", ROOT / "tests/public_conditions.lua", ROOT / "tests/cast_queue.lua", ROOT / "tests/skip_unavailable.lua", ROOT / "tests/test_acceptance_harness.py", ROOT / "scripts/deliver.py", ROOT / "scripts/import_apl_catalog.py", ROOT / "scripts/import_wotlk_apl.py", ROOT / "scripts/tek_acceptance.py"])
     sources += sorted((ROOT.parent / "docs/baselines/tef").glob("BASELINE_*.md"))
     archive = out / f"Tactic Echo Forever-{VERSION}.zip"
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
@@ -88,7 +94,7 @@ def main():
     if args.deploy:
         # Exact absolute TEF path only. No MIR, deletion, or access to WTF.
         assert TARGET.resolve().name == "Tactic Echo Forever"
-        assert TARGET.resolve().parent == Path(r"E:\World of Warcraft\_cn_beta_\Interface\AddOns").resolve()
+        assert TARGET.resolve().parent == Path(r"C:\Program Files (x86)\World of Warcraft\_cn_beta_\Interface\AddOns").resolve()
         if TARGET.exists():
             backup = out / ("backup-TEF-" + stamp)
             shutil.copytree(TARGET, backup)

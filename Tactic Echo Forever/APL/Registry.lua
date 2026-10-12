@@ -22,7 +22,7 @@ function A.Clean(raw)
  local fillers={auto=true,fireball=true,frostbolt=true,scorch=true,arcane_missiles=true,arcane_blast=true}
  local template=S.Field(raw,"template","string")
  if template~="auto" and template~="arcane" and template~="fire" and template~="frost" and template~="custom" then
-  template="auto"
+  template="custom"
  end
  local threshold=S.Field(raw,"aoeThreshold","number")
  local ids={}; local saved=S.Field(raw,"exactIDs","table")

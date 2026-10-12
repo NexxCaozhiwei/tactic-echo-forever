@@ -1,6 +1,38 @@
 local _, TEF = ...
 local H, U, S = {}, TEF.UI, TEF.Safety
 TEF.HUD = H
+-- Presentation only: retain the Runtime reason as the diagnostic source.
+local blockReasons={
+    CONTINUOUS_CAST_PRESENT_OR_UNKNOWN={"施法", "正在施法、引导，或施法状态未知"},
+    APL_WAIT_CURRENT_RECEIPT={"回执", "等待当前技能的施法回执"},
+    SKIP_WAIT_CURRENT_RECEIPT={"回执", "等待当前技能的施法回执"},
+    CONTINUOUS_TARGET_UNKNOWN_OR_BLOCKED={"目标", "目标不存在、不可攻击、已死亡，或目标状态未知"},
+    RUNTIME_TARGET_CHANGED={"目标", "目标变化后等待重新确认"},
+    CONTINUOUS_RANGE_UNKNOWN_OR_BLOCKED={"距离", "技能不在范围内，或距离状态未知"},
+    CONTINUOUS_USABLE_UNKNOWN_OR_BLOCKED={"技能", "技能不可用、资源不足，或可用性未知"},
+    SKIP_AVAILABILITY_UNKNOWN={"技能", "无法确认该技能是否应跳过"},
+    SKIP_ALL_UNAVAILABLE={"技能", "序列中的技能均不可用"},
+    UNAVAILABLE_STEP_SKIPPED={"技能", "已跳过不可用的序列技能"},
+    CONTINUOUS_TEXT_FOCUS_OR_UNKNOWN={"输入", "输入焦点被占用，或焦点状态未知"},
+    TEK_EXACT_DIRECT_BINDING_UNAVAILABLE={"输入", "找不到当前技能的精确直达按键"},
+    CONTINUOUS_BINDING_CHANGED={"输入", "技能按键已变化，等待重新确认"},
+    RUNTIME_PROFILE_UNCONFIGURED={"配置", "当前推荐配置不可用"},
+    RUNTIME_COMBAT_UNKNOWN={"模式", "无法确认战斗状态"},
+    APL_NO_CANDIDATE={"APL", "当前没有符合条件的自定义 APL 技能"},
+}
+function H:BlockCategory(reason)
+    local code=S.Public(reason,"string")
+    if not code then return "未知", "阻断原因未知" end
+    local entry=blockReasons[code]
+    if entry then return entry[1],entry[2] end
+    if code:match("^APL_") then return "APL", "APL 条件未满足，或推荐状态未知" end
+    if code:match("^CONTINUOUS_FAILURE_") or code:match("^CONTINUOUS_MOVEMENT_FAILURE_") then
+        return "回执", "施法失败，等待重新尝试"
+    end
+    if code:match("^CONTINUOUS_") or code:match("^TEK_") then return "输入", "派发输入条件未满足" end
+    if code:match("^RUNTIME_") then return "模式", "派发运行条件未满足" end
+    return "其他", "请查看诊断页中的原因码"
+end
 -- Visual-only, unprotected frames. No secure click proxy or input authority.
 local function texture(parent, layer)
     local ok,t=U:Invoke(parent,"CreateTexture",nil,layer or "ARTWORK")
@@ -61,7 +93,14 @@ function H:Card(x,size,primary)
             U:Call(GameTooltip,"SetOwner",f,"ANCHOR_RIGHT")
             U:Call(GameTooltip,"AddLine","TACTIC ECHO FOREVER")
             U:Call(GameTooltip,"AddLine","左键：派发启/停；右键：设置",1,1,1)
-            U:Call(GameTooltip,"AddLine","当前：" .. TEF.Runtime:GetViewState().label,.7,.8,.9)
+            local state=TEF.Runtime:GetViewState()
+            U:Call(GameTooltip,"AddLine","当前：" .. state.label,.7,.8,.9)
+            if state.state=="blocked" then
+                local category,description=self:BlockCategory(state.reason)
+                U:Call(GameTooltip,"AddLine","阻断分类：" .. category .. " · " .. description,1,.78,.28)
+                local code=S.Public(state.reason,"string")
+                if code then U:Call(GameTooltip,"AddLine","原因码：" .. code,.7,.7,.7) end
+            end
             U:Call(GameTooltip,"AddLine","不会直接施法",.7,.7,.7); U:Call(GameTooltip,"Show")
         end)
         U:Call(f,"SetScript","OnLeave",function() card.hover=false; card.pressed=false; self:RefreshState(); U:Call(GameTooltip,"Hide") end)
@@ -138,6 +177,8 @@ function H:RefreshState()
     local step=e.steps and e.steps[e.index]
     if TEF.Runtime.e~=e then v={state=e.running and "running" or "paused",label=e.running and "推荐" or "暂停"} end
     if e.completed then v.state="completed"; v.label="完成" end
+    local displayLabel=v.label
+    if v.state=="blocked" then displayLabel=v.label .. "·" .. self:BlockCategory(v.reason) end
     local c=self.colors[v.state] or self.colors.paused
     local primary=self.cards[1]
     U:Paint(primary.border,"SetVertexColor",c[1],c[2],c[3],1)
@@ -147,11 +188,11 @@ function H:RefreshState()
         local ok,raw=S.Call(entry[1],"player")
         if ok and S.Public(raw,"string") then castLabel=entry[2] end
     end
-    for i,card in ipairs(self.cards) do U:Paint(card.state,"SetText",card.displayStep and (i==1 and (castLabel or v.label) or "随后") or "") end
+    for i,card in ipairs(self.cards) do U:Paint(card.state,"SetText",card.displayStep and (i==1 and (castLabel or displayLabel) or "随后") or "") end
     if TEF.APL:IsActive(e) then
-        U:Paint(self.status,"SetText",v.label .. " | " .. TEF.APL.Trace:View(e))
+        U:Paint(self.status,"SetText",displayLabel .. " | " .. TEF.APL.Trace:View(e))
     else
-        U:Paint(self.status,"SetText",v.label .. " | " .. (e.scene=="multi" and "多目标" or "单体") .. " | " .. e.index .. "/" .. (e.steps and #e.steps or 0) .. " · 次数 " .. (e.stepCasts or 0) .. "/" .. (step and step.repeatCount or 1))
+        U:Paint(self.status,"SetText",displayLabel .. " | " .. (e.scene=="multi" and "多目标" or "单体") .. " | " .. e.index .. "/" .. (e.steps and #e.steps or 0) .. " · 次数 " .. (e.stepCasts or 0) .. "/" .. (step and step.repeatCount or 1))
     end
 end
 function H:VisualTick()

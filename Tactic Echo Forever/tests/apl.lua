@@ -102,7 +102,7 @@ test("apl_source_preserves_sequence_and_no_fixed_completion",function()
 end)
 test("apl_class_mode_persists_reload_no_candidate_restored",function()
  local e=T.Engine.New(T.Config); T.Recommendation:SetSource(e,"apl"); e.db.apl=config(); local copy=T.Engine.New(T.Config,e.db)
- eq(T.Recommendation:Source(copy),"apl"); eq(copy.running,false); eq(copy.aplCandidate,nil); eq(copy.aplSnapshot,nil); eq(copy.db.apl.filler,"fireball")
+ eq(T.Recommendation:Source(copy),"manual"); eq(copy.running,false); eq(copy.aplCandidate,nil); eq(copy.aplSnapshot,nil); eq(copy.db.apl.filler,"fireball")
 end)
 test("apl_class_mode_without_specialization_identity",function()
  local e=T.Engine.New(T.Config); e.profileKey=nil; e.classToken="MAGE"
@@ -169,7 +169,7 @@ test("apl_ui_and_hud_hide_sequence_preview_and_keep_edit_draft",function()
  F.deliveryFixture("manual"); book({{143,"火球术"}}); GetActionInfo=function() return "spell",143 end
  InCombatLockdown=function() return false end; GetTime=function() return 10 end
  local e=T.engine; T.Recommendation:SetSource(e,"apl"); e.db.apl=config()
- T.UI:ShowPage("apl"); T.UI.aplExactID.scripts.OnEditFocusGained(); T.UI.aplExactID.text="143"; T.UI:RefreshPage(); eq(T.UI.aplExactID.text,"143")
+ T.UI:ShowPage("customapl"); eq(T.UI.pages.apl,nil); assert(T.UI.customID); T.UI:RefreshPage()
  local s=state(); s.actions.fireball.known=true; e.aplCandidate=evaluate(s); e.steps=T.Engine.Validate({{name="火球术",spellID=143,matchIDs={143}}}); e.db.loop=true
  T.HUD:Refresh(); eq(T.HUD.cards[2].displayStep,nil); eq(T.HUD.cards[3].displayStep,nil)
 end)

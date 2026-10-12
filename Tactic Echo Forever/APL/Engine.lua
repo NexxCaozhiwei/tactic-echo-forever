@@ -190,7 +190,7 @@ end
 function A:Configure(e,key,value)
  local raw=self.Clean(e.db.apl)
  if key=="template" then
-  if value~="auto" and value~="arcane" and value~="fire" and value~="frost" and value~="custom" then return false,"APL_TEMPLATE_INVALID" end
+  if value~="custom" then return false,"APL_TEMPLATE_INVALID" end
   raw.template=value
  elseif key=="filler" then
   if value~="auto" and value~="fireball" and value~="frostbolt" and value~="scorch" and value~="arcane_missiles" and value~="arcane_blast" then return false,"APL_FILLER_INVALID" end
