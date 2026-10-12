@@ -2,7 +2,7 @@
 
 面向魔兽世界 Forever / Infinite 的独立项目，采用经典60级式职业、天赋和已学技能模型，包含 APL、Secret Value、TEAP 与 TEF TEK。
 
-项目源自 Tactic Echo，自2026-10-12、源提交 `3e57b9d1713ad3c9d821b416dc073452289c2691` 起独立开发。不是 Tactic Echo 的子模块，不需要相邻仓库。当前版本为 **1.0.13**。
+项目源自 Tactic Echo，自2026-10-12、源提交 `3e57b9d1713ad3c9d821b416dc073452289c2691` 起独立开发。不是 Tactic Echo 的子模块，不需要相邻仓库。当前版本为 **1.0.14**。
 
 - 插件目录：`Tactic Echo Forever/`；SavedVariables：`TEF_DB`。
 - TEF TEK目录：`tek/`；配置、日志和缓存根目录：`%LOCALAPPDATA%/TacticEchoForever`。

@@ -24,6 +24,36 @@ local function fixture(repeats)
     now=12.29
 end
 local function tick() T.Runtime:Reconcile(); T.Dispatch:TickContinuous() end
+test("old_channel_stop_cannot_consume_next_channel_request",function()
+    fixture()
+    UnitCastingInfo=function() return nil end
+    UnitChannelInfo=function() return nil end
+    T.Runtime:Stop(); T.engine.steps=T.Engine.Validate({
+        {name="飞弹",spellID=5143,matchIDs={5143},repeatCount=2}})
+    GetActionInfo=function() return "spell",5143 end
+    T.Dispatch:ClearBindingCache(); T.Runtime:Start(false); T.Dispatch:TickContinuous()
+    receipt("UNIT_SPELLCAST_SENT",5143,"channel-old")
+    receipt("UNIT_SPELLCAST_SUCCEEDED",5143,"channel-old")
+    T.Runtime:Reconcile(); T.Dispatch:TickContinuous()
+    local pending=T.Dispatch.pending; assert(pending)
+    receipt("UNIT_SPELLCAST_CHANNEL_STOP",5143,nil)
+    eq(T.Dispatch.pending,pending)
+    receipt("UNIT_SPELLCAST_CHANNEL_STOP",5143,"channel-old")
+    eq(T.Dispatch.pending,pending)
+    receipt("UNIT_SPELLCAST_SENT",5143,"channel-new")
+    eq(T.Dispatch.pending,nil)
+    receipt("UNIT_SPELLCAST_SUCCEEDED",5143,"channel-new")
+    eq(T.engine.completed,true); eq(T.engine.receiptSerial,2)
+end)
+test("uninitiated_cancelled_request_releases_wait_and_reoffers",function()
+    fixture(); UnitCastingInfo=function() return nil end
+    -- 先消费既有起始，使当前步骤不再拥有旧回执。
+    receipt("UNIT_SPELLCAST_SUCCEEDED",116,"queue-A")
+    T.Runtime:Reconcile(); T.Dispatch:TickContinuous(); assert(T.Dispatch.pending)
+    T.Dispatch:Cancel("TEST_UNINITIATED_CANCEL")
+    T.Runtime:Reconcile(); T.Dispatch:TickContinuous()
+    assert(T.Dispatch.pending); eq(T.Dispatch.pending.binding.spellID,205)
+end)
 test("queued_late_start_extra_same_spell_failure_preserves_real_success",function()
     fixture(); now=12.31; tick()
     receipt("UNIT_SPELLCAST_SUCCEEDED",116,"queue-A")

@@ -294,6 +294,11 @@ function D:TickContinuous()
         if self:TryCastQueue() then self:ContinuousStatus("CAST_QUEUE_WAIT_SUCCESS") end
         return
     end
+    if TEF.Runtime and TEF.Runtime.e==e and TEF.Runtime.intent
+        and not self.pending and self.waitReceipt==(e.receiptSerial or 0) and not self:HasCurrentInitiation() then
+        self.waitReceipt=nil; self.initiation=nil
+        e:Log("transport","CONTINUOUS_UNINITIATED_WAIT_RELEASED")
+    end
     if self.pending or self.waitReceipt==(e.receiptSerial or 0) then return end
     if not self:CastIdle() then self:ContinuousStatus("CONTINUOUS_CAST_PRESENT_OR_UNKNOWN"); return end
     local recommendation=TEF.Recommendation:Current(e)
@@ -606,6 +611,16 @@ function D:Event(event,unit,id,guidRaw)
     if not self.pending then return end
     local u=S.Public(unit,"string"); local spell=S.ID(id)
     if not u or (u=="player" and not spell) then self:Cancel("TEK_EVENT_UNKNOWN"); return end
+    if failure and not self.continuous and u=="player" and spell==self.pending.binding.spellID then
+        self:Cancel("TEK_GAME_EVENT_RECEIVED"); return
+    end
     if u=="player" and spell==self.pending.binding.spellID
+        and (event=="UNIT_SPELLCAST_SENT" or event=="UNIT_SPELLCAST_START") and not guid then
+        self:Cancel("TEK_EVENT_UNKNOWN"); return
+    end
+    -- 仅精确公开起始事件确认新请求；旧引导结束/伤害/成功不能
+    -- 仅凭相同技能ID撤销尚未起始的新请求。
+    if u=="player" and guid and (event=="UNIT_SPELLCAST_SENT" or event=="UNIT_SPELLCAST_START")
+        and spell==self.pending.binding.spellID
         and (not self.pending.castQueue or guid==self.pending.castQueue.guid) then self:Cancel("TEK_GAME_EVENT_RECEIVED") end
 end
