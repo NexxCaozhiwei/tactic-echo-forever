@@ -1,9 +1,9 @@
 # TEF 1.0.2
 
-Experimental opt-in fixed-sequence ordinary cast-tail queue. The lead is public min(0.20 seconds, client SpellQueueWindow), with no GCD/61304 query or cooldown readiness inference. UNKNOWN blocks early dispatch. Settings default off; changing the setting stops intent.
+实验性固定序列普通读条末尾排队，需显式启用。提前量为公开min(0.20秒, 客户端SpellQueueWindow)，不查询GCD/61304，不推断冷却就绪；UNKNOWN阻断提前派发。设置默认关闭，变更设置停止意图。
 
-One bounded next-attempt reservation supports distinct next IDs and same-ID repeats. Current exact SUCCEEDED alone advances counts and promotes the queued initiation's future receipt. Failed/retired GUIDs cannot count. Manual stop, edit/reset/world and fault invalidate queued identities. Existing Dispatch/TEAP v3/TEF TEK input and safety gates remain; no new timers, hooks or input paths.
+一个有界的下一次尝试预留支持不同ID与同ID重复。仅当前精确SUCCEEDED推进次数并接续下一次预留的回执；失败或退役GUID不计数。手动停止、编辑、重置、世界切换和错误使排队身份失效。保留现有Dispatch/TEAP v3/TEF TEK输入与安全门禁，不新增定时器、钩子或输入路径。
 
-No APL, channels, 5019 Shoot or loop-boundary look-ahead. Ordinary casting presence remains blocking outside the explicitly enabled public tail window. No live queue, SendInput or game success claim; user acceptance remains pending.
+不对APL、引导、5019射击或循环边界提前预测。除显式启用的公开末尾窗口外，普通施法状态仍阻断输入。尚不宣称实机排队、SendInput或游戏成功，用户验收待完成。
 
-Offline validation: 206 fixed/runtime Lua cases + 131 APL Lua cases; 235 pytest cases / 17 subtests; 229 TEK unittest cases; 2 mocked acceptance cases; 38 Lua 5.1 syntax files; baseline and compileall passed. Real input and client queue acceptance remain pending.
+离线检查通过：206项固定/运行时Lua用例、131项APL Lua用例、235项pytest及17项子测试、229项TEK unittest、2项模拟验收、38个Lua 5.1语法文件、基线与compileall。真实输入和客户端排队仍待验收。

@@ -1,64 +1,64 @@
 ## 1.0.13 — 2026-10-12
 
-- Preserve an exact current initiation when an extra same-spell GUID arrives outside the explicit queue reservation. Retire the extra identity so its failure or late success cannot overwrite, suspend or count against the real cast. Explicit queued next identities retain their existing handling. Regression replays late queued start, extra SENT/FAILED_QUIET and original success.
+- 保护当前精确施法起始身份：显式排队预留外的额外同技能GUID会被退役，其失败或迟到成功不能覆盖、暂停或计入原施法。显式下一次排队身份保持原处理。回归重放迟到排队起始、额外SENT/FAILED_QUIET与原成功。
 
 ## 1.0.12 — 2026-10-12
 
-- Add independent bounded 512-row queueDiagnostics with eviction count and reload scalar whitelist. Record public time, exact cast identities, events, request/receipt/index correlation, configured/effective/client windows and original request remaining time. Distinguish failure events from early success classification; record first token publication and current-success identity availability. Existing queue behavior remains unchanged. Token publication does not prove desktop input.
+- 增加独立512条queueDiagnostics、淘汰数量和reload标量白名单。保存公开时间、精确施法身份、事件、请求/回执/索引关联、配置/有效/客户端窗口及请求时剩余时间。区分失败事件和提前成功分类，记录首次Token发布及当前成功时下一身份是否存在。排队行为不变；Token发布不证明桌面输入。
 
 ## 1.0.11 — 2026-10-12
 
-- Add original TE armed/paused WAV feedback, bundled independently under TEF Media and played on SFX when dispatch intent starts/stops. Temporary suspensions retain intent without repeated sounds; sound API failures do not affect dispatch.
+- 加入原TE启用/暂停WAV音效，独立存放于TEF Media；派发意图启停时通过SFX播放。临时阻断保留意图，不反复播放；音效API失败不影响派发。
 
 ## 1.0.10 — 2026-10-12
 
-- Add a persisted 0–0.50 second cast-tail queue lead slider, step 0.05, default 0.20. Zero disables look-ahead. Effective lead is capped by the public client SpellQueueWindow; changing lead stops dispatch and retires pending requests. Existing queue receipt behavior is unchanged.
+- 增加持久化末尾排队时间滑块，范围0–0.50秒、步进0.05、默认0.20。零表示不提前；有效提前量受公开客户端SpellQueueWindow上限约束。修改停止派发并撤销旧请求；回执行为不变。
 
 ## 1.0.9 — 2026-10-12
 
-- Hide the HUD cooldown question mark when numeric cooldown or clock data is unknown. Public countdowns and the client cooldown renderer remain; no dispatch gate or queue behavior changes.
+- 冷却数值或时钟未知时不显示HUD问号；保留公开倒计时和客户端冷却绘制，不改变派发门禁或排队行为。
 
 ## 1.0.8 — 2026-10-12
 
-- Modernize HUD cards with dark surfaces and thin state-colored borders. Add independent current/preview icon sizes and two inter-card gaps in HUD appearance; persist bounded geometry, resize the HUD and shift global text below the cards. Remove the practice label from preview cards. Combat layout changes remain deferred; dispatch is unchanged.
+- HUD使用深色底板和细状态边框。HUD外观增加当前及两张预览图标的独立大小与两段间距；保存有界布局，动态调整HUD尺寸并将整体文字移至图标下方。去掉预览卡“练习”标签，战斗中继续延后布局，派发不变。
 
 ## 1.0.7 — 2026-10-12
 
-- Fix manual skip-unavailable stalls when cooldown is publicly enabled and inactive but timing is Secret and isOnGCD is absent. This is no cooldown reason to omit, not general readiness; ordinary dispatch gates remain. Unknown usability/enabled/active evidence stays blocked. Regression covers repeated dispatch and restricted fields.
+- 修复人工跳过在冷却公开启用且未活动、时间为Secret且isOnGCD缺失时卡住的问题。这只表示没有冷却跳过理由，不等同整体就绪；普通派发门禁保持。可用性/启用/活动证据未知仍阻断。回归覆盖重复派发与受限字段。
 
 ## 1.0.6 — 2026-10-12
 
-- HUD displays the active block category on the primary card and status line. Hover details explain the category and show the original Runtime reason code. The categorization is visual only; dispatch gates and receipt handling are unchanged.
+- HUD在主卡和状态行显示阻断类别，悬停提示显示解释和原始Runtime原因码。分类仅影响显示，不改变派发门禁或回执。
 
 ## 1.0.5 — 2026-10-12
 
-- Fix blank dispatch overview/HUD appearance pages: settings initialization hid the scroll children while navigation only showed their outer panels. Hide only outer panels, explicitly show and anchor scroll content, and test visibility across navigation. No execution behavior changed.
+- 修复派发总览/HUD外观空白：初始化误隐藏滚动子内容，而导航仅显示外层。改为只隐藏外层，显式显示并锚定内容；测试反复导航的可见性，执行行为不变。
 
 ## 1.0.4 — 2026-10-12
 
-- Recommendation settings now expose manual sequence and custom APL only. Code source is rejected and old saved code source uses the preserved manual configuration. Class APL page and its controls are removed; old active built-in templates migrate inactive to custom, preserving saved custom rules.
-- HUD appearance and label styles share a scrollable page. Loop modes and reset/stop move into the scrollable dispatch overview. Old page names redirect to the merged destinations; hotkeys and safety gates remain unchanged.
-- Custom editor drafts track the runtime instance as well as class/scene to prevent stale drafts after reload. Existing offline catalogue/rule fixtures remain as historical internal tests, not selectable runtime recommendations.
+- 推荐设置仅保留人工序列和自定义APL。拒绝代码来源，旧代码来源使用保留人工配置；移除职业APL页和控件，迁移停用旧内置模板，保留自定义规则。
+- HUD外观和标签样式合并为滚动页，循环/重置移入派发总览。旧页名重定向，热键与安全门禁不变。
+- 编辑器草稿关联运行实例及职业/场景，防止reload后使用旧草稿。历史离线目录/规则测试数据保留内部，不作为可选运行推荐。
 
 ## 1.0.3 — 2026-10-12
 
-- Manual sequence rows gain opt-in “不可用跳过”, default off. Saving, reordering, repeat edits and reload preserve the flag; advanced text uses `!skip` (for example `205:205*3!skip`).
-- Public unusable, insufficient resource, depleted charges or verified own cooldown can omit the remaining repetitions without recording success. Secret/UNKNOWN, target/range/focus/cast blocking and in-flight receipt ownership never authorize omission. GCD-only cooldown and Shoot retain existing behavior.
-- One omission per existing heartbeat; an all-unavailable loop waits instead of spinning. Existing cast-tail queue rechecks optional destination availability. TEK and TEAP wire unchanged; live acceptance pending.
+- 人工序列每行增加“不可用跳过”，默认关闭。保存、排序、次数编辑和reload保留标记；高级文本使用`!skip`，如`205:205*3!skip`。
+- 公开不可用、资源不足、充能耗尽或已验证自身冷却，可跳过剩余次数而不计成功。Secret/UNKNOWN、目标/距离/焦点/施法阻断及在途回执不授权跳过。仅GCD冷却与射击保持原行为。
+- 每个既有心跳最多跳过一步，全部不可用循环等待而非空转。末尾排队复核目标步骤的可选可用性。TEK与TEAP线格式不变，实机验收待完成。
 
 ## 1.0.2 — 2026-10-12
 
-- Experimental opt-in fixed-sequence cast-tail queue, capped at 0.20 seconds and the public client SpellQueueWindow. Ordinary cast timing and all input gates are revalidated through the existing heartbeat and TEAP v3 chain.
-- One next-attempt reservation retains A and B's separate exact GUID/generation/index/receipt identities. A's exact success alone promotes B; queued failure, stop/reset and stale identities cannot advance steps.
-- Disabled by default; no GCD queries, APL speculation, channel/Shoot look-ahead, new timers or input paths. TEK is unchanged. Offline validation does not prove client queue acceptance or real input.
+- 实验性固定序列末尾排队，默认关闭，提前量上限0.20秒且受公开客户端SpellQueueWindow约束。普通读条时间与输入门禁经既有心跳和TEAP v3链复核。
+- 单个下一次尝试预留保留A/B独立GUID、代次、索引和回执身份。仅A精确成功接续B；排队失败、停止/重置或过期身份不能推进。
+- 不查询GCD，不预测APL、引导或射击，不新增定时器或输入路径；TEK不变。离线验证不证明客户端排队或真实输入。
 
-# Local project split — 2026-10-12
+# 本地项目拆分 — 2026-10-12
 
-TEF and its TEK are now independent. TEF version remains 1.0.1. Source commit: 3e57b9d1713ad3c9d821b416dc073452289c2691. See docs/PROJECT_SPLIT.md.
+TEF及其TEK现已独立。拆分时TEF版本仍为1.0.1，源提交为3e57b9d1713ad3c9d821b416dc073452289c2691，见docs/PROJECT_SPLIT.md。
 
-# 1.0.1 — APL foundation
+# 1.0.1 — APL基础
 
-Optional public-ready policy; learned rank resolver; class-base migration; conservative automatic source strategy; recommendation replacement preserving intent and receipts; 50ms dirty coalescing / 200ms fallback. No additional Hekili conditions or input paths. Live acceptance pending.
+可选公开就绪策略、已学等级解析、职业基础迁移、保守自动来源策略、保留意图/回执的推荐替换、50毫秒脏更新合并及200毫秒兜底。不增加Hekili条件或输入路径，实机验收待完成。
 
 # TEF 1.0.0
 

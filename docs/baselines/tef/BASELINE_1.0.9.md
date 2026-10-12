@@ -1,3 +1,3 @@
 # TEF 1.0.9
 
-Display unknown numeric cooldown/clock as empty text instead of a question mark. Preserve public countdowns, cooldown duration rendering, Safety normalization and all dispatch/queue gates. Offline verification is not game queue acceptance.
+冷却数值或时钟未知时显示空文本，不显示问号。保留公开倒计时、客户端冷却时长绘制、Safety规范化及全部派发/排队门禁。离线验证不代表游戏接受排队。

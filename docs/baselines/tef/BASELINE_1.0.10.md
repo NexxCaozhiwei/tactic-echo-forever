@@ -1,3 +1,3 @@
 # TEF 1.0.10
 
-User-configurable cast-tail queue lead: 0–0.50 seconds, UI step 0.05, default 0.20 for existing configurations. Zero disables look-ahead. Window remains bounded by public client SpellQueueWindow, fixed ordinary casts only. Setter stops dispatch; unknown timing remains blocked. Existing receipt and queue teardown behavior is unchanged. Lua regression checks zero, 0.50, client cap, Secret migration and setter invalidation. In-game queue stability is still unverified.
+用户可配置末尾排队提前量0–0.50秒，界面步进0.05秒，旧配置默认0.20秒。零表示不提前。窗口仍受公开客户端SpellQueueWindow上限约束，仅支持固定普通读条。修改停止派发，时间未知仍阻断；既有回执和排队撤销行为不变。Lua回归检查零、0.50、客户端上限、Secret迁移及修改失效。游戏排队稳定性仍未验证。

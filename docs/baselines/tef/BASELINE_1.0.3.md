@@ -1,9 +1,9 @@
 # TEF 1.0.3
 
-Manual sequence per-row skipUnavailable is default false and preserved by profile sanitization, editor/text round trips and reload. `!skip` marks the advanced text option. Only public unusable/resource shortage, zero available charges or explicit own cooldown may omit a step's remaining repetitions. Cooldown evidence must distinguish own cooldown from GCD; missing/Secret/conflicting data stays UNKNOWN. No 61304 query, timing estimate or dynamic scene switching.
+人工序列每行skipUnavailable默认false；配置清洗、编辑器/文本往返及reload保留该值，高级文本标记为`!skip`。仅公开不可用、资源不足、充能为零或明确自身冷却可以跳过剩余次数。冷却证据必须区别自身冷却与GCD；缺失、Secret或冲突保持UNKNOWN。不查询61304，不估算时间，不动态切场景。
 
-Omission is logged separately from success. It invalidates old generation/request identities without clearing Runtime intent; exact SUCCEEDED remains the only success/repeat receipt. Pending or initiated attempts cannot be skipped. Context blockers, APL/code sources, Shoot and standby retain their gates. One skip per existing heartbeat, all-unavailable loops wait for public availability. Cast-tail queue refuses an unavailable/unknown optional destination.
+跳过与成功分别记录。跳过使旧代次/请求身份失效，但保留Runtime意图；精确SUCCEEDED仍是唯一成功/次数回执。待处理或已发起尝试不能跳过。上下文阻断、APL/代码来源、射击和待命保留门禁。每个既有心跳最多跳过一步，全部不可用时循环等待公开可用性。末尾排队拒绝不可用或未知的可选目标步骤。
 
-Offline tests and local deployment are separate from game/Hook/SendInput acceptance, which remains pending. TEK and TEAP v3 are unchanged.
+离线检查和部署与游戏/钩子/SendInput验收分开，后者待完成。TEK与TEAP v3不变。
 
-Offline checks: 215 fixed/runtime/editor Lua cases + 131 APL cases; 235 pytest cases with 17 subtests; 229 TEK unittest cases; 2 mock acceptance cases; 39 Lua 5.1 syntax files; baseline and compileall passed. Real game acceptance remains pending.
+离线检查通过：215项固定/运行时/编辑器Lua用例、131项APL用例、235项pytest及17项子测试、229项TEK unittest、2项模拟验收、39个Lua 5.1语法文件、基线与compileall。真实游戏验收待完成。

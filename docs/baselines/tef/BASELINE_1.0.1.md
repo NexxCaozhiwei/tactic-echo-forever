@@ -1,15 +1,9 @@
 # TEF 1.0.1
 
-TE AddOn remains 1.5.12. TEK and TEAP v3 are unchanged.
+TE插件仍为1.5.12，TEK与TEAP v3不变。
 
-Mage Class Pack foundation: optional declarative public cooldown checks,
-public learned exact rank resolution, class-base profiles with conflict-safe
-migration, conservative key-talent strategy selection, internal candidate
-replacement preserving intent and receipt ownership, 0.05s dirty coalescing
-and 0.20s fallback on the existing Runtime heartbeat.
+法师职业包基础包括：可选声明式公开冷却检查、公开已学精确等级解析、具备冲突保护的职业基础配置迁移、保守关键天赋策略选择、保留意图和回执所有权的内部候选替换，以及现有Runtime心跳上的0.05秒脏更新合并和0.20秒兜底刷新。
 
-84 WotLK source rules retained: 14 active classifications, 33 BLOCKED, 37 DROP.
-No additional Hekili conditions are enabled. Offline evidence is separate from
-70338 live input, talent/rank and UI acceptance; those remain pending.
+保留84条WotLK源规则：14条有效分类、33条BLOCKED、37条DROP。不启用额外Hekili条件。离线证据与70338实机输入、天赋/等级和界面验收分开，后者仍待验收。
 
-Local split metadata (2026-10-12): standalone TEF checkout, independent local TEF TEK identity/settings/builds. Numeric project version remains 1.0.1; wire/authorization unchanged. See ../../PROJECT_SPLIT.md.
+2026-10-12拆分元数据：TEF独立检出，TEF TEK具有独立本地身份、设置与构建。版本仍1.0.1，线格式和授权不变。见../../PROJECT_SPLIT.md。

@@ -1,11 +1,7 @@
-# Protocol namespace TEF
+# 协议命名空间TEF
 
-Project: TEF. Local host: TEF-TEK. Version is independently managed by this
-project's VERSION, currently 1.0.1. Trace and build metadata identify TEF.
-TEAP v3 wire bytes and CRC remain unchanged at the split. No project selector
-exists on this wire, so TE/TEF frames cannot be distinguished by namespace.
-Enable only one AddOn signal source at a time. Future divergent wire fields
-require an explicit protocol version/namespace migration. Independent copies
-of the existing compatibility catalog are retained because the ActionCode=0
-binding-token path uses the existing v3 catalog envelope. The catalog is not
-an Infinite ability model and does not authorize guessed ranks.
+项目为TEF，本地主机标识为TEF-TEK。版本由项目VERSION独立管理；拆分时为1.0.1。追踪日志和构建元数据标识TEF。
+
+拆分时TEAP v3线格式字节和CRC保持不变。协议中没有项目选择字段，因此不能按命名空间区分TE/TEF信号帧。一次只能启用一个插件信号源。以后增加不同线字段时，必须明确迁移协议版本与命名空间。
+
+保留既有兼容目录的独立副本，是因为ActionCode=0的BindingToken路径仍使用v3目录封装。该目录不是无限服技能模型，不能授权猜测的技能等级。

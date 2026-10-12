@@ -1,53 +1,32 @@
-# Tactic Echo Forever — independent project
+# Tactic Echo Forever — 独立项目
 
-## Current contract (2026-10-12)
+## 文档与交流语言约束
 
-- Baseline 1.0.2, independent Forever/Infinite project. No Retail TE runtime,
-  sibling checkout, shared directory, submodule or symlink dependency.
-- Class + Talent + Learned Skills; no modern specialization identity. Profiles
-  use CLASS:base; Mage Class Pack MAGE_FOREVER_60. Spell ranks use independently
-  learned exact IDs; static catalogue/rank/maximum SpellID never authorize.
-- UNKNOWN != FALSE. Secret values must pass Safety normalization before any
-  comparison, indexing, formatting or persistence; never treat unknown as ready.
-- State / Conditions / Recommendation / Runtime / Dispatch layering remains.
-  Built-in normal spells default to usable_only; explicit public-ready checks
-  require public 0/0. No GCD/61304 eligibility query. Rules are declarative.
-- Auto source strategy uses actual key talent rank; ambiguous/unknown builds
-  require manual override. BuildSignature is diagnostic only; no filler inference.
-- Only TEF_DB; no other AddOn SavedVariables. TEF TEK support bundles do not
-  import Retail mapping exports. No writes to WTF, spell bindings or macros.
-- Unique Runtime.intent, existing Dispatch / TEAP v3 / TEF TEK input chain.
-  APL never requests input directly. Preserve current initiation/receipt identity;
-  exact SUCCEEDED advances, failure retries; generation/index/receipt guards and
-  identity tombstones remain. Candidate replacement is not a user Reset.
-- Default fixed sequence, APL explicit; automatic scene switching remains bypassed.
-  Automatic standby previews are read-only and dispatch requires public combat.
-  Auto-start creates new intent only; manual stop must not resurrect in combat.
-- Opt-in fixed-sequence ordinary cast-tail queue may offer one next attempt within
-  public min(configured 0–0.50s, client SpellQueueWindow), retaining both exact receipt identities.
-  No APL/channel/Shoot look-ahead, no speculative success, no GCD query.
-- Setting/target/focus/cast/UNKNOWN temporary blocking preserves intent and zeroes
-  tokens; lifecycle edits/reset/world/fatal fault clear intent. HUD hide is visual.
-- Preserve fixed attempt semantics and 5019 ShootActive/hand-off gates. Limits:
-  16 steps, 1–99 repeats, exact IDs; pause retains counts, edit/reload clears them.
-- Custom APL existing public mana %, checked UnitDistanceSquared and exact CDM
-  frame identity remain bounded; missing/hidden/Secret/conflicting CDM is UNKNOWN.
-  No aura truth inferred from CDM; no new timers, hooks or input paths.
-- 0.05s dirty coalescing / 0.20s fallback on existing heartbeat, no full per-frame
-  spellbook/talent scan. Bounded 12 RuleActions / 16 custom rules.
-- TEF TEK in tek/ belongs to this project and can evolve independently; do not
-  synchronize with Retail TE automatically. Preserve foreground, hook, manual
-  hold/release, freshness, CRC, replay and rate gates; one SendInput per dispatch.
-- TEAP namespace TEF, current wire unchanged. Never enable both AddOn signal
-  sources simultaneously. Wire identity changes require a separate task.
-- Preserve player's existing macro compatibility; do not generate/edit macros.
-  Control hotkeys use only TEF overrides, not SaveBindings/skill bindings.
-- Version changes must sync VERSION, Config, TOC, Bootstrap, CHANGELOG and
-  docs/baselines/tef/BASELINE_<version>.md. This split does not bump versions.
-  Baselines only under docs/baselines; patch manifests only docs/patch-manifests.
-- Release outputs isolated under dist; never stop/replace active TEK. Full clean
-  source ZIP with one root and SHA256 required. Offline tests/build/startup do
-  not prove Hook, SendInput or game success. Historical S76 does not prove new
-  rank/talent/APL paths or fixed 5019 hand-off.
-- Run README checks and Lua 5.1 syntax checks before delivery. No remote push
-  without a separate explicit request; source remote is provenance only.
+- 本项目所有 Markdown（`.md`）文档统一使用简体中文，包括 AGENTS.md、README、更新日志、设计说明、基线、验收步骤、实测报告和新增文档。
+- 新增或修改文档时，标题、正文、列表、表格说明、链接显示文字及自然语言注释必须使用中文，不得新增整段英文说明。
+- 代码、命令、API/函数/字段名、路径、文件名、版本号、哈希、协议标识及必须准确引用的报错原文保留英文；必要时在旁边补充中文解释。
+- 保留代码块、示例配置、链接目标和引用证据的原始语义；翻译不得改动数值、历史版本、验收结论或把未验证写成已通过。
+- 交付前检查全部受版本控制的 `.md` 文件是否残留英文自然语言段落。生成发布包中的文档也必须来自中文源文档。
+- 与用户全程使用中文交流；代码、命令和必要的报错原文除外。
+
+## 当前契约（2026-10-12）
+
+- 以1.0.2为历史基础，作为独立的 Forever/Infinite 项目开发；不依赖正式服 TE 运行时、相邻检出、共享目录、子模块或符号链接。
+- 使用职业、天赋和已学技能，不采用现代专精身份。配置使用 CLASS:base；法师职业包为 MAGE_FOREVER_60。技能等级必须依据独立已学的精确ID；静态目录、等级或最大 SpellID 不构成授权。
+- UNKNOWN 不等于 FALSE。Secret 值在比较、索引、格式化或持久化前必须通过 Safety 规范化；不得把未知当作就绪。
+- 保持 State / Conditions / Recommendation / Runtime / Dispatch 分层。内置普通技能默认 usable_only；显式公开就绪检查要求公开0/0。不查询 GCD/61304 作为资格；规则采用声明式表达。
+- 自动来源策略使用实际关键天赋等级；构筑模糊或未知时需要手动覆盖。BuildSignature 只用于诊断，不推断填充技能。
+- 只读取 TEF_DB，不读取其他插件的 SavedVariables。TEF TEK 支持包不导入正式服映射导出；不写入 WTF、技能绑定或宏。
+- Runtime.intent 是唯一运行意图；使用现有 Dispatch / TEAP v3 / TEF TEK 输入链。APL 不直接请求输入。保留起始与回执身份；精确 SUCCEEDED 推进，失败重试；保留代次、索引、回执保护和身份墓碑。候选替换不等于用户重置。
+- 默认固定序列，APL 需显式启用；自动场景切换继续旁路。自动待命预览只读，派发必须确认公开战斗状态。自动启动只创建新意图，手动停止后不得在战斗中自行恢复。
+- 可选的固定序列普通读条末尾排队，只在公开 min(配置0–0.50秒, 客户端 SpellQueueWindow) 内提出一个下一次尝试，保留两次精确回执身份。不对 APL、引导或魔杖射击提前预测，不推测成功，不查询 GCD。
+- 设置、目标、焦点、施法或 UNKNOWN 的临时阻断保留意图并输出零Token；配置编辑、重置、世界切换和致命错误清除意图。隐藏 HUD 仅影响显示。
+- 保留固定尝试语义与5019的 ShootActive/交接门禁。最多16步，每步1–99次，使用精确ID；暂停保留计数，编辑或reload清除计数。
+- 自定义APL的公开法力百分比、已检查的 UnitDistanceSquared 和精确CDM帧身份保持有界。CDM缺失、隐藏、Secret或冲突均为UNKNOWN；不从CDM推断光环真值，不新增定时器、钩子或输入路径。
+- 复用现有心跳进行0.05秒脏更新合并与0.20秒兜底刷新，不逐帧完整扫描法术书或天赋。最多12个 RuleActions、16条自定义规则。
+- tek/中的TEF TEK属于本项目，可独立演进；不得自动同步正式服TE。保留前台、钩子、手动按住/释放、新鲜度、CRC、重放和频率门禁；每次派发仅一次 SendInput。
+- TEAP命名空间为TEF，当前线格式不变。不得同时启用两个插件信号源。线格式身份变更需单独任务。
+- 保留玩家既有宏兼容，不生成或修改宏。控制快捷键仅使用TEF临时覆盖，不使用 SaveBindings 或修改技能绑定。
+- 版本变更同步 VERSION、Config、TOC、Bootstrap、CHANGELOG 和 docs/baselines/tef/BASELINE_<version>.md。项目拆分本身不提升版本。基线只放在 docs/baselines，补丁清单只放在 docs/patch-manifests。
+- 发布产物独立放在dist，禁止停止或替换活动TEK。完整干净源码ZIP必须只有一个根目录并提供SHA256。离线测试、构建或启动不证明钩子、SendInput或游戏成功。历史S76不证明新增等级、天赋、APL路径或固定5019交接。
+- 交付前运行README要求的检查及Lua 5.1语法检查。没有单独明确请求不得推送远端；source远端仅作来源追溯。

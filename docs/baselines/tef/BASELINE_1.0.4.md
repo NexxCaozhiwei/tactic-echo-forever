@@ -1,9 +1,9 @@
 # TEF 1.0.4
 
-TEFUI exposes only manual sequence and custom APL. Code recommendation is no longer selectable; old code sources use preserved manual rows. Legacy active built-in APL templates are deactivated during profile initialization and normalized to custom; saved custom rules remain. Built-in template Configure requests are rejected; choosing APL always selects custom.
+TEFUI仅提供人工序列和自定义APL，不再提供代码推荐；旧代码来源使用保留的人工行。初始化配置时停用旧内置APL模板并规范化为custom，自定义规则保留。拒绝内置模板Configure请求，选择APL时始终使用custom。
 
-HUD appearance/label styles and dispatch overview/loop-reset are merged with scroll containers. Old page links redirect. Draft ownership includes engine instance. All input/receipt/Secret/UNKNOWN/Shoot gates and TEK/TEAP v3 remain unchanged. Historical rule/catalogue fixtures remain internal and are not offered as runtime UI choices.
+HUD外观/标签样式与派发总览/循环重置分别合并为滚动页面；旧页面链接重定向。草稿归属包含引擎实例。输入、回执、Secret、UNKNOWN、射击门禁及TEK/TEAP v3均不变。历史规则/目录测试数据保留在内部，不作为运行时界面选项。
 
-Offline regression and source/deployment hashes do not prove real client visual layout or game/SendInput success; live acceptance pending.
+离线回归、源码和部署哈希不证明真实客户端布局或游戏/SendInput成功，实机验收待完成。
 
-Offline checks passed: 217 Lua runtime/editor cases + 131 APL fixture cases, 235 pytest cases with 17 subtests, 229 TEK unittest cases, 2 mock acceptance cases, 39 Lua 5.1 syntax files, baseline and compileall. Game UI appearance remains pending.
+离线检查通过：217项Lua运行时/编辑器用例、131项APL测试数据用例、235项pytest及17项子测试、229项TEK unittest、2项模拟验收、39个Lua 5.1语法文件、基线与compileall。游戏界面外观待确认。

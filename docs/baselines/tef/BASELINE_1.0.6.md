@@ -1,5 +1,5 @@
 # TEF 1.0.6
 
-HUD presentation groups blocked Runtime reasons into cast, receipt, target, range, skill, input, APL, configuration, mode, and fallback categories. The primary card and status line show the category; the primary-card tooltip shows an explanation and the original public reason code. Unknown or Secret reasons remain unknown. No dispatch, timing, receipt, TEK, or TEAP behavior changes.
+HUD将Runtime阻断原因分为施法、回执、目标、距离、技能、输入、APL、配置、模式及兜底类别。主卡和状态行显示类别；主卡提示显示解释及原始公开原因码。未知或Secret原因仍保持未知。不改变派发、计时、回执、TEK或TEAP行为。
 
-Lua simulation verifies representative categories, fallback, Secret handling, and no sequence mutation. Offline checks and local deployment cannot prove the appearance in game.
+Lua模拟验证代表类别、兜底、Secret处理和序列不被修改。离线检查与本地部署不证明游戏内外观。

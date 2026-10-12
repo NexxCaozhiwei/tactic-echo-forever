@@ -1,5 +1,5 @@
 # TEF 1.0.5
 
-Presentation-only fix for blank merged settings pages. Outer page frames own navigation visibility; scroll containers/children stay shown and anchored, with parent visibility controlling the selected page. New regression covers overview/HUD display through repeated navigation.
+仅修复合并设置页空白的显示问题。外层页面帧控制导航可见性；滚动容器及子内容保持显示和锚定，由父页可见性控制选中页面。新增回归验证反复导航后的总览/HUD显示。
 
-Recommendation, Runtime, Dispatch, success receipt identity, TEK and TEAP v3 remain unchanged from 1.0.4. Offline checks and file hashes do not prove game layout; user visual confirmation remains pending.
+推荐、Runtime、Dispatch、成功回执身份及TEK/TEAP v3保持1.0.4行为。离线检查和文件哈希不证明游戏布局，仍待用户视觉确认。

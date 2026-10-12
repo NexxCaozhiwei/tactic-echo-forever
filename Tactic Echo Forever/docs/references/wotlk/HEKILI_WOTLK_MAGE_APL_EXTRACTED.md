@@ -6,9 +6,9 @@
 
 ## 奥术 Wowhead
 
-- Author: `Hekili`
-- Source: `https://www.wowhead.com/wotlk/guide/classes/mage/arcane/dps-rotation-cooldowns-abilities-pve`
-- Description: 2023-09-24: Initial translation from Wowhead.
+- 作者： `Hekili`
+- 来源： `https://www.wowhead.com/wotlk/guide/classes/mage/arcane/dps-rotation-cooldowns-abilities-pve`
+- 说明： 2023-09-24：首次从Wowhead翻译。
 
 ### `aoe`
 
@@ -28,7 +28,7 @@
 7. **arcane_power** — enabled=`True`
 8. **icy_veins** — enabled=`True`
 9. **mirror_image** — enabled=`True`
-10. **use_items** — enabled=`True` — description=Use any trinkets that aren't otherwise specified.
+10. **use_items** — enabled=`True` — description=使用未另外指定的饰品。
 11. **call_action_list** — enabled=`True` — `active_enemies > 2` — list_name=aoe
 12. **arcane_missiles** — enabled=`True` — `debuff.arcane_blast.stack = 4 & ( buff.missile_barrage.up || prev_gcd.6.arcane_blast )`
 13. **arcane_barrage** — enabled=`True` — `debuff.arcane_blast.stack = 4 & buff.missile_barrage.down & moving`
@@ -38,15 +38,15 @@
 
 ### `precombat`
 
-1. **arcane_brilliance** — enabled=`True` — `raid & buff.arcane_brilliance.down` — description=September 2023
+1. **arcane_brilliance** — enabled=`True` — `raid & buff.arcane_brilliance.down` — description=2023年9月
 2. **arcane_intellect** — enabled=`True` — `! raid & buff.arcane_brilliance.down & buff.arcane_intellect.down`
 3. **mage_armor** — enabled=`True`
 
 ## 火焰(黑科研)
 
-- Author: `风雪`
-- Source: ``
-- Description: 本循环由黑科力研究所【风雪】制作 20250731
+- 作者： `风雪`
+- 来源： ``
+- 说明： 本循环由黑科力研究所【风雪】制作 20250731
 
 ### `2T10`
 
@@ -63,7 +63,7 @@
 6. **icy_veins** — enabled=`True`
 7. **flame_cap** — enabled=`True`
 8. **potion** — enabled=`True`
-9. **use_items** — enabled=`True` — description=Use any trinkets that aren't otherwise specified.
+9. **use_items** — enabled=`True` — description=使用未另外指定的饰品。
 10. **living_bomb** — enabled=`True` — `target.time_to_die > 12 & debuff.living_bomb.down` — cycle_targets=1; max_cycle_targets=living_bomb_cap
 11. **call_action_list** — enabled=`False` — `active_enemies > 2` — list_name=aoe
 12. **call_action_list** — enabled=`True` — `buff.combustion.up` — list_name=combustion; description=燃烧buff
@@ -76,7 +76,7 @@
 
 ### `precombat`
 
-1. **arcane_brilliance** — enabled=`True` — `raid & buff.arcane_brilliance.down` — description=September 2023
+1. **arcane_brilliance** — enabled=`True` — `raid & buff.arcane_brilliance.down` — description=2023年9月
 2. **arcane_intellect** — enabled=`True` — `! raid & buff.arcane_brilliance.down & buff.arcane_intellect.down`
 3. **molten_armor** — enabled=`True` — `buff.unique_armor.down`
 4. **focus_magic** — enabled=`True` — `group & active_dot.focus_magic = 0`
@@ -98,11 +98,11 @@
 
 ## 冰霜 Wowhead
 
-- Author: `Hekili`
-- Source: `https://www.wowhead.com/wotlk/guide/classes/mage/frost/dps-rotation-cooldowns-abilities-pve`
-- Description: Mage: Frost
+- 作者： `Hekili`
+- 来源： `https://www.wowhead.com/wotlk/guide/classes/mage/frost/dps-rotation-cooldowns-abilities-pve`
+- 说明： Mage: Frost
 https://www.icy-veins.com/wotlk-classic/frost-mage-dps-pve-rotation-cooldowns-abilities
-September 2023
+2023年9月
 
 ### `default`
 
@@ -115,8 +115,8 @@ September 2023
 7. **flame_cap** — enabled=`True`
 8. **potion** — enabled=`True` — use_off_gcd=1
 9. **cold_snap** — enabled=`True` — `use_cold_snap & buff.icy_veins.down & cooldown.icy_veins.remains > 60`
-10. **use_items** — enabled=`True` — description=Use any trinkets that aren't otherwise specified.
-11. **deep_freeze** — enabled=`True` — `( debuff.frozen.up || buff.fingers_of_frost.stack = 1 ) & ( action.frostfire_bolt.in_flight || action.frostbolt.in_flight )` — description=Use Deep Freeze to consume your last Fingers of Frost charge simultaneously with a Frostbolt or Frostfire Bolt.
+10. **use_items** — enabled=`True` — description=使用未另外指定的饰品。
+11. **deep_freeze** — enabled=`True` — `( debuff.frozen.up || buff.fingers_of_frost.stack = 1 ) & ( action.frostfire_bolt.in_flight || action.frostbolt.in_flight )` — description=使用深度冻结，与寒冰箭或霜火箭同时消耗最后一层寒冰指充能。
 12. **frostbolt** — enabled=`True` — `buff.fingers_of_frost.up & talent.deep_freeze.enabled & cooldown.deep_freeze.remains < cast_time * buff.fingers_of_frost.stack`
 13. **frostfire_bolt** — enabled=`True` — `buff.brain_freeze.react`
 14. **blizzard** — enabled=`True` — `active_enemies > 2 & ! moving`
@@ -130,7 +130,7 @@ September 2023
 
 ### `precombat`
 
-1. **arcane_brilliance** — enabled=`True` — `raid & buff.arcane_brilliance.down` — description=September 2023
+1. **arcane_brilliance** — enabled=`True` — `raid & buff.arcane_brilliance.down` — description=2023年9月
 2. **arcane_intellect** — enabled=`True` — `! raid & buff.arcane_brilliance.down & buff.arcane_intellect.down`
 3. **conjure_mana_gem** — enabled=`True` — `mana_gem_charges < 2`
 4. **molten_armor** — enabled=`True` — `buff.unique_armor.down`

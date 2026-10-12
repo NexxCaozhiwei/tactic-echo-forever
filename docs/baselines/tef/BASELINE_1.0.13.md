@@ -1,3 +1,3 @@
 # TEF 1.0.13
 
-After explicit queue handling, an exact current initiation owns its success receipt. Different same-spell GUIDs are retired rather than replacing it or triggering retry suspension. Original GUID failures still use existing handling, and legitimate queue identities remain separately reserved. The 4096 lifetime identity cap remains fail-closed. Queue evidence records EXTRA_SAME_SPELL_ATTEMPT_RETIRED. Regression replays Session 12 late-start/extra failure order and proves original success counts once with no generation change; late extra success cannot advance. Game acceptance pending.
+显式排队处理后，当前精确起始身份拥有成功回执。其他同技能GUID被退役，不替换当前身份，也不因失败触发暂停重试。原GUID失败保留原处理，合法排队身份继续独立预留。4096个生命周期身份上限保持保守阻断。排队证据记录EXTRA_SAME_SPELL_ATTEMPT_RETIRED。回归重放Session 12迟到起始/额外失败顺序，验证原成功只计一次且代次不变，额外迟到成功不能推进。游戏验收待完成。

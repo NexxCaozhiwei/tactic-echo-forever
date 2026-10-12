@@ -1,11 +1,11 @@
-# 1.0.2 cast-tail queue trial
+# TEF 1.0.2 读条末尾排队试验
 
-Enable the experimental toggle on Settings → TEK, then close settings and restart dispatch. It is off by default. Only fixed-sequence ordinary player casting is eligible, with a next step or remaining repeat; no APL or loop-boundary prediction. Current channeling/UNKNOWN and Shoot remain blocking. The observed missile sample 5143 is excluded as a destination.
+在设置→TEK开启实验开关，关闭设置后重新启动派发；默认关闭。仅固定序列普通玩家读条且有下一步或剩余次数时符合资格，不预测APL或循环边界。引导、UNKNOWN与射击仍阻断；观察到的5143飞弹样本不作为排队目标。
 
-The existing 50ms heartbeat checks public start/end times, current spell and initiation identity. No static cast-time estimate or GCD/61304 read is used. The maximum lead is min(0.20 seconds, public SpellQueueWindow). A smaller or unknown window reduces or prevents the offer. Physical input timing also depends on TEK sampling and safety gates; exactly 2.300 seconds is not promised.
+现有50毫秒心跳核对公开开始/结束时间、当前技能及起始身份。不使用静态读条估算，不读取GCD/61304。该版本最大提前量为min(0.20秒, 公开SpellQueueWindow)；更小或未知窗口减少或阻止请求。物理输入时机还取决于TEK采样与安全门禁，不保证恰好在2.300秒发送。
 
-The next request uses the same Dispatch/TEAP v3/TEK chain. A future SENT/START is associated with its distinct GUID, future index and receipt serial; it cannot count before A's exact success. A successful A promotes the reservation, including same-ID repeats. Failure/early success before A retires the queued identity; a second speculative logical request is not opened during the same A initiation. Existing TEK transport can still re-offer pending input under its unchanged replay/rate gates until a client receipt arrives.
+下一请求使用同一Dispatch/TEAP v3/TEK链。后续SENT/START关联独立GUID、未来索引和回执号；A精确成功前不能计数。A成功后接续预留，包括同ID重复。A成功前失败或提前成功会退役排队身份，同一次A起始不再开启第二次逻辑预测请求。现有TEK在客户端回执到达前，仍可能按原重放/频率门禁重复提供待处理输入。
 
-Trial: use two independently learned exact direct spell bindings in a short fixed sequence. Watch A's 2.5-second cast: the next offer may begin in the last 0.2 seconds. Confirm B only starts after A, counts change on exact successes, interruption does not skip A, and stopping does not resume. Repeat with adjacent same-ID casts. Do not modify macros, skill bindings, WTF or SpellQueueWindow as part of this trial.
+试验：短固定序列使用两个独立已学、精确直达绑定的技能。观察A的2.5秒读条，下一请求可能在最后0.2秒出现。确认B只在A之后开始，精确成功才改变计数，中断不跳过A，停止后不恢复；再测试相邻同ID读条。试验不修改宏、技能绑定、WTF或SpellQueueWindow。
 
-Offline tests cover normal and adjacent-repeat promotion, rejected/out-of-order receipts, failure before SENT, A interruption, stop/reset, public timing and smaller window, Secret/UNKNOWN, binding/focus/setting revalidation, completion/Shoot/channel/APL exclusions. Real client queue acceptance, Hook, SendInput and game effects remain unverified.
+离线测试覆盖正常和相邻重复接续、拒绝/乱序回执、SENT前失败、A中断、停止/重置、公开时间及较小窗口、Secret/UNKNOWN、绑定/焦点/设置复核，以及完成/射击/引导/APL排除。真实客户端排队、钩子、SendInput和游戏效果仍未验证。

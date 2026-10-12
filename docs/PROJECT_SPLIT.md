@@ -1,66 +1,40 @@
-# Local project split — 2026-10-12
+# 本地项目拆分 — 2026-10-12
 
-- Split source commit: `3e57b9d1713ad3c9d821b416dc073452289c2691`.
-- Original shared repository / Retail TE path: `G:\Desktop\CODES\tactic-echo`.
-- New local sibling TEF path: `G:\Desktop\CODES\Tactic Echo Forever`.
-- Rollback tag: `pre-te-tef-split` (source HEAD; dirty files preserved separately).
-- Safety backup: `G:\Desktop\CODES\_project-split-backups\tactic-echo-20261012-084826`.
-- Full backup verified: 1,310 files; 31 dirty/untracked source files overlaid in clone.
-- Preserved local branches: codex/tef, main; prior tags retained, no history rewrite.
+以下路径、版本与数量是拆分当时的历史记录，不代表当前安装路径。
 
-TE scope: Retail AddOn, HUD/main recommendation/special modes/AutoInjection,
-its own TEK, Retail tests/tools/docs. Retired reaction modules stay retired.
-TEF scope: Infinite/Forever, Classic60 class/talents/learned ranks, APL,
-Secret Value, fixed sequence, its own TEK, TEF tests/tools/docs.
+- 拆分源提交：`3e57b9d1713ad3c9d821b416dc073452289c2691`。
+- 原共享仓库/正式服TE路径：`G:\Desktop\CODES\tactic-echo`。
+- 新本地相邻TEF路径：`G:\Desktop\CODES\Tactic Echo Forever`。
+- 回滚标签：`pre-te-tef-split`，对应源HEAD；未提交文件另行保存。
+- 安全备份：`G:\Desktop\CODES\_project-split-backups\tactic-echo-20261012-084826`。
+- 完整备份核验1,310个文件；克隆后覆盖31个已修改或未跟踪源文件。
+- 保留本地分支codex/tef、main及既有标签，不重写历史。
 
-TEK was copied into both projects at the split point.
-From this point forward, TE TEK and TEF TEK may evolve independently.
-No automatic code synchronization, shared core, submodule, symlink or junction.
-No runtime access to the other checkout. `source` is Git provenance only, has
-no automatic push target and a disabled push URL. Original TE origin unchanged.
+TE范围：正式服插件、HUD主推荐、特殊模式、AutoInjection、自有TEK及正式服测试/工具/文档；退役反应模块保持退役。
+TEF范围：Infinite/Forever、经典60级职业/天赋/已学等级、APL、Secret Value、固定序列、自有TEK和TEF测试/工具/文档。
 
-TEAP policy: logical namespaces TE and TEF. v3 wire stays unchanged; it does
-not identify the project. One enabled AddOn signal source at a time. Build/
-trace/status metadata distinguish TEF without modifying input authorization.
+拆分时将TEK复制到两个项目。此后两者独立演进，不自动同步代码，不共享核心、子模块、符号链接或目录连接；运行时不访问另一个检出。source远端只作Git来源追溯，禁用推送URL；原TE的origin不变。
 
-TEF host state: `%LOCALAPPDATA%/TacticEchoForever`; title TEF TEK, executable
-TEK-TEF.exe. Settings/profile migration is read-only for the legacy directory,
-backs up original settings, and resets activation/cache/SavedVariables import.
-Retail host state remains `%LOCALAPPDATA%/TacticEcho`. No live host was stopped.
+TEAP使用TE和TEF逻辑命名空间；v3线格式不变，不标识项目。一次只启用一个信号源。构建、追踪与状态元数据区分TEF，不改变输入授权。
 
-SavedVariables: Retail `TacticEchoDB`; TEF `TEF_DB`, unchanged and distinct.
-Versions unchanged: TE 1.5.12, TEF 1.0.1. This task adds split metadata only.
+TEF主机状态目录为 `%LOCALAPPDATA%/TacticEchoForever`，标题TEF TEK，可执行文件TEK-TEF.exe。设置/配置迁移只读旧目录，备份原设置并重置启用状态、缓存和SavedVariables导入。正式服状态仍在 `%LOCALAPPDATA%/TacticEcho`；未停止任何活动主机。
 
-Deletion inventories and classification are in split-file-classification.json.
-TEF removed 370 confirmed Retail-only files from the clone.
-TE removes 140 TEF-only source/doc/test/tool files only after
-TEF loading, APL/Runtime/Dispatch/Transport and local TEK tests pass.
-Inherited catalog/protocol/parser fixtures are local compatibility assets,
-not a sibling AddOn/runtime dependency. Other cross-product mentions are history.
-UNRESOLVED_SHARED_FILES: none.
+正式服SavedVariables为TacticEchoDB，TEF为TEF_DB，保持独立。拆分时版本未变：TE 1.5.12、TEF 1.0.1；本次拆分只增加元数据。
 
-CI: no .github workflows existed. TEF build checks the TEF TOC/Lua tests and
-local TEK suite; Retail packaging scripts are absent. Package outputs use TEF
-names. Build/startup success does not substitute for live input acceptance.
+删除清单和分类见split-file-classification.json。TEF克隆中移除370个已确认正式服专用文件。TE侧仅在TEF加载、APL/Runtime/Dispatch/Transport及本地TEK测试通过后移除140个TEF专用源码、文档、测试和工具文件。
+继承的目录、协议和解析器测试数据是本地兼容资源，不构成相邻插件或运行依赖。其他跨产品提及均为历史。UNRESOLVED_SHARED_FILES：无。
 
-No remote push was performed.
+拆分时没有.github工作流。TEF构建检查本项目TOC/Lua测试和本地TEK测试集，正式服打包脚本已移除；包名使用TEF。构建/启动成功不替代实机输入验收。拆分操作未推送远端。
 
-## TEF validation at independent start
+## 独立开发起点的验证
 
-PASS: 327 Lua5.1 cases; 235 pytest cases with 17 subtests; 229 TEK unittest
-cases; 2 acceptance harness mock cases; 37 Lua syntax files; standalone
-baseline and compileall. Relocation test copied source to a temporary isolated
-project, removed PYTHONPATH, and passed both baseline and Lua/TEK interop.
-PASS: isolated TEK-TEF.exe build and AddOn source package.
-NOT_RUN: executable startup smoke and real Windows/game input (deliberately
-not launched, to preserve the active host and existing user state).
-No .git object alternates; TEK source files are distinct physical copies.
+通过：327项Lua 5.1用例；235项pytest和17项子测试；229项TEK unittest；2项模拟验收；37个Lua语法文件；独立基线和compileall。
+迁移测试将源码复制到隔离临时项目，移除PYTHONPATH后通过基线和Lua/TEK互操作检查。独立TEK-TEF.exe构建及插件源码打包通过。
+未执行：可执行文件启动冒烟及真实Windows/游戏输入；为保留活动主机和用户现状，未启动程序。
+不存在.git对象共享替代目录；TEK源码是物理独立副本。
 
-Final classification correction: color/gamma tests are shared local codec fixtures, not TEF-only. Retail retains all seven cases under a neutral filename. Original shared-structure audit and the final classification are preserved in the external backup.
+最终分类修正：颜色/伽马测试属于共享本地编解码测试数据，并非TEF专用。正式服以中性文件名保留全部7项。原共享结构审计和最终分类均保存在外部备份。
 
-## Independent GitHub repository — 2026-10-12
+## 独立GitHub仓库 — 2026-10-12
 
-TEF origin: https://github.com/NexxCaozhiwei/tactic-echo-forever (private).
-The current Forever source is published on its own main branch.
-The source remote remains provenance only with its push URL disabled.
-Default pushes use origin; the original TE repository is not an upload target.
+TEF origin为 https://github.com/NexxCaozhiwei/tactic-echo-forever （私有仓库）。Forever源码发布在自有main分支。source远端仅作来源追溯，禁用推送URL。默认推送origin，原TE仓库不是上传目标。

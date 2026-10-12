@@ -1,5 +1,5 @@
 # TEF 1.0.7
 
-Manual skip-unavailable accepts publicly enabled, inactive cooldown as no cooldown omission reason before requiring public numeric timing or isOnGCD. It does not infer general readiness, skip UNKNOWN, or bypass usability, target, range, cast, receipt or input gates. Active cooldown/GCD discrimination is otherwise unchanged; its event-timing limitations are outside this targeted inactive-path fix.
+人工“不可用跳过”在冷却公开启用且未活动时，先判定没有冷却跳过理由，不再强求公开数值时间或isOnGCD。该判断不推断整体就绪，不跳过UNKNOWN，不绕过可用性、目标、距离、施法、回执或输入门禁。活动冷却/GCD区分保持原状，其事件时机限制不在本次未活动路径修复范围内。
 
-Lua 5.1 regression covers Secret timing and absent isOnGCD with repeated exact success, unknown enabled/usability, and active/unknown cooldown blocking. Offline tests and deployment hashes do not prove in-game dispatch.
+Lua 5.1回归覆盖Secret时间、缺失isOnGCD与重复精确成功、启用/可用性未知，以及活动/未知冷却阻断。离线测试和部署哈希不证明游戏派发。

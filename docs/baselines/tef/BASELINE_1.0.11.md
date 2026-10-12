@@ -1,3 +1,3 @@
 # TEF 1.0.11
 
-Bundle original TE armed/paused WAV files under independent TEF Media. Play SFX feedback once on successful enabling and enabled-to-stopped intent transitions, not temporary cast/target suspensions. Sound failures remain contained by Safety.Call. No dispatch or wire change. Local sound audibility requires game verification.
+将原TE启用/暂停WAV独立放在TEF Media目录。成功启用或从启用转为停止时，通过SFX声道播放一次，不在临时施法/目标阻断时播放。Safety.Call隔离音效失败，不改变派发或线格式。声音可听性需游戏验证。

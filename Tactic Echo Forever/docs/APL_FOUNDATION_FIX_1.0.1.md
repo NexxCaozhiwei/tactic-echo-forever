@@ -18,7 +18,7 @@ Ability 默认 `readinessPolicy="usable_only"`。内置普通动作要求公开 
 
 Identity 仅 UnitClass → CLASS:base，不调用 GetSpecialization / GetSpecializationInfo。已有 base 优先；base 不存在且仅一个有数据的旧 CLASS:数字配置时，复制两场景及来源，保留旧配置。多个有数据旧配置时保留全部、创建空 base、记录冲突并在推荐配置页提示人工编辑保存；不会覆盖或猜当前专精。冲突标志 reload 保留，用户保存后清除。未知职业保持 UNKNOWN，不回退法师。
 
-## Source Strategy 与 BuildSelector
+## 来源策略与BuildSelector
 
 默认 template=auto；旧有效手选 arcane/fire/frost/custom 保留；无效/缺失模板归 auto，不依 filler 推断。自动选择只观察当前实际关键天赋 rank/known：奥术 arcane_power / presence_of_mind，火焰 pyroblast / combustion，冰霜 cold_snap / ice_barrier / fingers_of_frost。全部关键项公开、只有一组有正 rank 才可自动选择；多个合理策略为 AMBIGUOUS，缺项为 UNKNOWN。已采样关键技能若 known 不明确也阻断自动确认。BuildSignature 点数仅诊断。用户可手选策略覆盖；规则仍逐条校核自己的天赋条件。
 

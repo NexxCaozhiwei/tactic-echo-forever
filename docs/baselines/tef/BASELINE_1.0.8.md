@@ -1,5 +1,5 @@
 # TEF 1.0.8
 
-HUD-only changes: thin dark card frames, independent main (32-112) and two preview (24-96) sizes, independent gaps (2-40), bounded persistent geometry, dynamic parent bounds and global text displacement. Preview cards have no practice title. Combat defers layout. Runtime, dispatch, receipts and wire protocol are unchanged.
+仅修改HUD：深色细边框、独立主卡大小32–112和两张预览卡大小24–96、独立间距2–40、有界持久化布局、动态父框尺寸及整体文字位移。预览卡不显示“练习”标题。战斗中延后应用布局；Runtime、派发、回执及线协议不变。
 
-Existing Lua HUD interaction/state regressions and repository checks pass. Rendering and slider acceptance require an in-game check after reload.
+既有Lua HUD交互/状态回归及仓库检查通过；绘制与滑块需在reload后实机确认。
