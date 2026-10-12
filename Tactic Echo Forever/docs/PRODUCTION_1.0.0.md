@@ -4,7 +4,7 @@
 
 ## 安装与使用
 
-单独插件包解压后将TACTIC-ECHO-FOREVER文件夹放入Interface/AddOns，目录内直接包含同名TOC及Bindings.xml。Windows组合包中的TACTIC-ECHO-FOREVER是相同运行文件；TEK.exe放到独立工具目录运行，不放入AddOns或WTF。TEK配置仍由客户端在自身用户目录创建，不随发行包携带本机配置。
+单独插件包解压后将Tactic Echo Forever文件夹放入Interface/AddOns，目录内直接包含同名TOC及Bindings.xml。Windows组合包中的Tactic Echo Forever是相同运行文件；TEK.exe放到独立工具目录运行，不放入AddOns或WTF。TEK配置仍由客户端在自身用户目录创建，不随发行包携带本机配置。
 
 登录或reload不恢复旧请求/成功关联；当前默认自动启动偏好可能创建新运行意图，自动模式脱战待命、进战重核后运行。初次安装先在/tefui检查自动启动、派发许可、三种运行模式与快捷键，配置好技能和真实默认动作槽绑定，再主动测试。TEF与TE不要同时输出信号。
 

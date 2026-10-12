@@ -10,7 +10,7 @@ issecretvalue=function(v)
     return rawequal(v,secret)
 end
 local detector=issecretvalue
-local function load(name) assert(loadfile(root .. "/" .. name))("TACTIC-ECHO-FOREVER",T) end
+local function load(name) assert(loadfile(root .. "/" .. name))("Tactic Echo Forever",T) end
 load("Config.lua"); load("Safety.lua"); load("APL/Packs/Mage/Abilities.lua"); load("APL/Packs/Mage/Talents.lua"); load("APL/TalentState.lua"); load("APL/Registry.lua"); load("APL/PublicConditions.lua"); load("APL/Custom.lua"); load("APL/RankResolver.lua"); load("APL/Packs/Mage/BuildSelector.lua"); load("APL/State.lua"); load("APL/Conditions.lua"); load("APL/Trace.lua"); load("APL/Packs/Mage/Mage60.lua"); load("APL/Packs/Mage/Rules.lua"); load("APL/Engine.lua"); load("Sequence.lua")
 load("HudStyles.lua"); load("Profiles.lua"); load("Recommendation.lua"); load("Research.lua")
 local standard=T.StandardConfig or T.Config
@@ -444,7 +444,7 @@ test("toc_bootstrap_independent_namespace_sent_payload",function()
     local ef=allFrames.TEF_EventFrame
     assert(ef.events.UNIT_SPELLCAST_SENT and ef.events.UNIT_SPELLCAST_SUCCEEDED)
     local foreign={untouched=true}; TacticEchoDB=foreign; TEProbeDB=foreign
-    ef.scripts.OnEvent(ef,"ADDON_LOADED","TACTIC-ECHO-FOREVER")
+    ef.scripts.OnEvent(ef,"ADDON_LOADED","Tactic Echo Forever")
     assert(TEF_DB==T.engine.db); eq(T.engine.running,false); eq(TacticEchoDB,foreign); eq(TEProbeDB,foreign)
     local originalUnderscore=_G._
     T.Runtime:SetMode("manual")
@@ -1638,7 +1638,7 @@ test("hotkey_bootstrap_login_world_and_update_binding_reapply_saved_key",functio
     -- Simulate ADDON_LOADED before the binding subsystem accepts the command.
     local setter=SetOverrideBinding; SetOverrideBinding=function() return false end
     load("Core/Bootstrap.lua"); local ef=allFrames.TEF_EventFrame
-    ef.scripts.OnEvent(ef,"ADDON_LOADED","TACTIC-ECHO-FOREVER")
+    ef.scripts.OnEvent(ef,"ADDON_LOADED","Tactic Echo Forever")
     eq(T.engine.db.dispatch.hotkey,"F8"); eq(T.Hotkeys.lastReason,"HOTKEY_APPLY_FAILED")
     assert(ef.events.PLAYER_LOGIN); SetOverrideBinding=setter
     ef.scripts.OnEvent(ef,"PLAYER_LOGIN"); eq(T.Hotkeys.lastReason,"HOTKEY_APPLIED"); eq(f.overrides.F8,"TEF_TOGGLE_DISPATCH")
@@ -1713,7 +1713,7 @@ test("cycle_reset_respects_auto_standby_and_stop_mode",function()
 end)
 test("bootstrap_loop_events_only_reset_matching_mode_and_not_revive",function()
     local f=hotkeyFixture(); TEF_DB=T.engine.db; load("Core/Bootstrap.lua")
-    local ef=allFrames.TEF_EventFrame; ef.scripts.OnEvent(ef,"ADDON_LOADED","TACTIC-ECHO-FOREVER")
+    local ef=allFrames.TEF_EventFrame; ef.scripts.OnEvent(ef,"ADDON_LOADED","Tactic Echo Forever")
     local e=T.engine
     for _,mode in ipairs({"normal","target","combat","none"}) do
         T.Runtime:Stop(); e:SetLoopMode(mode); e.index=2; e.stepCasts=1
@@ -1789,4 +1789,4 @@ test("hud_no_settings_button_or_root_backdrop_right_click_still_opens",function(
 end)
 realprint("TEF simulated tests: " .. count .. " passed\n")
 
-assert(loadfile(root .. "/tests/apl.lua"))("TACTIC-ECHO-FOREVER",T,{runtimeFixture=runtimeFixture,deliveryFixture=deliveryFixture,receipt=receipt})
+assert(loadfile(root .. "/tests/apl.lua"))("Tactic Echo Forever",T,{runtimeFixture=runtimeFixture,deliveryFixture=deliveryFixture,receipt=receipt})

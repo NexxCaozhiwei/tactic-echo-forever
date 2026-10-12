@@ -5,10 +5,10 @@ import zipfile
 
 FORBIDDEN = {".git", "build", "dist", "release", "logs", "__pycache__", ".pytest_cache", "WTF", "SavedVariables"}
 def verify_repository(root):
-    addon = root / "TACTIC-ECHO-FOREVER"
+    addon = root / "Tactic Echo Forever"
     version = (root / "VERSION").read_text().strip()
     assert (addon / "VERSION").read_text().strip() == version
-    toc = (addon / "TACTIC-ECHO-FOREVER.toc").read_text(encoding="utf-8")
+    toc = (addon / "Tactic Echo Forever.toc").read_text(encoding="utf-8")
     assert "## Version: " + version in toc and "## SavedVariables: TEF_DB" in toc
     assert 'local VERSION = "' + version + '"' in (addon / "Core/Bootstrap.lua").read_text(encoding="utf-8")
     assert 'TEF.Version = "' + version + '"' in (addon / "Config.lua").read_text(encoding="utf-8")
@@ -38,7 +38,7 @@ def verify_archive(path, expected_root, release=False):
             assert not (set(p.parts) & FORBIDDEN), name
             assert p.suffix not in {".pyc", ".log", ".jsonl", ".zip"}, name
             assert p.suffix != ".exe" or release, name
-        assert expected_root + "/TACTIC-ECHO-FOREVER/TACTIC-ECHO-FOREVER.toc" in names
+        assert expected_root + "/Tactic Echo Forever/Tactic Echo Forever.toc" in names
         assert not any("/addon/!TacticEcho/" in name for name in names)
     print("TEF standalone archive contract passed.")
 

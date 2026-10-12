@@ -289,13 +289,13 @@ if (-not $SkipTests) {
     Write-Host "Running baseline contract and test suites..."
     & $PythonExe scripts\verify-baseline-contract.py --repo-root $RepoRoot
     if ($LASTEXITCODE -ne 0) { throw "baseline contract failed with exit code $LASTEXITCODE" }
-    & $PythonExe TACTIC-ECHO-FOREVER/tests/run.py
+    & $PythonExe "Tactic Echo Forever/tests/run.py"
     if ($LASTEXITCODE -ne 0) { throw "TEF Lua tests failed" }
     & $PythonExe -m pytest -q tek/tests tests
     if ($LASTEXITCODE -ne 0) { throw "pytest failed with exit code $LASTEXITCODE" }
     & $PythonExe -m unittest discover -s tek/tests -v
     if ($LASTEXITCODE -ne 0) { throw "tek/tests failed with exit code $LASTEXITCODE" }
-    & $PythonExe -m unittest discover -s TACTIC-ECHO-FOREVER/tests -v
+    & $PythonExe -m unittest discover -s "Tactic Echo Forever/tests" -v
     if ($LASTEXITCODE -ne 0) { throw "tests failed with exit code $LASTEXITCODE" }
     & $PythonExe -m compileall -q tek/src tek/app tek/runtime
     if ($LASTEXITCODE -ne 0) { throw "compileall failed with exit code $LASTEXITCODE" }
@@ -303,7 +303,7 @@ if (-not $SkipTests) {
     $luaCompiler = Get-Command texluac -ErrorAction SilentlyContinue
     if (-not $luaCompiler) { $luaCompiler = Get-Command luac -ErrorAction SilentlyContinue }
     if ($luaCompiler) {
-        Get-ChildItem -Path (Join-Path $RepoRoot "TACTIC-ECHO-FOREVER") -Recurse -Filter *.lua | ForEach-Object {
+        Get-ChildItem -Path (Join-Path $RepoRoot "Tactic Echo Forever") -Recurse -Filter *.lua | ForEach-Object {
             & $luaCompiler.Source -p $_.FullName
             if ($LASTEXITCODE -ne 0) { throw "Lua syntax check failed: $($_.FullName)" }
         }

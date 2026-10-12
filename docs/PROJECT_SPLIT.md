@@ -57,3 +57,10 @@ not launched, to preserve the active host and existing user state).
 No .git object alternates; TEK source files are distinct physical copies.
 
 Final classification correction: color/gamma tests are shared local codec fixtures, not TEF-only. Retail retains all seven cases under a neutral filename. Original shared-structure audit and the final classification are preserved in the external backup.
+
+## Independent GitHub repository — 2026-10-12
+
+TEF origin: https://github.com/NexxCaozhiwei/tactic-echo-forever (private).
+The current Forever source is published on its own main branch.
+The source remote remains provenance only with its push URL disabled.
+Default pushes use origin; the original TE repository is not an upload target.

@@ -7,7 +7,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-TEF = ROOT / 'TACTIC-ECHO-FOREVER'
+TEF = ROOT / 'Tactic Echo Forever'
 
 def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest().upper()
@@ -39,7 +39,7 @@ def main():
     prefix = f'TEF-{version}/'
     with zipfile.ZipFile(bundle, 'w', zipfile.ZIP_DEFLATED) as z:
         for relative in delivery.RUNTIME:
-            z.write(TEF / relative, prefix + 'TACTIC-ECHO-FOREVER/' + relative)
+            z.write(TEF / relative, prefix + 'Tactic Echo Forever/' + relative)
         z.write(args.tek_exe, prefix + 'TEK-TEF.exe')
         z.writestr(prefix + 'TEK-build-manifest.json', json.dumps(exe_manifest, ensure_ascii=False, indent=2) + '\n')
         z.write(ROOT / 'README.md', prefix + 'README.md')
@@ -50,15 +50,15 @@ def main():
         assert {n.split('/')[0] for n in z.namelist()} == {prefix.rstrip('/')}
         assert z.read(prefix + 'TEK-TEF.exe') == args.tek_exe.read_bytes()
         for relative in delivery.RUNTIME:
-            assert z.read(prefix + 'TACTIC-ECHO-FOREVER/' + relative) == (TEF / relative).read_bytes()
+            assert z.read(prefix + 'Tactic Echo Forever/' + relative) == (TEF / relative).read_bytes()
         assert not any('/WTF/' in n or '/SavedVariables/' in n or '/logs/' in n or n.endswith('settings.json') for n in z.namelist())
     source = args.output / f'TEF-{version}-source.zip'
     subprocess.run(['git', 'archive', '--format=zip', '--prefix=' + f'TEF-{version}-source/', '--output=' + str(source.resolve()), commit], cwd=ROOT, check=True)
     subprocess.run(['python', 'scripts/verify-baseline-contract.py', '--archive', str(source.resolve()), '--expect-root', f'TEF-{version}-source'], cwd=ROOT, check=True)
-    addon = ROOT / 'dist/tef' / f'TACTIC-ECHO-FOREVER-{version}.zip'
+    addon = ROOT / 'dist/tef' / f'Tactic Echo Forever-{version}.zip'
     assert addon.is_file()
     with zipfile.ZipFile(addon) as z:
-        assert {n.split('/')[0] for n in z.namelist()} == {'TACTIC-ECHO-FOREVER'}
+        assert {n.split('/')[0] for n in z.namelist()} == {'Tactic Echo Forever'}
         forbidden = {'build', 'dist', 'release', '__pycache__', 'logs', 'WTF', 'SavedVariables'}
         assert not any(set(Path(n).parts) & forbidden or n.endswith(('.exe', '.log', '.jsonl', '.pyc')) for n in z.namelist())
     files = [addon, bundle, source]

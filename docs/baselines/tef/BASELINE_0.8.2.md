@@ -4,4 +4,4 @@
 
 TEAP v3和TEK Windows门禁不变，不改TE/TEK/WTF、不增加宏/APL/输入通道。版本同步VERSION/Config/TOC/Bootstrap/CHANGELOG，旧基线保留。141项Lua5.1、6 decoder/dry-run、3精确编码、1预算、2手动恢复互操作，仓库pytest789/skip7/subtests17、TEK234/AddOn244/mock2，baseline/compileall/Lua语法通过。安装20文件SHA256核对，16加载入口、Interface16001、单层ZIP，旧TEF完整备份。
 
-本轮读取0.8.0/S46与后续0.8.1/S47：后者已有移动恢复与旧失败隔离部分记录，仍不是0.8.2实机证据。原逻辑学习与差异见TACTIC-ECHO-FOREVER/docs/TE_DISPATCH_PARITY_0.8.2.md，短测见PRODUCTION_0.8.2.md。
+本轮读取0.8.0/S46与后续0.8.1/S47：后者已有移动恢复与旧失败隔离部分记录，仍不是0.8.2实机证据。原逻辑学习与差异见Tactic Echo Forever/docs/TE_DISPATCH_PARITY_0.8.2.md，短测见PRODUCTION_0.8.2.md。

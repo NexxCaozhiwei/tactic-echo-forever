@@ -15,4 +15,4 @@
 *.zip binary
 
 # Keep the five immutable user APL references byte-for-byte across checkouts.
-TACTIC-ECHO-FOREVER/docs/references/wotlk/* -text
+"Tactic Echo Forever/docs/references/wotlk/*" -text

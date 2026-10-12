@@ -1,5 +1,5 @@
 ## Interface: 16001
-## Title: TACTIC-ECHO-FOREVER
+## Title: Tactic Echo Forever
 ## Notes: TEF 固定序列与经典法师职业APL v0
 ## Author: TEF
 ## Version: 1.0.1

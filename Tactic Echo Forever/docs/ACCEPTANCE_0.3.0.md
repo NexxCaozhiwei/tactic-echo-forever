@@ -7,8 +7,8 @@
 5. 在项目根目录用PowerShell7分别执行下列命令；TEK现有桌面UI无单次预算，**本轮不要用无限预算UI代替验收脚本**。先验证配置可运行；命令不跳过前台/Hook/手动让权门禁。
 
 ```text
-python TACTIC-ECHO-FOREVER/scripts/tek_acceptance.py --trace dist/tef/tek-dry-run.jsonl
-python TACTIC-ECHO-FOREVER/scripts/tek_acceptance.py --send-input --confirm I_UNDERSTAND_TEK_SENDS_KEYS --trace dist/tef/tek-input-one.jsonl
+python Tactic Echo Forever/scripts/tek_acceptance.py --trace dist/tef/tek-dry-run.jsonl
+python Tactic Echo Forever/scripts/tek_acceptance.py --send-input --confirm I_UNDERSTAND_TEK_SENDS_KEYS --trace dist/tef/tek-input-one.jsonl
 ```
 
 真实验收进程启动时保持TEF暂停，使TEK先读到暂停帧；切回WoW前台，主动开始后 `/tef tektest`。每个真实进程最多成功发送一次；每测下一步需停止旧进程并重启预算1。TEF请求会持续提供新鲜帧直到撤回，无法核验外部预算，使用其它无预算运行器不能保证单次按键。未出现对应游戏事件时请求不会自行计时成功，执行 `/tef tekstop` 后检查trace，不自动重试。

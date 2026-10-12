@@ -12,7 +12,7 @@
 在项目根目录PowerShell7执行（脚本路径未改变）：
 
 ```powershell
-pwsh.exe -NoLogo -NoProfile -Command 'Set-Location G:\CODES\tactic-echo; python TACTIC-ECHO-FOREVER/scripts/tek_acceptance.py --trace dist/tef/tek-dry-run.jsonl'
+pwsh.exe -NoLogo -NoProfile -Command 'Set-Location G:\CODES\tactic-echo; python Tactic Echo Forever/scripts/tek_acceptance.py --trace dist/tef/tek-dry-run.jsonl'
 ```
 
 应立即出现 `TEF acceptance: DRY RUN` 和等待说明。脚本复用TEK客户端范围定位器，未切回WoW或协议条暂未出现时继续等待并输出门禁原因，不因首次未定位退出。若报导入/依赖错误，保留终端文字。保持进程运行，切回WoW前台，先选目标并确认精确116绑定。协议条若不可见，执行 `/tef protocol`显示。
@@ -24,7 +24,7 @@ pwsh.exe -NoLogo -NoProfile -Command 'Set-Location G:\CODES\tactic-echo; python 
 先游戏 `/tef tekoff`、`/tef pause`，回终端实际同时按Ctrl与C停止dry-run；**不要输入字符串 `Ctrl+C`**。真实验收命令：
 
 ```powershell
-pwsh.exe -NoLogo -NoProfile -Command 'Set-Location G:\CODES\tactic-echo; python TACTIC-ECHO-FOREVER/scripts/tek_acceptance.py --send-input --confirm I_UNDERSTAND_TEK_SENDS_KEYS --trace dist/tef/tek-input-one.jsonl'
+pwsh.exe -NoLogo -NoProfile -Command 'Set-Location G:\CODES\tactic-echo; python Tactic Echo Forever/scripts/tek_acceptance.py --send-input --confirm I_UNDERSTAND_TEK_SENDS_KEYS --trace dist/tef/tek-input-one.jsonl'
 ```
 
 启动时TEF保持暂停供TEK观察，切回游戏后先目标不变、设置关闭，`/tef start`、`/tef tekon`、`/tef tektest`。松开键盘等待门禁；每个进程最多一次成功发送并退出。输入成功与游戏116成功1→2要分别核对。无释放不要人工补放116，执行 `/tef tekoff`撤回并检查trace。不用无限预算桌面模式替代脚本。

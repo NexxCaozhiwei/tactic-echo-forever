@@ -6,4 +6,4 @@
 
 166项Lua5.1模拟，TOC17入口/XML、6 TEK decoder/dry-run、3编码/1预算/2手动恢复通过。pytest789通过/7跳过/17subtests，TEK234/AddOn244/mock2，baseline/compileall/71Lua语法通过。21安装文件逐个SHA256核对，旧TEF完整备份，单层完整源码包。实际客户端Wow.exe为1.60.1.70338，Interface16001。TEAP v3及TEK门禁保持，不改TE/TEK/WTF。
 
-S49只证明0.8.2的116→205→205成功，不代表本版实机。详见TACTIC-ECHO-FOREVER/docs/SEQUENCE_EDITOR_0.9.0.md与PRODUCTION_0.9.0.md。
+S49只证明0.8.2的116→205→205成功，不代表本版实机。详见Tactic Echo Forever/docs/SEQUENCE_EDITOR_0.9.0.md与PRODUCTION_0.9.0.md。

@@ -9,9 +9,9 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = (ROOT / "VERSION").read_text().strip()
-TARGET = Path(r"E:\World of Warcraft\_cn_beta_\Interface\AddOns\TACTIC-ECHO-FOREVER")
+TARGET = Path(r"E:\World of Warcraft\_cn_beta_\Interface\AddOns\Tactic Echo Forever")
 LOAD = ["Config.lua", "Safety.lua", "APL/Packs/Mage/Abilities.lua", "APL/Packs/Mage/Talents.lua", "APL/TalentState.lua", "APL/Registry.lua", "APL/PublicConditions.lua", "APL/Custom.lua", "APL/RankResolver.lua", "APL/Packs/Mage/BuildSelector.lua", "APL/State.lua", "APL/Conditions.lua", "APL/Trace.lua", "APL/Packs/Mage/Mage60.lua", "APL/Packs/Mage/Rules.lua", "APL/Engine.lua", "Sequence.lua", "HudStyles.lua", "Profiles.lua", "Recommendation.lua", "Research.lua", "UI.lua", "UIComponents.lua", "SequenceEditor.lua", "CustomAPLEditor.lua", "HUD.lua", "Dispatch.lua", "Presentation.lua", "Transport.lua", "Runtime.lua", "Hotkeys.lua", "Core/Bootstrap.lua"]
-RUNTIME = ["TACTIC-ECHO-FOREVER.toc", "VERSION", "Bindings.xml"] + LOAD + ["README.md", "CHANGELOG.md"]
+RUNTIME = ["Tactic Echo Forever.toc", "VERSION", "Bindings.xml"] + LOAD + ["README.md", "CHANGELOG.md"]
 
 
 def digest(path):
@@ -20,8 +20,8 @@ def digest(path):
 
 def archive_name(source):
     if source.is_relative_to(ROOT):
-        return "TACTIC-ECHO-FOREVER/" + source.relative_to(ROOT).as_posix()
-    return "TACTIC-ECHO-FOREVER/docs/baselines/" + source.name
+        return "Tactic Echo Forever/" + source.relative_to(ROOT).as_posix()
+    return "Tactic Echo Forever/docs/baselines/" + source.name
 
 
 def main():
@@ -74,20 +74,20 @@ def main():
                      list((ROOT / "docs").rglob("*.md")) + list((ROOT / "docs/references/wotlk").glob("*.json")) +
                      [ROOT / "tests/run.lua", ROOT / "tests/run.py", ROOT / "tests/apl.lua", ROOT / "tests/foundation.lua", ROOT / "tests/custom_apl.lua", ROOT / "tests/public_conditions.lua", ROOT / "tests/test_acceptance_harness.py", ROOT / "scripts/deliver.py", ROOT / "scripts/import_apl_catalog.py", ROOT / "scripts/import_wotlk_apl.py", ROOT / "scripts/tek_acceptance.py"])
     sources += sorted((ROOT.parent / "docs/baselines/tef").glob("BASELINE_*.md"))
-    archive = out / f"TACTIC-ECHO-FOREVER-{VERSION}.zip"
+    archive = out / f"Tactic Echo Forever-{VERSION}.zip"
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
         for source in sources:
             z.write(source, archive_name(source))
     with zipfile.ZipFile(archive) as z:
-        assert {p.split("/")[0] for p in z.namelist()} == {"TACTIC-ECHO-FOREVER"}
-        assert "TACTIC-ECHO-FOREVER/TACTIC-ECHO-FOREVER.toc" in z.namelist()
+        assert {p.split("/")[0] for p in z.namelist()} == {"Tactic Echo Forever"}
+        assert "Tactic Echo Forever/Tactic Echo Forever.toc" in z.namelist()
         for source in sources:
             name = archive_name(source)
             assert hashlib.sha256(z.read(name)).hexdigest().upper() == digest(source)
     receipt["archive"] = {"path": str(archive), "sha256": digest(archive), "files": len(sources)}
     if args.deploy:
         # Exact absolute TEF path only. No MIR, deletion, or access to WTF.
-        assert TARGET.resolve().name == "TACTIC-ECHO-FOREVER"
+        assert TARGET.resolve().name == "Tactic Echo Forever"
         assert TARGET.resolve().parent == Path(r"E:\World of Warcraft\_cn_beta_\Interface\AddOns").resolve()
         if TARGET.exists():
             backup = out / ("backup-TEF-" + stamp)
@@ -102,7 +102,7 @@ def main():
             original, installed = digest(source), digest(destination)
             assert original == installed, relative
             receipt["files"].append({"path": relative, "source_sha256": original, "installed_sha256": installed})
-        toc = (TARGET / "TACTIC-ECHO-FOREVER.toc").read_text(encoding="utf-8")
+        toc = (TARGET / "Tactic Echo Forever.toc").read_text(encoding="utf-8")
         entries = [line.strip() for line in toc.splitlines() if line.strip() and not line.startswith("#")]
         assert entries == LOAD
         assert f"## Version: {VERSION}" in toc and "## Interface: 16001" in toc

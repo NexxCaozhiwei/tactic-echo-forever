@@ -18,7 +18,7 @@ def test_standalone_structure_and_savedvariables():
     assert not (ROOT / "addon/!TacticEcho").exists()
     assert not (ROOT / "scripts/package-tek-release.ps1").exists()
     assert not (ROOT / ".gitmodules").exists()
-    toc = (ROOT / "TACTIC-ECHO-FOREVER/TACTIC-ECHO-FOREVER.toc").read_text(encoding="utf-8")
+    toc = (ROOT / "Tactic Echo Forever/Tactic Echo Forever.toc").read_text(encoding="utf-8")
     assert "## SavedVariables: TEF_DB" in toc
     assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "1.0.1"
     assert PROJECT_ID == "TEF" and "TEF" in APP_TITLE
@@ -57,7 +57,7 @@ def test_relocated_copy_runs_without_original_or_sibling_checkout():
     with tempfile.TemporaryDirectory() as temporary:
         standalone = Path(temporary) / "independent"
         standalone.mkdir()
-        for name in ["TACTIC-ECHO-FOREVER", "tek", "examples", "docs", "scripts"]:
+        for name in ["Tactic Echo Forever", "tek", "examples", "docs", "scripts"]:
             shutil.copytree(ROOT / name, standalone / name,
                             ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         for name in ["VERSION", "README.md", "AGENTS.md", "CHANGELOG.md"]:
@@ -66,7 +66,7 @@ def test_relocated_copy_runs_without_original_or_sibling_checkout():
         env.pop("PYTHONPATH", None)
         for command in [
             [sys.executable, "scripts/verify-baseline-contract.py", "--repo-root", "."],
-            [sys.executable, "TACTIC-ECHO-FOREVER/tests/run.py"],
+            [sys.executable, "Tactic Echo Forever/tests/run.py"],
         ]:
             completed = subprocess.run(command, cwd=standalone, env=env,
                                        capture_output=True, text=True)

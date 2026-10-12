@@ -125,7 +125,7 @@ end
 SLASH_TEF1="/tef"
 SLASH_TEFUI1="/tefui"
 SlashCmdList.TEFUI=function() if engine then TEF.UI:OpenSettings() end end
-BINDING_HEADER_TEF="TACTIC-ECHO-FOREVER"
+BINDING_HEADER_TEF="Tactic Echo Forever"
 BINDING_HEADER_TEF_LEGACY="TEF · 旧版兼容（迁移用途）"
 BINDING_HEADER_TEF_TEST="TEF · 开发/测试工具"
 BINDING_NAME_TEF_TOGGLE_PRACTICE="旧练习键：兼容统一派发启停"

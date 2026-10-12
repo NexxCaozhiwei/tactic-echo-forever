@@ -6,4 +6,4 @@ Runtime意图唯一，临时设置/目标/焦点/UNKNOWN阻断保留意图。读
 
 版本同步VERSION、Config、TOC、Bootstrap、CHANGELOG。新增UIComponents加载在UI后HUD前，安装20文件，游戏不依赖Python。完整源码ZIP仅一层TACTIC-ECHO-FOREVER目录，无日志/数据库/EXE/缓存。本轮未部署、未提交推送，保留原工作区改动。
 
-验证：Lua5.1 124项，TEK互操作dry-run6、精确编码3、模拟预算1；pytest789/跳过7/subtests17，TEK unittest234、AddOn244、验收mock2；baseline、compileall、全部Lua语法、diff检查通过。新增行为未实机验证；0.7.0/S39仅为历史证据。操作SOP见TACTIC-ECHO-FOREVER/docs/PRODUCTION_0.8.0.md。
+验证：Lua5.1 124项，TEK互操作dry-run6、精确编码3、模拟预算1；pytest789/跳过7/subtests17，TEK unittest234、AddOn244、验收mock2；baseline、compileall、全部Lua语法、diff检查通过。新增行为未实机验证；0.7.0/S39仅为历史证据。操作SOP见Tactic Echo Forever/docs/PRODUCTION_0.8.0.md。
