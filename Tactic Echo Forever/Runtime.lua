@@ -3,14 +3,20 @@ local S,C=TEF.Safety,{intent=false,state="paused",requestSerial=0,cycle=0}
 TEF.Runtime=C
 local modes={auto=true,manual=true,stop=true}
 local names={paused="暂停",standby="待命",running="运行",blocked="阻断",completed="完成",error="异常"}
+function C:PlayIntentSound(enabled)
+    local file=enabled and "te-armed-123.wav" or "te-paused-321.wav"
+    S.Call("PlaySoundFile","Interface\\AddOns\\Tactic Echo Forever\\Media\\" .. file,"SFX")
+end
 function C.Clean(raw)
     local mode=S.Field(raw,"mode","string")
     local key=S.Field(raw,"hotkey","string")
+    local lead=S.Field(raw,"castQueueLead","number")
     return {mode=modes[mode] and mode or "auto",autoStart=S.Field(raw,"autoStart","boolean")~=false,
         permission=S.Field(raw,"permission","boolean")~=false,signal=S.Field(raw,"signal","boolean")~=false,
         hotkey=key and #key<=40 and key:match("^[A-Z0-9%-=]+$") and key or "",
         hotkeyOverride=S.Field(raw,"hotkeyOverride","boolean")==true,
-        castQueue=S.Field(raw,"castQueue","boolean")==true}
+        castQueue=S.Field(raw,"castQueue","boolean")==true,
+        castQueueLead=lead and math.max(0,math.min(.5,lead)) or .2}
 end
 function C:SetLoopMode(mode)
     if mode~="none" and mode~="normal" and mode~="target" and mode~="combat" then return false end
@@ -67,7 +73,9 @@ function C:Invalidated(e)
     end
 end
 function C:Stop(reason,state)
+    local wasEnabled=self.intent
     self.intent=false
+    if wasEnabled then self:PlayIntentSound(false) end
     if not self:EngineCall("Pause") then return end
     TEF.Dispatch:StopContinuous(reason or "RUNTIME_MANUAL_PAUSE")
     TEF.Dispatch:Cancel(reason or "RUNTIME_MANUAL_PAUSE")
@@ -98,7 +106,9 @@ function C:SetIntent(enabled,reason)
         if not TEF.Transport:SetEnabled(true) then self:Fault("RUNTIME_SIGNAL_FAILED"); return false end
     end
     self:Changed("standby",reason or "RUNTIME_ENABLED")
-    self:Reconcile(); return self.intent
+    self:Reconcile()
+    if self.intent then self:PlayIntentSound(true) end
+    return self.intent
 end
 function C:ToggleIntent(reason) return self:SetIntent(not self.intent,reason) end
 function C:Start(reset)
@@ -113,6 +123,13 @@ end
 function C:SetCastQueue(value)
     self:Stop("CAST_QUEUE_SETTING_CHANGED")
     self.e.db.dispatch.castQueue=value==true
+    return true
+end
+function C:SetCastQueueLead(value)
+    local lead=S.Public(value,"number")
+    if not lead or lead<0 or lead>.5 then return false end
+    self:Stop("CAST_QUEUE_SETTING_CHANGED")
+    self.e.db.dispatch.castQueueLead=lead
     return true
 end
 function C:SetMode(mode)

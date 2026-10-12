@@ -24,7 +24,7 @@
   Automatic standby previews are read-only and dispatch requires public combat.
   Auto-start creates new intent only; manual stop must not resurrect in combat.
 - Opt-in fixed-sequence ordinary cast-tail queue may offer one next attempt within
-  public min(0.20s, client SpellQueueWindow), retaining both exact receipt identities.
+  public min(configured 0–0.50s, client SpellQueueWindow), retaining both exact receipt identities.
   No APL/channel/Shoot look-ahead, no speculative success, no GCD query.
 - Setting/target/focus/cast/UNKNOWN temporary blocking preserves intent and zeroes
   tokens; lifecycle edits/reset/world/fatal fault clear intent. HUD hide is visual.

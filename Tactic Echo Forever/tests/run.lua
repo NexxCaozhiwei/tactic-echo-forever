@@ -422,7 +422,7 @@ local function object(name)
             elseif method=="SetBackdropBorderColor" then self.backdropBorderColor={...}
             elseif method=="GetChecked" then return self.checked
             elseif method=="GetPoint" then return "CENTER",UIParent,"CENTER",12,34 end
-            if method=="SetVertexColor" or method=="SetColorTexture" then self.color={...}
+            if method=="SetVertexColor" or method=="SetColorTexture" or method=="SetBackdropBorderColor" then self.color={...}
             elseif method=="Show" then self.shown=true
             elseif method=="Hide" then self.shown=false
             elseif method=="StartMoving" then self.moves=(rawget(self,"moves") or 0)+1 end

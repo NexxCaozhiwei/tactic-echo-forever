@@ -25,6 +25,9 @@ function Engine:Log(kind, reason, spellID, current, nextStep, event)
         scene = self.scene, version=TEF.Version,
         event = observed[event] and event or nil }
     self.lastReason = reason
+    if TEF.Dispatch and TEF.Dispatch.TraceQueue and self==TEF.engine then
+        TEF.Dispatch:TraceQueue(reason,event,spellID)
+    end
 end
 
 local function configuration(config)
@@ -102,6 +105,23 @@ function Engine.New(config, db)
     end
     local evicted = S.Public(db.evicted, "number")
     if evicted and evicted >= 0 and evicted % 1 == 0 then clean.evicted = evicted end
+    clean.queueDiagnostics={}; clean.queueEvicted=0
+    local history=S.Field(db,"queueDiagnostics","table")
+    local count=history and #history or 0
+    for i=math.max(1,count-511),count do
+        local raw=S.Field(history,i,"table")
+        local row={}
+        for _,key in ipairs({"reason","event","guid","originGUID","queuedGUID","currentGUID","loopMode","version","source","windowReason"}) do
+            local value=S.Field(raw,key,"string")
+            if value and #value<=128 then row[key]=value end
+        end
+        for _,key in ipairs({"session","generation","cycle","request","time","spellID","index","count","receiptSerial","queueRequest","queueIndex","nextIndex","queueSpellID","queueSerial","lead","clientWindow","remaining","effectiveLead"}) do
+            row[key]=S.Field(raw,key,"number")
+        end
+        if row.reason and row.session then clean.queueDiagnostics[#clean.queueDiagnostics+1]=row end
+    end
+    local queueEvicted=S.Field(db,"queueEvicted","number")
+    if queueEvicted and queueEvicted>=0 then clean.queueEvicted=queueEvicted end
     local self = setmetatable({db=clean,session=clean.session,generation=1,index=1,stepCasts=0,
         running=false,completed=false,seen={},seenCount=0,associations={},associationCount=0,
         steps=configuration(config)}, Engine)

@@ -201,7 +201,7 @@ function UI:CreateSettings()
             local scroll=self:Frame("ScrollFrame",panel,"UIPanelScrollFrameTemplate")
             self:Paint(scroll,"SetSize",580,455); self:Paint(scroll,"SetPoint","TOPLEFT",panel,"TOPLEFT",0,0)
             local content=self:Frame("Frame",scroll)
-            self:Paint(content,"SetSize",580,key=="hud" and 900 or 790)
+            self:Paint(content,"SetSize",580,key=="hud" and 1230 or 790)
             self:Paint(scroll,"SetScrollChild",content)
             self:Paint(content,"SetPoint","TOPLEFT",scroll,"TOPLEFT",0,0)
             self:Paint(content,"Show"); self:Paint(scroll,"Show")
@@ -291,15 +291,26 @@ function UI:CreateSettings()
         self:Paint(TEF.HUD.frame,"ClearAllPoints"); self:Paint(TEF.HUD.frame,"SetPoint","CENTER",UIParent,"CENTER",0,-155)
     end)
     self:CreateHintText(self.pages.hud,"左键主卡切换派发意图，右键打开设置。\n空白区域可拖动；战斗中布局变更延后。",12,-346,550)
-    self:Paint(self:Text(self.pages.hud,12,-392,550,"GameFontNormalLarge"),"SetText","标签样式")
+    self:CreateSectionCard(self.pages.hud,"技能图标与间距",0,-400,580,280)
+    local geometryRows={{"mainSize","当前技能大小",32,112},{"preview1Size","后续技能 1 大小",24,96},
+        {"preview2Size","后续技能 2 大小",24,96},{"gap1","当前与后续 1 间距",2,40},{"gap2","后续 1 与 2 间距",2,40}}
+    for i,row in ipairs(geometryRows) do
+        local field=row[1]
+        self:CreateSliderRow(self.pages.hud,row[2],14,-435-(i-1)*44,550,row[3],row[4],1,
+            function() return e.db.hud.geometry[field] end,
+            function(value) e.db.hud.geometry[field]=value; TEF.HUD:Layout() end)
+    end
+    self:Paint(self:Text(self.pages.hud,12,-702,550,"GameFontNormalLarge"),"SetText","标签样式")
     local labelPanel=self:Frame("Frame",self.pages.hud)
-    self:Paint(labelPanel,"SetSize",580,450); self:Paint(labelPanel,"SetPoint","TOPLEFT",self.pages.hud,"TOPLEFT",0,-430)
+    self:Paint(labelPanel,"SetSize",580,450); self:Paint(labelPanel,"SetPoint","TOPLEFT",self.pages.hud,"TOPLEFT",0,-740)
     TEF.HudStyles:BuildUI(self,labelPanel)
-    self:CreateSectionCard(self.pages.tek,"高级能力门禁",0,-138,580,176)
+    self:CreateSectionCard(self.pages.tek,"高级能力门禁",0,-138,580,238)
     self.signalToggle=self:CreateToggleRow(self.pages.tek,"TEAP输出",12,-176,556,function() return e.db.dispatch.signal end,function(v) TEF.Runtime:SetSignal(v) end)
     self.permissionToggle=self:CreateToggleRow(self.pages.tek,"TEK请求许可",12,-220,556,function() return e.db.dispatch.permission end,function(v) TEF.Runtime:SetPermission(v) end)
-    self.castQueueToggle=self:CreateToggleRow(self.pages.tek,"读条末尾提前0.2秒排队（实验）",12,-264,556,function() return e.db.dispatch.castQueue end,function(v) TEF.Runtime:SetCastQueue(v) end)
-    self:CreateHintText(self.pages.tek,"正常使用只需主卡或派发启停。以上是高级门禁。\n设置期间零Token，关闭后按模式恢复新请求。\n固定练习不保证ready。只保留一个信号源。\n排队仅固定序列普通读条，不含APL或引导。\nTEK等待事件时可能重复输入；插件不证明已连接。",12,-344,550)
+    self.castQueueToggle=self:CreateToggleRow(self.pages.tek,"读条末尾提前排队（实验）",12,-264,556,function() return e.db.dispatch.castQueue end,function(v) TEF.Runtime:SetCastQueue(v) end)
+    self.castQueueLeadSlider=self:CreateSliderRow(self.pages.tek,"提前时间（秒，0关闭提前）",14,-306,550,0,.5,.05,
+        function() return e.db.dispatch.castQueueLead end,function(v) TEF.Runtime:SetCastQueueLead(v) end)
+    self:CreateHintText(self.pages.tek,"正常使用只需主卡或派发启停。以上是高级门禁。\n设置期间零Token，关闭后按模式恢复新请求。\n固定练习不保证ready。只保留一个信号源。\n提前时间0–0.5秒，0不提前；实际受客户端排队窗口上限约束。\n排队仅固定序列普通读条，不含APL或引导。\nTEK等待事件时可能重复输入；插件不证明已连接。",12,-400,550)
     self:CreateDivider(self.pages.diagnostics,4,-277,560)
     self.testSingle=button("diagnostics","单步派发测试",165,-299,150,function() TEF_RequestCurrent() end)
     -- Settings always block input. Keep this developer action visibly disabled.

@@ -85,6 +85,47 @@ test("skip_charge_available_not_recharge_and_depleted_skips",function()
     C_Spell.GetSpellCharges=function() return {currentCharges=F.secret,maxCharges=2} end
     eq(T.Dispatch:Unavailable(116),nil)
 end)
+test("skip_public_inactive_with_secret_times_dispatches_remaining_repeats",function()
+    fixture()
+    C_Spell.GetSpellCooldown=function()
+        return {startTime=F.secret,duration=F.secret,isEnabled=true,isActive=false}
+    end
+    T.Runtime:Start(false); eq(T.Runtime.state,"running")
+    T.Dispatch:TickContinuous(); assert(T.Dispatch.pending)
+    F.receipt("UNIT_SPELLCAST_SENT",116,"inactive-A")
+    F.receipt("UNIT_SPELLCAST_SUCCEEDED",116,"inactive-A")
+    eq(T.engine.index,1); eq(T.engine.stepCasts,1)
+    T.Runtime:Reconcile(); eq(T.Runtime.state,"running")
+    T.Dispatch:TickContinuous(); assert(T.Dispatch.pending)
+    eq(T.engine.index,1); eq(T.engine.stepCasts,1)
+end)
+test("skip_inactive_does_not_override_unknown_enabled_or_usability",function()
+    fixture()
+    C_Spell.GetSpellCooldown=function()
+        return {startTime=F.secret,duration=F.secret,isEnabled=F.secret,isActive=false}
+    end
+    eq(T.Dispatch:Unavailable(116),nil)
+    T.Runtime:Start(false); eq(T.Runtime.reason,"SKIP_AVAILABILITY_UNKNOWN")
+    eq(T.Dispatch.pending,nil); eq(T.engine.index,1)
+    fixture()
+    C_Spell.IsSpellUsable=function() return F.secret,false end
+    C_Spell.GetSpellCooldown=function()
+        return {startTime=F.secret,duration=F.secret,isEnabled=true,isActive=false}
+    end
+    eq(T.Dispatch:Unavailable(116),nil)
+    T.Runtime:Start(false); eq(T.Dispatch.pending,nil); eq(T.engine.index,1)
+end)
+test("skip_active_or_unknown_without_GCD_evidence_remains_unknown",function()
+    for _,active in ipairs({true,F.secret}) do
+        fixture()
+        C_Spell.GetSpellCooldown=function()
+            return {startTime=F.secret,duration=F.secret,isEnabled=true,isActive=active}
+        end
+        eq(T.Dispatch:Unavailable(116),nil)
+        T.Runtime:Start(false); eq(T.Runtime.reason,"SKIP_AVAILABILITY_UNKNOWN")
+        eq(T.Dispatch.pending,nil); eq(T.engine.index,1)
+    end
+end)
 test("skip_default_off_code_and_Shoot_remain_attempts",function()
     fixture(); T.engine.steps[1].skipUnavailable=false
     C_Spell.IsSpellUsable=function() return false,false end

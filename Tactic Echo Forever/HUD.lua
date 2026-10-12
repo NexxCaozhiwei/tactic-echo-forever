@@ -47,21 +47,13 @@ function H:Card(x,size,primary)
     local f=U:Frame(primary and "Button" or "Frame",self.frame,nil)
     U:Paint(f,"SetSize",size,size); U:Paint(f,"SetPoint","TOPLEFT",self.frame,"TOPLEFT",x,-8)
     local bg=texture(f,"BACKGROUND"); U:Paint(bg,"SetAllPoints",f)
-    if not atlas(bg,"UI-HUD-ActionBar-IconFrame-Background") then U:Paint(bg,"SetColorTexture",0.08,0.10,0.15,1) end
+    U:Paint(bg,"SetColorTexture",0.035,0.045,0.065,.96)
     local icon=texture(f); U:Paint(icon,"SetPoint","TOPLEFT",f,"TOPLEFT",3,-3)
     U:Paint(icon,"SetPoint","BOTTOMRIGHT",f,"BOTTOMRIGHT",-3,3); U:Paint(icon,"SetTexCoord",.08,.92,.08,.92)
-    local borderFrame=U:Frame("Frame",f); U:Call(borderFrame,"SetAllPoints",f)
-    local border=texture(borderFrame,"OVERLAY"); U:Paint(border,"SetPoint","TOPLEFT",f,"TOPLEFT",0,0)
-    U:Paint(border,"SetSize",size+1,size)
-    if not atlas(border,"UI-HUD-ActionBar-IconFrame") then
-        U:Paint(border,"SetTexture","Interface\\Buttons\\UI-ActionButton-Border")
-        U:Paint(border,"SetVertexColor",.96,.78,.18,1)
-    end
-    local ok,mask=U:Invoke(f,"CreateMaskTexture",nil,"ARTWORK")
-    if ok and atlas(mask,"UI-HUD-ActionBar-IconFrame-Mask") then
-        U:Call(mask,"SetPoint","CENTER",f,"CENTER",0,0); U:Call(mask,"SetSize",size*1.5,size*1.5)
-        U:Call(icon,"AddMaskTexture",mask); U:Call(bg,"AddMaskTexture",mask)
-    end
+    local borderFrame=U:Frame("Frame",f,"BackdropTemplate"); U:Call(borderFrame,"SetAllPoints",f)
+    U:Paint(borderFrame,"SetBackdrop",{edgeFile="Interface\\Buttons\\WHITE8X8",edgeSize=1})
+    U:Paint(borderFrame,"SetBackdropBorderColor",.25,.32,.42,.9)
+    local border=borderFrame
     local clipped=U:Frame("Frame",f); U:Call(clipped,"SetAllPoints",f); U:Call(clipped,"SetClipsChildren",true)
     local cooldown=U:Frame("Cooldown",clipped,"CooldownFrameTemplate")
     U:Call(cooldown,"SetAllPoints",icon); U:Call(cooldown,"SetHideCountdownNumbers",true)
@@ -113,6 +105,18 @@ function H:Layout()
     if not self.frame then return end
     if U:Combat()~=false then self.pending=true; return end
     self.pending=false; U:Paint(self.frame,"SetScale",self.engine.db.hud.scale)
+    local g=self.engine.db.hud.geometry
+    local sizes={g.mainSize,g.preview1Size,g.preview2Size}
+    local x,maxSize=8,math.max(unpack(sizes))
+    for i,card in ipairs(self.cards or {}) do
+        card.size=sizes[i]
+        U:Paint(card.frame,"SetSize",card.size,card.size)
+        U:Paint(card.frame,"ClearAllPoints")
+        U:Paint(card.frame,"SetPoint","TOPLEFT",self.frame,"TOPLEFT",x,-8)
+        x=x+card.size+(i==1 and g.gap1 or i==2 and g.gap2 or 0)
+    end
+    self.layoutWidth=math.max(244,x+8); self.textShift=maxSize-64
+    U:Paint(self.frame,"SetSize",self.layoutWidth,maxSize+57)
     TEF.HudStyles:Apply(self)
 end
 function H:Create(e)
@@ -161,7 +165,7 @@ function H:Refresh(cooldownEvent)
         local view=key and self.metadata[key]
         if step and not view then view=S.Spell(step.spellID,step.name); self.metadata[key]=view end
         if not U:Paint(card.icon,"SetTexture",view and view.icon or TEF.Placeholder) then U:Call(card.icon,"SetTexture",TEF.Placeholder) end
-        U:Paint(card.label,"SetText",step and (i==1 and "主键" or "练习") or "")
+        U:Paint(card.label,"SetText",step and (i==1 and "主键" or "") or "")
         card.displayStep=step
         if TEF.Presentation then TEF.Presentation:Paint(card,step,cooldownEvent) end
     end
@@ -181,7 +185,7 @@ function H:RefreshState()
     if v.state=="blocked" then displayLabel=v.label .. "·" .. self:BlockCategory(v.reason) end
     local c=self.colors[v.state] or self.colors.paused
     local primary=self.cards[1]
-    U:Paint(primary.border,"SetVertexColor",c[1],c[2],c[3],1)
+    U:Paint(primary.border,"SetBackdropBorderColor",c[1],c[2],c[3],.95)
     U:Paint(primary.overlay,"SetColorTexture",c[1],c[2],c[3],primary.pressed and .22 or primary.hover and .12 or .025)
     local castLabel
     for _,entry in ipairs({{"UnitCastingInfo","施法"},{"UnitChannelInfo","引导"}}) do

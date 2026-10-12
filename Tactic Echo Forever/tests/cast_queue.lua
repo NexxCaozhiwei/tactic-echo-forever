@@ -24,6 +24,60 @@ local function fixture(repeats)
     now=12.29
 end
 local function tick() T.Runtime:Reconcile(); T.Dispatch:TickContinuous() end
+test("queued_late_start_extra_same_spell_failure_preserves_real_success",function()
+    fixture(); now=12.31; tick()
+    receipt("UNIT_SPELLCAST_SUCCEEDED",116,"queue-A")
+    receipt("UNIT_SPELLCAST_SENT",205,"late-real-B")
+    receipt("UNIT_SPELLCAST_START",205,"late-real-B")
+    local generation=T.engine.generation
+    receipt("UNIT_SPELLCAST_SENT",205,"extra-B")
+    receipt("UNIT_SPELLCAST_FAILED_QUIET",205,"extra-B")
+    eq(T.Dispatch.initiation.guid,"late-real-B")
+    eq(T.engine.generation,generation); eq(T.Runtime.intent,true)
+    eq(T.engine.seen["extra-B"],"retired")
+    receipt("UNIT_SPELLCAST_SUCCEEDED",205,"late-real-B")
+    eq(T.engine.completed,true); eq(T.engine.receiptSerial,2)
+    receipt("UNIT_SPELLCAST_SUCCEEDED",205,"extra-B")
+    eq(T.engine.receiptSerial,2)
+end)
+test("cast_queue_evidence_has_exact_event_identity_and_bounded_reload_history",function()
+    fixture(); now=12.31; tick()
+    assert(T.Dispatch:Packet())
+    receipt("UNIT_SPELLCAST_SENT",205,"diagnostic-B")
+    receipt("UNIT_SPELLCAST_FAILED",205,"diagnostic-B")
+    local failure,published
+    for _,row in ipairs(T.engine.db.queueDiagnostics) do
+        if row.reason=="QUEUE_FAILURE_EVENT" then failure=row end
+        if row.reason=="TOKEN_PUBLISHED" and row.source=="queue" then published=row end
+    end
+    assert(failure); eq(failure.event,"UNIT_SPELLCAST_FAILED")
+    eq(failure.guid,"diagnostic-B"); eq(failure.originGUID,"queue-A")
+    eq(failure.queueSpellID,205); assert(failure.queueRequest)
+    assert(published); eq(published.clientWindow,.4); eq(published.effectiveLead,.2)
+    T.Dispatch:TraceQueue("SECRET_GUID",nil,205,F.secret)
+    eq(T.engine.db.queueDiagnostics[#T.engine.db.queueDiagnostics].guid,nil)
+    for i=1,520 do T.Dispatch:TraceQueue("BOUNDED_RECORD") end
+    eq(#T.engine.db.queueDiagnostics,512); assert(T.engine.db.queueEvicted>0)
+    local reload=T.Engine.New(T.Config,T.engine.db)
+    eq(#reload.db.queueDiagnostics,512)
+    eq(reload.db.queueDiagnostics[512].reason,"BOUNDED_RECORD")
+end)
+test("cast_queue_adjustable_lead_zero_half_second_and_client_cap",function()
+    fixture(); T.engine.db.dispatch.castQueueLead=0; now=12.49
+    eq(T.Dispatch:CastQueueWindow(),nil)
+    fixture(); T.engine.db.dispatch.castQueueLead=.5; GetCVar=function() return "500" end
+    now=12.01; eq(T.Dispatch:CastQueueWindow(),2)
+    GetCVar=function() return "200" end
+    eq(T.Dispatch:CastQueueWindow(),nil)
+    now=12.31; eq(T.Dispatch:CastQueueWindow(),2)
+    eq(T.Runtime.Clean({}).castQueueLead,.2)
+    eq(T.Runtime.Clean({castQueueLead=F.secret}).castQueueLead,.2)
+    eq(T.Runtime.Clean({castQueueLead=9}).castQueueLead,.5)
+    eq(T.Runtime.Clean({castQueueLead=-1}).castQueueLead,0)
+    assert(T.Runtime:SetCastQueueLead(.35)); eq(T.Runtime.intent,false)
+    eq(T.engine.db.dispatch.castQueueLead,.35)
+    eq(T.Runtime:SetCastQueueLead(F.secret),false)
+end)
 test("cast_queue_public_tail_next_identity_promotes_only_after_success",function()
     fixture(); tick(); eq(T.Dispatch.pending,nil); eq(T.engine.index,1)
     now=12.31; tick(); assert(T.Dispatch.pending, "queue="..tostring(T.Dispatch:CastQueueWindow()).." state="..tostring(T.Runtime.state).." reason="..tostring(T.engine.lastReason).." initiation="..tostring(T.Dispatch:HasCurrentInitiation()))

@@ -2,7 +2,7 @@
 ## Title: Tactic Echo Forever
 ## Notes: TEF 固定序列与经典法师职业APL v0
 ## Author: TEF
-## Version: 1.0.6
+## Version: 1.0.13
 ## SavedVariables: TEF_DB
 
 Config.lua

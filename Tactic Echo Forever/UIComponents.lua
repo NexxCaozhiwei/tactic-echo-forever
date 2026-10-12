@@ -103,7 +103,7 @@ function U:CreateSliderRow(parent,label,x,y,width,min,max,step,getter,setter)
         self:Guard(setter,math.floor(v/step+.5)*step); self:Refresh()
     end)
     self.controls[#self.controls+1]=function()
-        local value=getter(); self:Paint(text,"SetText",label .. "  " .. string.format("%.1f",value))
+        local value=getter(); self:Paint(text,"SetText",label .. "  " .. string.format(step<.1 and "%.2f" or "%.1f",value))
         syncing=true; self:Paint(slider,"SetValue",value); syncing=false
     end
     return slider

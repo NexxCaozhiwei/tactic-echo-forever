@@ -155,6 +155,7 @@ function P:Initialize(e, old)
     local preview = hud and S.Field(hud,"preview","boolean")
     e.db.hud = {scale=scale and scale>=0.6 and scale<=1.8 and scale or 1,
         locked=locked==true, preview=preview~=false}
+    e.db.hud.geometry=TEF.HudStyles.CleanGeometry(hud and S.Field(hud,"geometry","table"))
     e.db.hud.styles=TEF.HudStyles.Clean(hud and S.Field(hud,"styles","table"))
     local x=hud and S.Field(hud,"x","number"); local y=hud and S.Field(hud,"y","number")
     if x and y and math.abs(x)<=10000 and math.abs(y)<=10000 then e.db.hud.x=x; e.db.hud.y=y end

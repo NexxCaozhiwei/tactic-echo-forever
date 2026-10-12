@@ -1,0 +1,3 @@
+# TEF 1.0.12
+
+Queue evidence only: independent 512-row queueDiagnostics and queueEvicted, retained via scalar whitelist across reload. Public event GUID/current/origin/next identities, request serial, receipt serial, session, generation, index/count, clock, configured/client/effective lead and request-time remaining cast duration. Window failure classification and current success without next identity are explicit. QUEUE_FAILURE_EVENT and QUEUE_SUCCESS_BEFORE_CURRENT_SUCCESS disambiguate legacy REJECTED. TOKEN_PUBLISHED is addon output only, not proof of TEK input. No change to dispatch/receipt eligibility. Regression verifies event correlation, Secret omission, bounding and reload preservation.

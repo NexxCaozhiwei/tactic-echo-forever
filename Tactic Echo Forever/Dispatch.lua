@@ -4,6 +4,29 @@ TEF.Dispatch=D
 D.enabled=false
 -- Runtime-only opt-in; no timer estimates, persisted arm state or second transport.
 D.continuous=false
+-- Independent bounded evidence only; never read by queue/dispatch admission.
+function D:TraceQueue(reason,event,id,guid,queue)
+    local e=TEF.engine
+    if not e or not e.db.dispatch or not e.db.dispatch.castQueue then return end
+    local q=queue or self.castQueue or (self.pending and self.pending.castQueue)
+    local ok,clock=S.Call("GetTime")
+    local row={reason=S.Public(reason,"string"),event=S.Public(event,"string"),spellID=S.ID(id),guid=S.Identity(guid),
+        session=e.session,generation=e.generation,version=TEF.Version,index=e.index,count=e.stepCasts or 0,
+        receiptSerial=e.receiptSerial or 0,cycle=TEF.Runtime.cycle,request=TEF.Runtime.requestSerial,
+        time=ok and S.Public(clock,"number"),lead=S.Field(e.db.dispatch,"castQueueLead","number"),
+        source=q and "queue" or "ordinary",windowReason=self.queueWindowReason,
+        currentGUID=self.initiation and S.Identity(self.initiation.guid),loopMode=e.db.loopMode}
+    if q then
+        row.originGUID=S.Identity(q.originGUID); row.queuedGUID=S.Identity(q.guid)
+        row.queueRequest=q.request; row.queueIndex=q.index; row.nextIndex=q.nextIndex
+        row.queueSpellID=q.spellID; row.queueSerial=q.receiptSerial
+        row.clientWindow=q.clientWindow; row.remaining=q.remaining; row.effectiveLead=q.effectiveLead
+    end
+    local rows=e.db.queueDiagnostics
+    if not rows then rows={}; e.db.queueDiagnostics=rows end
+    if #rows>=512 then table.remove(rows,1); e.db.queueEvicted=(e.db.queueEvicted or 0)+1 end
+    rows[#rows+1]=row
+end
 function D:StopContinuous(reason)
     self:DropCastQueue(); self.castQueueAttempt=nil
     local active=self.continuous
@@ -106,14 +129,19 @@ function D:Unavailable(id)
     local start,duration=S.Field(info,"startTime","number"),S.Field(info,"duration","number")
     local enabled=S.Field(info,"isEnabled","boolean")
     if enabled~=true then return nil end
+    -- Public inactive cooldown establishes only that this omission check has
+    -- no cooldown reason to skip. Ordinary target/range/usability/cast gates
+    -- still authorize the attempt; restricted timing is never called ready.
+    -- Read this before timing/GCD: inactive spells may expose Secret times
+    -- and no isOnGCD on the Forever client.
+    local active=S.Field(info,"isActive","boolean")
+    if active==false then return false end
     if start==0 and duration==0 then return false end
     -- Never skip because the spell reports only the global cooldown.
     local gcd=S.Field(info,"isOnGCD","boolean")
     if gcd==true then return false end
     if gcd~=false then return nil end
-    local active=S.Field(info,"isActive","boolean")
     if active==true then return true end
-    if active==false then return nil end
     if start and duration and start>0 and duration>0 then return true end
     return nil
 end
@@ -141,6 +169,7 @@ function D:DropCastQueue()
     end
 end
 function D:CastQueueWindow()
+    self.queueWindowReason="LIFECYCLE_OR_CURRENT_INITIATION"
     local e=TEF.engine
     if not e or not e.db.dispatch.castQueue or not self.continuous or not self:HasCurrentInitiation()
         or TEF.APL:IsActive(e) or not e.running or e.completed or TEF.UI.settingsOpen
@@ -154,19 +183,26 @@ function D:CastQueueWindow()
     local ok,name,_,__,startRaw,endRaw,___,____,_____,idRaw=pcall(cast,"player")
     local nameValue=S.Public(name,"string"); local startMS=S.Public(startRaw,"number")
     local endMS=S.Public(endRaw,"number"); local id=S.ID(idRaw)
+    self.queueWindowReason="CAST_FIELDS_OR_IDENTITY"
     if not ok or not nameValue or not startMS or not endMS or id~=initiation.spellID
         or startMS<0 or endMS<=startMS then return nil end
     local channelOK,channelRaw=pcall(channel,"player")
     local _,channelReason=S.Public(channelRaw,"string")
+    self.queueWindowReason="CHANNEL_PRESENT_OR_UNKNOWN"
     if not channelOK or channelReason~="NO_DATA" then return nil end
     local timeOK,timeRaw=S.Call("GetTime"); local now=timeOK and S.Public(timeRaw,"number")
     local path=S.Resolve("C_CVar.GetCVar") and "C_CVar.GetCVar" or "GetCVar"
     local queueOK,queueRaw=S.Call(path,"SpellQueueWindow")
     local queueText=queueOK and S.Public(queueRaw,"string")
     local queueMS=queueText and S.Public(tonumber(queueText),"number")
+    self.queueWindowReason="CLOCK_OR_CLIENT_WINDOW_UNKNOWN"
     if not now or not queueMS or queueMS<=0 or queueMS>1000 then return nil end
     local remaining=endMS/1000-now
-    if now<startMS/1000 or remaining<=0 or remaining>math.min(0.20,queueMS/1000) then return nil end
+    local lead=S.Field(e.db.dispatch,"castQueueLead","number")
+    self.queueWindowReason="LEAD_DISABLED_OR_INVALID"
+    if not lead or lead<=0 or lead>.5 then return nil end
+    self.queueWindowReason=remaining<=0 and "CAST_ENDED" or "OUTSIDE_TAIL"
+    if now<startMS/1000 or remaining<=0 or remaining>math.min(lead,queueMS/1000) then return nil end
     local nextIndex=index
     if (e.stepCasts or 0)+1>=step.repeatCount then nextIndex=index+1 end
     -- Do not speculate across loop/completion, channel or Shoot boundaries.
@@ -175,6 +211,8 @@ function D:CastQueueWindow()
     if generation~=e.generation or index~=e.index or serial~=(e.receiptSerial or 0)
         or self.initiation~=initiation or not self.continuous or not self.enabled
         or TEF.UI.settingsOpen or not self:HasCurrentInitiation() then return nil end
+    self.queueWindowReason="WINDOW_OPEN"
+    self.queueWindowSnapshot={remaining=remaining,clientWindow=queueMS/1000,effectiveLead=math.min(lead,queueMS/1000)}
     return nextIndex,nextStep
 end
 function D:TryCastQueue()
@@ -190,10 +228,14 @@ function D:TryCastQueue()
         or self.initiation~=initiation or not self.continuous then return false end
     local q={generation=generation,index=index,receiptSerial=serial,
         nextIndex=nextIndex,spellID=step.spellID,originGUID=initiation.guid}
+    local snapshot=self.queueWindowSnapshot
+    q.remaining=snapshot and snapshot.remaining; q.clientWindow=snapshot and snapshot.clientWindow
+    q.effectiveLead=snapshot and snapshot.effectiveLead
     self.castQueue=q
     local requested=self:Request(true,q)
     if not requested then self:DropCastQueue(); return false end
     q.binding=self.pending.binding; self.castQueueAttempt=q.originGUID
+    q.request=TEF.Runtime.requestSerial
     e:Log("transport","CAST_QUEUE_REQUEST",q.spellID)
     return true
 end
@@ -205,6 +247,7 @@ function D:SequenceSucceeded(guid)
         or (e.receiptSerial or 0)~=q.receiptSerial+1 or e.completed then
         self:DropCastQueue(); self:Cancel("CAST_QUEUE_INVALIDATED"); return
     end
+    self:TraceQueue(q.guid and "QUEUE_CURRENT_SUCCESS_WITH_IDENTITY" or "QUEUE_CURRENT_SUCCESS_NO_NEXT_IDENTITY",nil,q.spellID,guid,q)
     self.castQueue=nil
     self:Cancel("CAST_QUEUE_CURRENT_SUCCESS")
     local a=q.guid and e.associations[q.guid]
@@ -391,6 +434,8 @@ function D:Request(fromContinuous,queue)
     end
     self.pending={generation=e.generation,index=e.index,binding=binding,receiptSerial=serial,castQueue=queue}
     if TEF.Runtime and TEF.Runtime.e==e then TEF.Runtime.requestSerial=TEF.Runtime.requestSerial+1 end
+    self.pending.request=TEF.Runtime.requestSerial
+    if queue then queue.request=self.pending.request end
     e:Log("transport",fromContinuous==true and "TEK_CONTINUOUS_REQUEST" or "TEK_MANUAL_REQUEST",step.spellID)
     return true,"TEK_MANUAL_REQUEST"
 end
@@ -454,6 +499,10 @@ function D:Packet()
     if TEF.APL and TEF.APL:IsActive(e) and combat~=true then self:Cancel("APL_DISPATCH_COMBAT_REQUIRED"); return nil end
     if self.pending~=p or not self.enabled or not e.running or e.completed
         or e.generation~=p.generation or e.index~=p.index or p.receiptSerial~=(e.receiptSerial or 0) or TEF.UI.settingsOpen then return nil end
+    if not p.diagnosticPublished then
+        p.diagnosticPublished=true
+        self:TraceQueue("TOKEN_PUBLISHED",nil,p.binding.spellID,nil,p.castQueue)
+    end
     return p.binding.token,combat
 end
 function D:Event(event,unit,id,guidRaw)
@@ -467,6 +516,7 @@ function D:Event(event,unit,id,guidRaw)
     local unitValue=S.Public(unit,"string")
     local spellValue=S.ID(id)
     local guid=S.Identity(guidRaw)
+    if unitValue=="player" then self:TraceQueue("GAME_EVENT",event,spellValue,guid) end
     if owned and (runtime.e~=e or TEF.engine~=e or e.generation~=eventGeneration or e.index~=eventIndex) then return true end
     if owned and unitValue=="player" and guid and e.seen[guid]=="retired" then
         e:Log("ignored","CONTINUOUS_FAILED_RECEIPT_IGNORED",spellValue,nil,nil,event)
@@ -488,10 +538,25 @@ function D:Event(event,unit,id,guidRaw)
         elseif failure or event=="UNIT_SPELLCAST_SUCCEEDED" then
             if not q.guid then q.guid=guid end
             if guid==q.guid then
+                self:TraceQueue(failure and "QUEUE_FAILURE_EVENT" or "QUEUE_SUCCESS_BEFORE_CURRENT_SUCCESS",event,spellValue,guid,q)
                 self:DropCastQueue(); self:Cancel("CAST_QUEUE_REJECTED"); e:Log("ignored","CAST_QUEUE_REJECTED",spellValue)
             end
             return true
         end
+    end
+    -- A current exact initiation owns its receipt. An extra same-spell
+    -- attempt cannot replace it or suspend it on failure. Explicit queue
+    -- identities were handled above and retain their separate reservation.
+    if owned and runtime.intent and self.continuous and unitValue=="player"
+        and guid and self:HasCurrentInitiation() and guid~=self.initiation.guid
+        and spellValue==self.initiation.spellID then
+        if not e.seen[guid] then
+            if e.seenCount>=4096 then runtime:Fault("CONTINUOUS_FAILED_IDENTITY_CAPACITY"); return true end
+            e.seen[guid]="retired"; e.seenCount=e.seenCount+1
+        end
+        self:TraceQueue("EXTRA_SAME_SPELL_ATTEMPT_RETIRED",event,spellValue,guid)
+        e:Log("ignored","CONTINUOUS_EXTRA_ATTEMPT_IGNORED",spellValue,nil,nil,event)
+        return true
     end
     if owned and runtime.intent and self.continuous and unitValue=="player" and spellValue then
         local step=e.steps[e.index]

@@ -16,6 +16,12 @@ local function number(raw,key,min,max,fallback)
     if not n then return fallback end
     return math.max(min,math.min(max,n))
 end
+function A.CleanGeometry(raw)
+    return {mainSize=number(raw,"mainSize",32,112,64),
+        preview1Size=number(raw,"preview1Size",24,96,44),
+        preview2Size=number(raw,"preview2Size",24,96,44),
+        gap1=number(raw,"gap1",2,40,12),gap2=number(raw,"gap2",2,40,12)}
+end
 function A.Clean(raw)
     local out={}
     for _,module in ipairs({"main","preview","global"}) do
@@ -43,7 +49,7 @@ function A:Apply(hud)
         U:Paint(text,"SetTextColor",v.color.r,v.color.g,v.color.b,v.color.a)
         U:Paint(text,"SetScale",v.scale); U:Paint(text,"ClearAllPoints")
         U:Paint(text,"SetWidth",width)
-        U:Paint(text,"SetPoint",v.point,parent,v.point,v.offsetX,v.offsetY)
+        U:Paint(text,"SetPoint",v.point,parent,v.point,v.offsetX,v.offsetY-(parent==hud.frame and (hud.textShift or 0) or 0))
         local align=v.point:find("RIGHT",1,true) and "RIGHT" or v.point:find("LEFT",1,true) and "LEFT" or "CENTER"
         U:Paint(text,"SetJustifyH",align); U:Paint(text,v.enabled and "Show" or "Hide")
     end
@@ -55,8 +61,8 @@ function A:Apply(hud)
             paint(card[key],card.textParent,group[key],key=="label" and 28 or card.size-6)
         end
     end
-    paint(hud.name,hud.frame,styles.global.name,230)
-    paint(hud.status,hud.frame,styles.global.status,230)
+    paint(hud.name,hud.frame,styles.global.name,(hud.layoutWidth or 244)-16)
+    paint(hud.status,hud.frame,styles.global.status,(hud.layoutWidth or 244)-16)
 end
 function A:BuildUI(U,parent)
     local module,key="main","key"

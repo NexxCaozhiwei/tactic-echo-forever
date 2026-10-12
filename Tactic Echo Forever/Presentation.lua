@@ -58,7 +58,7 @@ function P:Paint(card,step,cooldownEvent)
     U:Paint(card.key,"SetText",binding and binding.key or "未解析")
     local view=self:Read(step.spellID,cooldownEvent)
     U:Paint(card.meta,"SetText","")
-    U:Paint(card.cooldownText,"SetText",view.cd:match("^CD (%d+)s$") or (view.cd=="CD 未知" and "?" or ""))
+    U:Paint(card.cooldownText,"SetText",view.cd:match("^CD (%d+)s$") or "")
     U:Paint(card.chargeText,"SetText",view.charges:match("(%d+/%d+)") or "")
     -- A client duration object is passed directly to ONE renderer, never
     -- inspected, compared, persisted or used for input eligibility.
@@ -72,7 +72,7 @@ function P:Tick(card)
     local cached=card.visualID and self.cooldowns[card.visualID]
     if not cached then return end
     local ok,raw=S.Call("GetTime"); local now=ok and S.Public(raw,"number")
-    if not now then TEF.UI:Paint(card.cooldownText,"SetText","?"); return end
+    if not now then TEF.UI:Paint(card.cooldownText,"SetText",""); return end
     local remain=math.ceil(math.max(0,cached.start+cached.duration/cached.rate-now))
     TEF.UI:Paint(card.cooldownText,"SetText",remain>0 and tostring(remain) or "")
 end

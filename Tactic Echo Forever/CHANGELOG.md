@@ -1,3 +1,31 @@
+## 1.0.13 — 2026-10-12
+
+- Preserve an exact current initiation when an extra same-spell GUID arrives outside the explicit queue reservation. Retire the extra identity so its failure or late success cannot overwrite, suspend or count against the real cast. Explicit queued next identities retain their existing handling. Regression replays late queued start, extra SENT/FAILED_QUIET and original success.
+
+## 1.0.12 — 2026-10-12
+
+- Add independent bounded 512-row queueDiagnostics with eviction count and reload scalar whitelist. Record public time, exact cast identities, events, request/receipt/index correlation, configured/effective/client windows and original request remaining time. Distinguish failure events from early success classification; record first token publication and current-success identity availability. Existing queue behavior remains unchanged. Token publication does not prove desktop input.
+
+## 1.0.11 — 2026-10-12
+
+- Add original TE armed/paused WAV feedback, bundled independently under TEF Media and played on SFX when dispatch intent starts/stops. Temporary suspensions retain intent without repeated sounds; sound API failures do not affect dispatch.
+
+## 1.0.10 — 2026-10-12
+
+- Add a persisted 0–0.50 second cast-tail queue lead slider, step 0.05, default 0.20. Zero disables look-ahead. Effective lead is capped by the public client SpellQueueWindow; changing lead stops dispatch and retires pending requests. Existing queue receipt behavior is unchanged.
+
+## 1.0.9 — 2026-10-12
+
+- Hide the HUD cooldown question mark when numeric cooldown or clock data is unknown. Public countdowns and the client cooldown renderer remain; no dispatch gate or queue behavior changes.
+
+## 1.0.8 — 2026-10-12
+
+- Modernize HUD cards with dark surfaces and thin state-colored borders. Add independent current/preview icon sizes and two inter-card gaps in HUD appearance; persist bounded geometry, resize the HUD and shift global text below the cards. Remove the practice label from preview cards. Combat layout changes remain deferred; dispatch is unchanged.
+
+## 1.0.7 — 2026-10-12
+
+- Fix manual skip-unavailable stalls when cooldown is publicly enabled and inactive but timing is Secret and isOnGCD is absent. This is no cooldown reason to omit, not general readiness; ordinary dispatch gates remain. Unknown usability/enabled/active evidence stays blocked. Regression covers repeated dispatch and restricted fields.
+
 ## 1.0.6 — 2026-10-12
 
 - HUD displays the active block category on the primary card and status line. Hover details explain the category and show the original Runtime reason code. The categorization is visual only; dispatch gates and receipt handling are unchanged.
