@@ -46,6 +46,7 @@ class TEKStatusSnapshot:
     dispatch_failures: dict | None = None
     physical_input_diagnostics: dict | None = None
     schema_version: int = STATUS_SCHEMA_VERSION
+    project: str = "TEF"
 
     @classmethod
     def stopped(cls, *, log_dir: str | None = None) -> "TEKStatusSnapshot":

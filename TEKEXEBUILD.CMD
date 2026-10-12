@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
-title TEK.exe Build Launcher
+title TEK-TEF.exe Build Launcher
 
 set "ROOT=%~dp0"
 pushd "%ROOT%" >nul 2>&1
@@ -12,7 +12,7 @@ if errorlevel 1 (
 
 echo.
 echo ================================================================
-echo [TEK] TEK.exe Build Launcher
+echo [TEK] TEK-TEF.exe Build Launcher
 echo [TEK] Project root: %CD%
 echo ================================================================
 
@@ -32,7 +32,7 @@ if not defined PYTHON_EXE (
 
 "%PYTHON_EXE%" -c "import platform,sys; raise SystemExit(0 if sys.version_info >= (3,11) and platform.architecture()[0] == '64bit' else 1)" >nul 2>&1
 if errorlevel 1 (
-  echo [TEK] ERROR: TEK.exe requires 64-bit Python 3.11 or newer.
+  echo [TEK] ERROR: TEK-TEF.exe requires 64-bit Python 3.11 or newer.
   echo [TEK] Resolved Python: %PYTHON_EXE%
   popd
   pause
@@ -40,16 +40,16 @@ if errorlevel 1 (
 )
 
 echo [TEK] Python executable: %PYTHON_EXE%
-echo [TEK] Starting guarded TEK.exe build...
+echo [TEK] Starting guarded TEK-TEF.exe build...
 echo.
 
-pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%ROOT%scripts\build-tek-exe.ps1" -InstallDependencies -PythonExe "%PYTHON_EXE%"
+pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%ROOT%scripts\build-tek-exe.ps1" -OutputDirectory dist\standalone-build -SkipSmokeTest -InstallDependencies -PythonExe "%PYTHON_EXE%"
 set "BUILD_EXIT=%ERRORLEVEL%"
 
 if not "%BUILD_EXIT%"=="0" (
   echo.
   echo [TEK] BUILD FAILED. Exit code: %BUILD_EXIT%
-  echo [TEK] Review the error above. Existing dist\TEK.exe was preserved when replacement was unsafe.
+  echo [TEK] Review the error above. Existing dist\TEK-TEF.exe was preserved when replacement was unsafe.
   popd
   pause
   exit /b %BUILD_EXIT%
@@ -57,7 +57,7 @@ if not "%BUILD_EXIT%"=="0" (
 
 echo.
 echo [TEK] BUILD SUCCEEDED.
-echo [TEK] Output: %ROOT%dist\TEK.exe
+echo [TEK] Output: %ROOT%dist\standalone-build\TEK-TEF.exe
 popd
 pause
 exit /b 0

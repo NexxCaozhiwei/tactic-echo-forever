@@ -118,9 +118,9 @@ end)
 test("standby_target_range_changes_update_and_clear_preview",function()
  local e=F.runtime(); C:Save(e,{row(143)},"single","MAGE"); e.db.dispatch.mode="auto"
  InCombatLockdown=function() return false end; T.Runtime:SetIntent(true); eq(e.aplCandidate.spellID,143)
- C_Spell.IsSpellInRange=function() return nil end; A:Invalidate(); T.Runtime:Reconcile(); eq(e.aplCandidate,nil)
+ C_Spell.IsSpellInRange=function() return nil end; local refreshedAt=GetTime()+.06; GetTime=function() return refreshedAt end; A:Invalidate(); T.Runtime:Reconcile(); eq(e.aplCandidate,nil)
  eq(A.Trace:Waiting(e),"APL待命：暂无满足条件的规则"); eq(T.Dispatch:Packet(),nil)
- C_Spell.IsSpellInRange=function() return true end; A:Invalidate(); T.Runtime:Reconcile(); eq(e.aplCandidate.spellID,143)
+ C_Spell.IsSpellInRange=function() return true end; local refreshedAt=GetTime()+.06; GetTime=function() return refreshedAt end; A:Invalidate(); T.Runtime:Reconcile(); eq(e.aplCandidate.spellID,143)
  eq(T.Runtime.state,"standby"); eq(T.Dispatch.pending,nil)
 end)
 test("standby_self_conditions_preview_without_target",function()
@@ -138,13 +138,13 @@ test("standby_moving_priority_changes_and_combat_revalidates",function()
  local e=F.runtime(); local first=row(143); first.moving="no"; local second=row(205); second.moving="yes"
  C:Save(e,{first,second},"single","MAGE"); e.db.dispatch.mode="auto"; InCombatLockdown=function() return false end
  IsPlayerMoving=function() return false end; T.Runtime:SetIntent(true); eq(e.aplCandidate.spellID,143)
- IsPlayerMoving=function() return true end; A:Invalidate(); T.Runtime:Reconcile(); eq(e.aplCandidate.spellID,205); eq(T.Dispatch.pending,nil)
+ IsPlayerMoving=function() return true end; local refreshedAt=GetTime()+.06; GetTime=function() return refreshedAt end; A:Invalidate(); T.Runtime:Reconcile(); eq(e.aplCandidate.spellID,205); eq(T.Dispatch.pending,nil)
  -- Enter combat after a preview dependency changes: the old visible action
  -- cannot create a request before the shared snapshot is freshly evaluated.
  InCombatLockdown=function() return true end; C_Spell.IsSpellUsable=function() return false,true end
- A:Invalidate(); T.Runtime:Reconcile(); T.Dispatch:TickContinuous(); eq(e.aplCandidate,nil); eq(T.Dispatch.pending,nil)
+ local refreshedAt=GetTime()+.06; GetTime=function() return refreshedAt end; A:Invalidate(); T.Runtime:Reconcile(); T.Dispatch:TickContinuous(); eq(e.aplCandidate,nil); eq(T.Dispatch.pending,nil)
  C_Spell.IsSpellUsable=function() return true,false end; IsPlayerMoving=function() return false end
- A:Invalidate(); T.Runtime:Reconcile(); T.Dispatch:TickContinuous(); eq(e.aplCandidate.spellID,143); assert(T.Dispatch:Packet())
+ local refreshedAt=GetTime()+.06; GetTime=function() return refreshedAt end; A:Invalidate(); T.Runtime:Reconcile(); T.Dispatch:TickContinuous(); eq(e.aplCandidate.spellID,143); assert(T.Dispatch:Packet())
  local calls=0; InCombatLockdown=function() calls=calls+1; return calls==1 end
  eq(A:Allowed(e,143),false); eq(T.Dispatch:Packet(),nil)
 end)
@@ -160,8 +160,8 @@ test("standby_resource_threshold_updates_readonly_priority",function()
  UnitPower=function() return 10 end; UnitPowerMax=function() return 100 end
  C:Save(e,{low,high},"single","MAGE"); e.db.dispatch.mode="auto"; InCombatLockdown=function() return false end
  T.Runtime:SetIntent(true); eq(e.aplCandidate.spellID,143); eq(T.Dispatch:Packet(),nil)
- UnitPower=function() return 50 end; A:Invalidate(); T.Runtime:Reconcile(); eq(e.aplCandidate.spellID,205)
- UnitPower=function() return F.secret end; A:Invalidate(); T.Runtime:Reconcile(); eq(e.aplCandidate,nil)
+ UnitPower=function() return 50 end; local refreshedAt=GetTime()+.06; GetTime=function() return refreshedAt end; A:Invalidate(); T.Runtime:Reconcile(); eq(e.aplCandidate.spellID,205)
+ UnitPower=function() return F.secret end; local refreshedAt=GetTime()+.06; GetTime=function() return refreshedAt end; A:Invalidate(); T.Runtime:Reconcile(); eq(e.aplCandidate,nil)
  eq(T.Runtime.state,"standby"); eq(T.Dispatch.pending,nil); eq(A.Trace:Waiting(e),"APL待命：暂无满足条件的规则")
  UnitPower,UnitPowerMax=power,max
 end)

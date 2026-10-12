@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-APP_DIR_NAME = "TacticEcho"
+from tek.project_identity import APP_DIR_NAME
 
 
 @dataclass(frozen=True)
@@ -50,7 +50,37 @@ class AppPaths:
     def ensure(self) -> None:
         for path in (self.root, self.logs, self.profiles, self.config, self.crash, self.diagnostics):
             path.mkdir(parents=True, exist_ok=True)
+        self.migrate_legacy_settings()
         self.ensure_default_profile()
+
+    def migrate_legacy_settings(self) -> None:
+        # Read-only migration from the pre-split host. Never overwrite a TEF
+        # configuration, and never remove or modify the legacy project data.
+        if self.root.name != APP_DIR_NAME or self.settings_json.exists():
+            return
+        legacy = self.root.parent / "TacticEcho"
+        settings = legacy / "config" / "settings.json"
+        if not settings.is_file():
+            return
+        try:
+            data = json.loads(settings.read_text(encoding="utf-8-sig"))
+            if not isinstance(data, dict):
+                return
+            shutil.copy2(settings, self.config / "legacy-settings-before-split.json")
+            data.update(auto_start_ui_linked=False, show_window_on_boot=True,
+                        signal_layout_cache=None, wow_savedvariables_path="")
+            self.settings_json.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            for source in (legacy / "profiles").glob("*.json"):
+                destination = self.profiles / source.name
+                if not destination.exists():
+                    shutil.copy2(source, destination)
+            (self.config / "split-migration.json").write_text(json.dumps({
+                "project": "TEF", "source": str(legacy), "legacy_untouched": True,
+                "activation_requires_confirmation": True,
+                "original_settings": "legacy-settings-before-split.json"}, indent=2), encoding="utf-8")
+        except (OSError, ValueError):
+            # Preserve original data; startup can use defaults on migration error.
+            return
 
     def trace_path_for_today(self) -> Path:
         from datetime import datetime

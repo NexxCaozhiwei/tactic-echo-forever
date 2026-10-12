@@ -1,0 +1,5 @@
+"""Local TEF TEK identity; never changes the TEAP wire format."""
+PROJECT_ID = "TEF"
+APP_DIR_NAME = "TacticEchoForever"
+APP_TITLE = "Tactic Echo Forever — TEF TEK"
+COMPONENT = "TEF-TEK"

@@ -140,7 +140,8 @@ function UI:RefreshPage()
     elseif self.page=="profiles" then
         if self.loadedProfile~=e.profileKey then self:ShowPage("profiles"); return end
         self:Paint(self.readouts.profiles,"SetText",(e.profileKey or "职业未解析") .. " · 编辑：" .. (self.editScene=="multi" and "多目标" or "单体")
-            .. "\n每套最多16步，每步1–99次；保存后暂停并重置。")
+            .. "\n每套最多16步，每步1–99次；保存后暂停并重置。"
+            .. (e.db.profileMigrationConflicts[e.classToken] and "\n旧专精配置存在冲突：原配置保留，请明确编辑并保存职业配置。" or ""))
         self:RefreshSequenceEditor()
 
     elseif self.page=="customapl" then
@@ -278,7 +279,7 @@ function UI:CreateSettings()
             local ok,reason=TEF.Recommendation:SetSource(e,value,self.editScene)
             self:SequenceMessage(ok and "来源已切换并停止；关闭设置后主动开启。" or ("来源未切换：" .. reason))
         end)
-    self:CreateSelectRow(self.pages.apl,"手选构筑模板（不是现代专精；不猜天赋流派）",{{"arcane","奥术"},{"fire","火焰"},{"frost","冰霜"},{"custom","自定义"}},0,-6,580,
+    self:CreateSelectRow(self.pages.apl,"APL策略模板（自动需公开关键天赋；可手选覆盖）",{{"auto","自动"},{"arcane","奥术"},{"fire","火焰"},{"frost","冰霜"},{"custom","自定义"}},0,-6,580,
         function() return e.db.apl.template end,function(v) TEF.APL:Configure(e,"template",v) end)
     self:CreateSelectRow(self.pages.apl,"最终填充覆盖（依模板=保留源顺序）",{{"auto","依模板"},{"fireball","火球"},{"frostbolt","寒冰箭"},{"scorch","灼烧"},{"arcane_missiles","飞弹"},{"arcane_blast","奥冲"}},0,-70,580,
         function() return e.db.apl.filler end,function(v) TEF.APL:Configure(e,"filler",v) end)

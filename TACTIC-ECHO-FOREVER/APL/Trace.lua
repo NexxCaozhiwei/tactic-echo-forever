@@ -112,6 +112,7 @@ function T:View(e)
  return "法师 APL（" .. e.db.apl.template .. "） | " .. (t.rule or t.reason) .. "\n天赋：" .. (b.ARCANE or "?") .. "/" .. (b.FIRE or "?") .. "/" .. (b.FROST or "?") .. "（仅诊断）"
 end
 function T:Waiting(e)
+ if e.aplTrace and e.aplTrace.reason=="APL_TEMPLATE_UNRESOLVED" then return "APL策略未解析：请手选模板" end
  local runtime=TEF.Runtime
  if runtime and runtime.e==e and runtime.state=="standby" then return "APL待命：暂无满足条件的规则" end
  local t=e.aplTrace

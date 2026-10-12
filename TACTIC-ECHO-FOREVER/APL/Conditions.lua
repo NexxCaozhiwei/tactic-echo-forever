@@ -1,5 +1,9 @@
 local _,TEF=...
 local C={}; TEF.APL.Conditions=C
+C.Capabilities={moving="PUBLIC_BOOLEAN",enemy_count="VISIBLE_EXPERIMENTAL",known="PUBLIC_EXACT_LEARNED",
+ usable="PUBLIC_BOOLEAN",power_ok="PUBLIC_BOOLEAN",range="PUBLIC_BOOLEAN",ready="EXPLICIT_PUBLIC_ZERO",
+ talent="PUBLIC_RANK",aura="BLOCKED",stack="BLOCKED",mana_pct="BUILTIN_BLOCKED",
+ target_health="BLOCKED",ttd="BLOCKED",in_flight="BLOCKED",prev_gcd="BLOCKED",glyph="BLOCKED",pet="BLOCKED"}
 -- nil is UNKNOWN. Conditions consume only provider-normalized Lua values.
 function C:One(state,term,config)
  local op=term.op; local value
@@ -14,13 +18,19 @@ function C:One(state,term,config)
   return t.rank>=term.min
  elseif op=="enemy_count" then
   if state.enemy_count==nil then return nil end
-  return state.enemy_count>=(term.min or config.aoeThreshold)
+  return state.enemy_count>=(term.min or config.aoeThreshold) and (not term.max or state.enemy_count<=term.max)
  elseif op=="config" then value=config[term.key]
  elseif op=="filler" then return config.filler==term.key
  else return nil end
  if value==nil then return nil end
  if term.equals~=nil then return value==term.equals end
  return value==true
+end
+function C:ActionTerms(key,requireReady)
+ local terms={}
+ for _,field in ipairs({"known","usable","power_ok","in_range"}) do terms[#terms+1]={op="action",key=key,field=field} end
+ if requireReady then terms[#terms+1]={op="action",key=key,field="ready"} end
+ return terms
 end
 function C:All(state,terms,config)
  local unknown

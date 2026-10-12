@@ -51,7 +51,7 @@ class CLITests(unittest.TestCase):
             self.assertEqual(len(lines), 1)
             trace = json.loads(lines[0])
             self.assertEqual(trace["schemaVersion"], 1)
-            self.assertEqual(trace["component"], "TEK")
+            self.assertEqual(trace["component"], "TEF-TEK")
             self.assertEqual(trace["eventType"], "input_dispatch")
             self.assertEqual(trace["dispatcher_backend"], "dry_run")
             self.assertEqual(trace["protocol_version"], 3)

@@ -45,7 +45,8 @@ def trace_to_dict(record: TraceRecord, *, include_diagnostics: bool = True) -> d
         else:
             data["diagnostics"] = diagnostics
     data["schemaVersion"] = 1
-    data["component"] = "TEK"
+    data["component"] = "TEF-TEK"
+    data["project"] = "TEF"
     if record.inputSent:
         data["eventType"] = "input_sent"
     elif record.dispatchAttempted:

@@ -31,24 +31,24 @@ def main():
     import importlib.util
     spec = importlib.util.spec_from_file_location('tef_delivery', TEF / 'scripts/deliver.py')
     delivery = importlib.util.module_from_spec(spec); spec.loader.exec_module(delivery)
-    exe_manifest = {'component': 'TEK', 'release': 'tef-v' + version, 'source_commit': commit,
+    exe_manifest = {'component': 'TEF-TEK', 'project': 'TEF', 'release': 'tef-v' + version, 'source_commit': commit,
                     'built_at': manifest['builtAt'], 'sha256': sha(args.tek_exe), 'bytes': args.tek_exe.stat().st_size,
                     'signature_status': manifest['signatureStatus'], 'startup_smoke': 'passed_isolated_no_auto_start',
                     'sendinput_verified_this_release': False}
-    bundle = args.output / f'TEF-{version}-Windows.zip'
+    bundle = args.output / f'TacticEchoForever-{version}-Windows.zip'
     prefix = f'TEF-{version}/'
     with zipfile.ZipFile(bundle, 'w', zipfile.ZIP_DEFLATED) as z:
         for relative in delivery.RUNTIME:
             z.write(TEF / relative, prefix + 'TACTIC-ECHO-FOREVER/' + relative)
-        z.write(args.tek_exe, prefix + 'TEK.exe')
+        z.write(args.tek_exe, prefix + 'TEK-TEF.exe')
         z.writestr(prefix + 'TEK-build-manifest.json', json.dumps(exe_manifest, ensure_ascii=False, indent=2) + '\n')
-        z.write(TEF / 'docs/PRODUCTION_1.0.0.md', prefix + 'README.md')
-        z.write(TEF / 'docs/RELEASE_1.0.0.md', prefix + 'RELEASE.md')
+        z.write(ROOT / 'README.md', prefix + 'README.md')
+        z.write(ROOT / 'docs/PROJECT_SPLIT.md', prefix + 'PROJECT_SPLIT.md')
         for p in sorted((ROOT / 'examples/profiles').glob('*.json')):
             z.write(p, prefix + 'examples/' + p.name)
     with zipfile.ZipFile(bundle) as z:
         assert {n.split('/')[0] for n in z.namelist()} == {prefix.rstrip('/')}
-        assert z.read(prefix + 'TEK.exe') == args.tek_exe.read_bytes()
+        assert z.read(prefix + 'TEK-TEF.exe') == args.tek_exe.read_bytes()
         for relative in delivery.RUNTIME:
             assert z.read(prefix + 'TACTIC-ECHO-FOREVER/' + relative) == (TEF / relative).read_bytes()
         assert not any('/WTF/' in n or '/SavedVariables/' in n or '/logs/' in n or n.endswith('settings.json') for n in z.namelist())

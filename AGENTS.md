@@ -1,262 +1,50 @@
-# AGENTS.md — Tactic Echo 1.5.12 开发与安全边界
-
-## TEF 独立插件与下一阶段（2026-10-11）
-
-- TEF当前独立基线1.0.0。用户最新授权APL正式接入，覆盖下文旧“APL仍旁路”条目；自动场景切换仍旁路。Infinite推荐基本单位是Class Pack，首包MAGE_FOREVER_60，不建立互斥现代专精包，实际已学等级和天赋rank决定资格。
-- TEF 1.0.0发布基线：冻结0.14.3运行语义，标签tef-v1.0.0、codex/tef；不提升TE 1.5.12或虚构TEK版本。Release必须提供插件、同提交TEK、完整源码与哈希，构建成功/启动冒烟不能代替真实输入验收；S76仅作为0.14.3历史实测，固定5019交接待验。发布构建输出到独立dist子目录，不能停止/替换活动TEK。
-- TEF 0.14.3：用户授权自定义APL取消通用ready强制条件，requireReady默认false且不查询数值；显式开启仅接受公开0/0，可能受GCD与Secret阻断，不声称独立自身CD。旧模板ready契约保持。Bindings.xml由客户端专用路径读取，不列普通TOC，文件必须安装、分组头唯一。固定序列5019最后独立成功后切到其他技能允许公开5019读条窄交接；不强写castPresent、不绕过其他读条/引导/未知，代次/索引/收据检查及新起始失效。
-- TEF 0.14.2 CDM帧隔离：单帧cooldownID不可确认时继续有界扫描，仅精确匹配帧的公开isActive决定该请求；未匹配仍UNKNOWN。固定cdmScanReason及最多160个跳过帧计数仅诊断，不能授权；冲突/枚举失败/超限继续保守阻断。不加hook、计时器或新输入路径。
-- TEF 0.14.1待命推荐：用户授权自定义和旧模板推荐评估移除强制战斗门槛，自动待命显示按公开条件选出的候选；APL Allowed/最终Packet仍要求公开战斗true，手动模式与测试Request也不因预览绕过。待命不创建请求/关联/计数，进战重新采样，目标/自身条件未知不伪造候选。停止/保存/reload的生命周期保持，未添加独立轮询或输入路径。
-- TEF 0.14.0用户授权启用自定义CDM、蓝量百分比及目标距离比较，覆盖0.13.0未启用限制。蓝量由公开UnitPower/UnitPowerMax计算；目标距离仅UnitDistanceSquared公开数值且checkedDistance=true，不能以技能范围、位置估算代替精确距离。CDM独立配置目录SpellID，仅精确目录身份及公开frame.isActive；缺帧/隐藏/Secret/冲突不当无增益，不作为Aura真值或自身ready。额外支持5019，保留范围动作槽校验、ShootActive门禁及自身ready。用户输入比较条件不允许动态表达式或Secret操作；完整即时重核、唯一传输链路不变。
-- TEF 0.13.0自定义APL历史：首版仅法师12种登记技能，每场景最多16条精确ID规则，手动优先级；支持移动、额外冷却活动及显式实验可见姓名板敌人数阈值。资源仅不足布尔、范围仅技能布尔；CDM/蓝量百分比/精确距离不执行。UNKNOWN不授权，所有规则可见解释，派发前即时复核，保存停止旧运行，继续复用唯一传输链路。
-- 固定序列仍默认且保持原尝试语义；APL独立显式选择，额外要求公开known/usable/power_ok/范围、自身冷却（用户授权0.12.1取消GCD条件），其他UNKNOWN零Token。TEFSim目录272条法师技能与54个天赋均为unverified候选，不把70170静态节点/等级/效果直接作为70338资格或成功别名。天赋Provider必须校核当前config、树归属、实际node/definition、rank；BuildSignature仅诊断。APL继续使用唯一Runtime/Dispatch/TEAP/TEK，不新增输入路径、不修改TE/TEProbe/TEK或其他数据库。
-
-- 用户明确授权当前工作区的 `TACTIC-ECHO-FOREVER/` 独立插件及必要TEK共享传输兼容；TE AddOn基线仍1.5.12，不修改其运行逻辑。TEF版本单独同步其VERSION、Config、TOC、Bootstrap、CHANGELOG及 `docs/baselines/tef/` 基线。
-- TEF唯一数据库TEF_DB。分析落盘仅用TEF自身数据库；TEK自身trace只证明输入接口，不能代替游戏成功收据。不得读取其它插件SavedVariables。
-- TEF开发分支codex/tef；独立版本0.11.0，TE AddOn保持1.5.12。许可及TEAP默认开启，唯一Runtime.intent；默认自动启停脱战待命、进战运行，另有手动启停和脱战后停止。独立autoStart默认开，仅创建新意图，不恢复旧请求/步骤/身份。用户手动停止不得进战复活。
-- 设置、目标、焦点、施法或UNKNOWN仅临时阻断，保留意图、Token0并撤销旧请求；恢复由Runtime重新核对当前代次/步骤/绑定。读条阻断保留已建立成功关联。手动停止、重置、配置修改、切图、高级门禁关闭和异常清意图。底层StopContinuous不得反向关闭意图。HUD主卡普通Button仅控制意图；hide纯视觉，必须显式stop才能停派发。正式公开启停键唯一，旧键兼容分组。0.25秒fallback只更新视觉数字，不扫技能/绑定。
-- S37证明单步Request撤销continuous导致116成功后没有205请求。单步不得撤销、替换或绕过自动所有者；重复待处理请求幂等。职业/专精/场景配置隔离，旧法师配置只迁移MAGE，未知职业不猜技能；人工/代码来源独立，缺代码不回退人工。APL依照0.11.0独立Class Pack契约正式接入；自动场景切换仍旁路。
-- 固定尝试不读取CD/GCD/充能作为准入，也不声称ready；保留公开目标/范围/usable、实际读条/引导、文本焦点及真实BindingToken。普通失败/中断保留意图且不计步，撤回后经公开资格重核再尝试原步；移动不作全局门禁，其他按键由TEK临时让权与恢复，顺序外成功只记偏离；精确SUCCEEDED才计步。自定义控制快捷键只用TEF override，不写技能绑定/宏/SaveBindings，默认冲突拒绝；用户可显式开启临时覆盖已有绑定，战斗延迟应用。0.8.2/S49仅有116→205→205成功，未保留143与完整循环；0.9.0编辑器与5019次数仍按TACTIC-ECHO-FOREVER/docs/PRODUCTION_0.9.0.md实机验收，历史成功不得代替新版验收。
-- TEF部署只操作明确的独立目录，不MIR、不删除未知文件、不改WTF。TE/TEF只启用一个TEAP信号源；保持TEAP v3和TEK全部输入门禁，不增设输入通道。
-- TEF 0.9.0推荐配置：单体/多目标每套最多16步骤，每步1–99次；拖入及手输只精确ID，不猜等级别名。旧超限配置保留禁运行，保存/切场景/reload清活动次数，暂停保留；每次成功递增receiptSerial，起始关联/候选须匹配该代次。5019已激活或未知时零Token，活动状态不计数；新功能按PRODUCTION_0.9.0.md实机验收。
-- TEF 0.9.1快捷键：录入即保存，手输须保存/回车；reload从TEF_DB恢复，登录/绑定刷新/脱战重核，明确脱战变更override。读回当前含override命令才报生效，保存与应用状态分开，冲突/取消保留旧值；同键幂等及重入保护，不写SaveBindings或技能绑定。
-- TEF 0.10.0：循环模式none/normal/target/combat，后三者均无限循环；目标/脱战事件只在对应模式重置首步和次数，并经唯一Runtime保留意图、失效旧关联，手动停止不复活。HUD标签参考TE ControlPanel/TacticalIconButton，仅保存独立标量样式，战斗中延迟布局，不改变派发资格。
-- TEF 0.10.1界面：选中样式必须经统一按钮绘制保留，循环页常驻当前模式；设置分区装饰用页面底层纹理，不以子Frame盖住父页正文；HUD无独立设置按钮或整块底纹，主卡右键设置仍可用。
-- TEF额外验证：Lua5.1模拟、TOC版本/加载列表、验收脚本测试及安装逐文件SHA256。离线验证与实机证据必须分开说明。
-
-## 0. 当前收窄范围（最高优先级）
-
-- 当前产品范围只保留：首页/设置中心、HUD 主键、官方推荐与高亮推荐共用的主推荐输入链路及特殊模式替换、AutoBurst 及其设置页/运行链路。
-- 打断、控制、防御、生存模块，包括自动打断、自动控制、只读反应高亮、姓名板群控扫描、目标框/姓名板打断提示、TargetCastPrompt、监控/调试页面、MappingExport、OfficialApiProbe，均视为退役功能，默认不得加载、不得轮询、不得在 HUD 中显示，也不得通过设置页重新启用。
-- HUD 只允许展示主键与 AutoBurst 队列；候选历史队列、打断/控制/位移、防御/生存卡片必须保持空输出或隐藏。`queueMode=primary` 表示仅主键；其他旧队列模式只能解释为“主键 + 爆发”。
-- HUD 可见期间，底部状态行常驻自动注入模式 `HAD`（开启）或 `LCC`（关闭），并独立显示可用、暂停、待命等运行状态；LCC 仍显示已启用组的只读注入卡片，不产生自动执行资格；HUD 按钮自身不得把 dispatchable 状态改写为 `HAD`，按钮状态/tooltip fallback 仍沿用原有“可用/推荐/施法/引导”等语义。
-- 灰条施法展示必须保持只读：普通施法显示“施法”，引导显示“引导”，射击猎等射击类灰条施法显示“射击”。该判断只能依赖安全透传的当前施法 spellID、等效 spellID、基础技能一致性或施法名称，不得影响推荐、BindingToken、TEAP、TEK 或任何派发资格。
-- BBA 风格按下反馈只允许在 `UNIT_SPELLCAST_SUCCEEDED` 等游戏确认事件后触发，表达技能最终被使用；不得恢复鼠标按下即显示按下效果的旧行为。
-- 以下历史章节中关于打断、控制、防御、生存、调试导出、P3/P4/P5 反应链路的要求，只保留为归档背景；如与本节冲突，以本节为准。
-
-## 1. 基线与交付
-
-- 当前唯一开发基线：`1.5.12`。用户可见的 AutoBurst 已泛化并更名为“自动注入”：每专精最多三个独立配置组必须共享唯一 `AutoInjectionCoordinator`、唯一 AutoBurst OrderedPlan、唯一 capture 和唯一候选；不得复制并行状态机、事件、轮询或输入路径。新组必须保持关闭并允许先完整编辑窗口 SpellID、注入/饰品和顺序，配置完整后才可启用；本组窗口不得再次作为本组注入。HUD 必须按组保存顺序展示全部已启用组，每组保持自身步骤顺序并与其他组分行或分列，最多三组、每组九张、总计 27 张只读卡；这不得改变唯一活动组和唯一派发计划。当前组启用/停用入口必须位于“当前组基本设置”上方；窗口字段须说明只填写数字 SpellID，周期刷新不得覆盖当前组正在编辑的名称、窗口或其他文本输入；自动注入页滚动高度须跟随当前实际序列行数，不得保留固定 3200 像素尾部空白。AutoBurst 与输入路径仍以 1.0.35 为冻结基线；HUD 冷却渲染仍以已实测稳定的 1.0.31 实时转盘路径为基础，并由 1.0.38 收口为“DurationObject 只画转盘、HUD 徽标统一纯秒数”。自动打断生产运行继续硬暂停，自动注入保持脱战硬门控。HUD 卡片与 HUD 手动点击层在战斗中不得直接调用受保护 `Button:Hide()` / secure proxy Hide 路径；卡片 Button 在战斗中不得调用 `SetAlpha`、`EnableMouse`、`Show` 或 `Hide`，只能记录待处理状态；`HudClickRouter` 的 secure proxy 与 blocker 在战斗中同样不得调用 `SetAlpha`、`Show` 或 `Hide`，只能记录 `tacticEchoCombatVisibilityPending` 与 `dirty`；`TacticalBoard` 与 defense 容器在战斗中不得调用 `SetScale`、`SetAlpha`、`SetShown`、`Show` 或 `Hide`，`TacticalHudLayout` 在战斗中不得执行 `SetScale`、`SetPoint`、`SetSize`、`SetShown` 等布局变更，只能记录 pending/dirty，脱战后再真实隐藏、显示、缩放或重建。TEK 本地连发介入白名单仅豁免配置中的主键，默认 `W/A/S/D/SPACE` 不触发手动让步；非白名单真实键盘输入，包括不能单独加入白名单的 `Ctrl`、`Alt`、`Shift`、`Win` 修饰键，必须从按下到抬起持续 `manual_input_held`，抬起后再进入既有 release delay、freshness 与 replay guard。TEK 必须支持 `Shift+1` 至 `Shift+=` 等动作条绑定 token；扩展修饰键或新键位时必须同步 binding token 解析、SendInput 编码与测试。默认 `pause_out_of_combat` 策略对外命名为“自动启停”：未进战斗或脱战时保持底层 `paused` 安全帧，但 HUD/设置中心必须显示“待命”，进战后自动恢复运行；手动暂停和脱战停止仍显示为暂停。无论 Defaults、旧 SavedVariables、组配置、官方窗口、已有 plan/capture 或既有 bridge 字段为何，只要 `inCombat=false`，不得创建/保留 Burst capture 或 plan，不得生成 Burst candidate、TEAP Burst 帧或 TEK 请求。默认动作条槽位可作为 TEAP/TEK 自动派发来源扫描，不要求对应动作条按钮当前可见；HUD 手动点击只能静态 secure proxy 复用可靠当前可见默认动作条按钮/已识别宏，隐藏按钮只能用于 TEAP/TEK 自动派发，不能成为 HUD 手动点击代理。HUD/原生默认动作条真实左键必须以 `manual_hold`、动作码 0、BindingToken 0 优先于后续派发。宏列表存在、宏名、图标及未知宏正文均不得作为当前动作栏身份或钢条判断依据。此前版本仅保留历史记录。 1.4.5 进一步冻结：Claim 只代表已建立的 plan、pre-window capture 或 departure lock 真实所有权；每个 armed epoch 的前置窗口只允许首次健康观察恢复一次；group runtime 必须使用明确 `<profileKey>:<groupId>` 且不得产生 `unknown:<groupId>`；所有冷却/充能回退（包括饰品）必须经过至少两个样本与 0.15 秒稳定确认；非法启用组 HUD 必须显示 INVALID 且无派发暗示；高频 Evaluate 不得逐帧执行完整 Normalize；persistent recovery 策略与 TEAP/TEK 协议不变。 1.4.6 进一步冻结：departure lock 直接观察到另一组窗口时必须先以旧所有权记录新窗口错过再释放；任何已拥有 capture 的 Abort 都必须先建立必要离开锁；冷却/充能回退在 runtime cycleId 可用时必须来自两个不同业务样本；所有手工建锁/无锁终止路径必须同步 Claim/Release，释放原因不得覆盖忽略事件。 1.4.14 进一步冻结：每个计划只允许一个配置顺序游标；初始自身 CD 步骤仅可作为未越过位置的候补，恢复后按原始位置向后补入，不得重建或重放前缀；已进入活动链的可选步骤不得因匹配失败次数被删除，移动失败期间只允许无 Token 等待并在停下后重试。 1.5.1 进一步覆盖：任何步骤首次派发必须有明确自身可用证据，UNKNOWN 或明确自身 CD 不得借公开 GCD 降级派发；已经明确接纳的当前步骤可在后续读数短暂 UNKNOWN 或移动失败时继续共享节奏；施法、引导、蓄力期间不得选择规则、扫描候补或推进游标。 1.5.2 进一步覆盖：配置窗口在普通施法、引导或蓄力期间必须以 observation-only、BindingToken 0 身份栅栏阻止官方链路提前派发，但不得选择规则、创建 plan/capture、扫描候补或推进游标；当前步骤只有在精确成功或稳定自身 CD/充能证据确认后才推进；推进前若存在配置缺口，必须等待不同 runtime cycleId 的下一业务快照，再按原 `configuredIndex` 接纳明确可用步骤或永久越过仍为 CD/UNKNOWN 的位置；已经越过的位置不得回插到已派发步骤之前。 1.5.3 进一步覆盖：已派发步骤在施法、引导或蓄力保护期间进入 `SOFT_PAUSED` 时，只要 `pauseResumeState=WAIT_CONFIRM` 且当前 wait 身份仍一致，必须接收该当前步骤的精确成功/失败/中断收据；收据只能写入当前 wait，施法期间仍不得推进游标，恢复后的健康业务帧再按原确认或重试路径处理。
-- **1.5.4 窗口冷却重入覆盖**：旧窗口已离开后，新代次尚未派发且自身 CD 与官方窗口冲突时，只能保留唯一 capture 等待明确可用，不得因此消费新代次或建立不可复检的 departure lock。该窄场景允许窗口排首复用同一个 observation-only capture；必须按不同健康 runtime cycle 仅复检窗口，CD/UNKNOWN 不派发，ready 后重新预检并按原序建链。capture 的组/配置/代次、四帧恢复 handoff、跨组忽略和生命周期清理仍统一。已经消费或硬终止的离开锁不得因冷却恢复而自动解除；施法/引导/蓄力期间仍不复检、不建链、不推进。
-- **基线归档是强制仓库规范**：所有 `BASELINE_<版本>.md` 只允许置于 `docs/baselines/`，根目录不得保存重复 baseline。每次版本化源码改动必须同步：① `docs/baselines/BASELINE_<VERSION>.md`；② 根目录 `CHANGELOG.md` 同版本条目；③ `VERSION`、TOC 与 `Core/Bootstrap.lua`。不得以临时根目录 baseline、仅更新 CHANGELOG 或仅更新版本号交付。
-- **补丁清单归档是强制仓库规范**：所有 `PATCH_MANIFEST*` 只允许置于 `docs/patch-manifests/`，根目录和 `docs/` 根层不得保存重复 patch manifest。清单只作为交付历史，不得替代当前 baseline、CHANGELOG 或 live source。
-- **P5.9 控制/防御/生存宏兼容**：控制、防御与生存 HUD 必须沿用 Burst/Interrupt 的既有宽松、只读宏关联原则。当前可见 Blizzard 默认动作条宏的 `/cast`、`/use`、条件分支、`@focus`、`@mouseover`、`@cursor`、目标管理辅助命令与 `/castsequence` 不得因缺少可解析 BindingToken 而从 HUD 手动入口移除；无键位或白名单外键位只能作为 `bindingToken=0` 的人工 HUD 点击来源，绝不授权 TEAP/TEK、自动控制、自动防御或自动生存。物品宏只能由已读取正文与精确 ItemID/`item:ID`/本地化物品名语义关联，宏名、图标、宏列表存在和猜测的宏分支均不得作为来源。
-
-- **P5.10 当前栏位宏身份与 HUD 精确复用**：控制、防御、生存 HUD 的宏来源必须由当前可见 `buttonName + actionSlot` 以及当前 API 实时确认。若 `GetActionInfo(actionSlot).id` 是有效 numeric macro index，只能对该 index 有界读取，失败不得扫描其它宏。若不是 index，只能以 `GetActionText` 与/或 action-info handle 的只读名称、代表 SpellID、唯一正文语义共同恢复；`GetMacroSpell`/代表 SpellID 不能单独授权。HUD 卡必须同时复核来源类型、macroID 和只读语义身份；原槽位改成同技能直放、其他同技能宏或 `CTRL+2` 的同技能来源均不得接管。`macro_semantic_identity_ambiguous`、正文失配和 identity 未验证一律 fail-closed。P4 action-info opaque 兼容仅可用于有真实 BindingToken 的 reaction target-only transport，不能成为 HUD/控制/防御/生存来源，不能推断 focus/mouseover/cursor，不得授权 AutoBurst。
-- **1.2.0 共享宏资格（最高优先级）**：不得让 AutoBurst、Reaction、控制、防御或生存各自实现、放宽或回退宏身份规则。常规来源必须统一经 `ActionBarBindingResolver:IsVerifiedCurrentMacroSource()`：当前按钮/槽位身份已验证、正文语义已解析、关联为 `macro_body_*`、`macro_item_*` 或 `macro_inventory_*`。在此前提下，继续兼容 `/cast`、`/use`、条件分支、`@focus`、`@mouseover`、`@cursor`、目标管理辅助命令与 `/castsequence`，并保留原宏行为；控制、防御、生存只能作 `bindingToken=0` 的 HUD 手动来源。AutoBurst 还必须统一经 `IsAutoBurstMacroEligible()`，仅正文关联且语义允许的宏可进入 burst step。`action_info_*` 正文不可读兼容只保留给 P4 target-only transport，且须有真实 BindingToken；永不成为 HUD 或 AutoBurst 来源。所有宏失败诊断必须请求作用域化：不得把无关“坐骑”等宏显示为胁迫、冰冻陷阱等技能的候选；同一有效 numeric index 的当前按钮仅在动作条文本明确命名请求技能时可保留同槽位读取失败诊断，仍不授权恢复/扫描/替代。
-- 默认交付完整源码包。压缩包只能有一个项目根目录，不得包含 `build/`、`dist/`、`release/`、缓存、日志、SavedVariables、EXE、历史补丁或本机配置。
-- 每次代码修改必须保持根目录 `VERSION`、插件 TOC、`Core/Bootstrap.lua` 版本一致，并运行本文件第 9 节验证。
-- 不得以离线测试、PyInstaller 成功或进程存活作为 Windows Hook、前台判断、SendInput、自动注入实机成功的证据。
-
-## 1.5.6 复合宏状态边界
-
-多技能与 castsequence 宏保持既有正文匹配和 BindingToken 兼容；宏按钮状态只有通过共享 `IsSpellActionStateTrusted` 的单技能正文身份校验才可用于该技能冷却/可用性采样。复合宏按精确步骤 SpellID 采样与确认，不推测宏游标，也不以其他技能成功确认当前步骤。通用单饰品槽位宏继续按装备槽位及锁定 ItemID 校验。
-
-## 1.5.7 饰品宏身份覆盖
-
-当前动作栏明确返回 macro/item 子类型时，其 id 不得作为 numeric macro index 或代表 SpellID 使用；须由当前动作条名称、唯一当前宏索引与已解析物品/槽位正文恢复身份。没有该子类型的既有同索引有界读取规则保持不变；不得用宏列表存在、图标或无名称猜测授权。
-
-## 1.5.8 特殊模式覆盖
-
-当前开发基线提升为 `1.5.8`，继承以上约束。用户手动开关的特殊模式每专精允许三组独立启停的精确 SpellID 替换；只替换官方派发，不修改官方推荐，不递归匹配，不拦截自动注入候选或 hold。替换复用共享动作条/宏身份、BindingToken、RuntimeSnapshot 自身冷却/充能、GCDGate 及 TEAP/TEK；目标无绑定或 CD/UNKNOWN 时零 Token 等待，不回退原技能。快捷键仅切换 TE 设置，战斗内编辑绑定延迟脱战应用；HUD 只读显示模式状态，不产生派发资格。
-
-## 1.5.9 高亮推荐派发
-
-当前开发基线为 `1.5.9`。高亮推荐作为官方推荐派发之前的候选选择层，总开关默认关闭，按专精保存已停用技能；未停用的已解析动作条技能默认参与高亮优先选择。候选仅从当前动作条缓存发现，最多 36 个，并复用 resolver 的真实 BindingToken 与宏身份规则；只接受公开布尔 `true`，并要求明确自身冷却/充能可用及 GCD 时序可派发。多个命中按当前动作条顺序选一个。API 未知、无合格高亮候选或候选失效时继续官方推荐。高亮来源不改写官方推荐快照，不改变 AutoInjectionCoordinator 的所有权/窗口观察；特殊模式仅应用于官方来源。手动优先、暂停、施法保护及 TEAP/TEK 门禁不变。高亮来源作为非线协议诊断元数据记录，不增加协议位或输入通道。宏只在共享 resolver 验证当前身份和正文关联后参与。
-
-## 1.5.10 高亮推荐门控与设置恢复
-
-当前开发基线为 `1.5.10`。AutoBurst 的 `none` 与 `idle` 均表示没有候选/所有权，不能阻止高亮推荐评估；candidate/hold 的优先级和官方推荐不可变、AutoInjection 窗口锚定规则不变。技能复选框的每行回调必须绑定自己的 SpellID；若专精身份尚不可用，设置操作必须明确提示未保存。高亮 API 的显式布尔 `false` 必须保留为 false，不能折叠成 UNKNOWN。TEAP/TEK 协议和门禁不变。
-
-
-
-## 1.5.11 高亮技能专精配置键修复
-
-当前开发基线为 `1.5.11`。高亮技能偏好必须使用 `BurstProfiles:SpecKey()` 的方法调用约定，基于当前职业与专精索引读写独立配置；测试替身必须与生产方法签名一致。特殊模式、AutoBurst 派发优先级、TEAP/TEK 协议与门禁不变。
-
-## 1.5.12 高亮推荐施放可用性门控
-
-当前开发基线为 `1.5.12`。仅高亮推荐候选可在当前动作条来源和真实 BindingToken 已验证后，经共享 `RuntimeSnapshot:GetSpellUsability()` 对精确 SpellID 读取公开 `usable` / `notEnoughResource` 布尔值；这是对 3.2 节 AutoBurst 资源例外范围的明确增补，不授权其他推荐或展示链读取资源。高亮优先派发须有明确 `usable=true`，资源不足、不可用或 UNKNOWN 均跳过当前高亮候选并继续后续候选，全部不合格时沿用官方推荐与特殊模式；不得等待攒资源，不读取或保存具体资源数值。现有宏身份、AutoBurst 所有权、TEAP/TEK 协议和门禁不变。
-
-## 2. 常规派发路径
-
-唯一常规输入路径：
-
-```text
-官方推荐（只读）
-→ 当前可见 Blizzard 默认动作条绑定
-→ BindingToken
-→ TEAP v3
-→ TEK 协议 / 前台 / Hook / 手动让权 / 限频门禁
-→ 单次 SendInput
-```
-
-禁止新增任何绕过该路径的输入通道。AddOn 不得创建隐藏按钮、写按键、保存按键、编辑宏、合成宏、直接调用 Windows 输入或写虚拟键值。
-
-## 3. 自动注入（内部 AutoBurst）：多组配置共享单一受控计划
-
-自动注入是官方推荐的受控候选层，不是第二条输入通道：
-
-```text
-OfficialRecommendation（不可变）
-→ AutoInjectionCoordinator（最多三组中选择唯一所有者）
-→ AutoBurst OrderedPlan（唯一候选执行器）
-→ 已解析 BindingToken
-→ TEAP v3（dispatchOrigin=burst）
-→ TEK 全部门禁
-→ 单次 SendInput
-```
-
-### 3.1 每专精多组数据模型
-
-每个专精最多保存三个稳定 `groupId` 配置组；排序不得改变 groupId。每组独立保存名称、开关、`simple/focused`、唯一窗口和一条 sequence：
-
-```text
-window                    -- 固定、不可停用，可使用普通技能
-injection:<SpellID>       -- 每组最多 6 个，使用稳定 SpellID 身份
-trinket:13 / trinket:14   -- 固定装备栏身份，计划创建时锁定实际 ItemID
-```
-
-组配置必须写入 `tactics.burstProfiles[profileKey].autoInjectionGroups`；旧 `autoBurstSequence` 只允许幂等迁移到 `group-1`，不得继续作为正式运行配置。不同启用组窗口必须唯一；任何组窗口不得作为另一组注入，普通注入与饰品可跨组复用。窗口步骤永远存在；注入/饰品可独立启用、停用、上移、下移。活动计划必须冻结 groupId、窗口和 sequence signature；其他组窗口只记录 `group_window_ignored_while_owner_active`，不得抢占、排队或补发，必须等待新的离开/进入边沿。旧 Phase 1.5 的方向、单饰品入口和 fallback 字段不得恢复或参与运行时规则。
-
-### 3.2 计划创建与预检
-
-命中官方窗口后，先对每个已启用可选步骤执行真实绑定、装备身份、实时自身 CD/充能与 GCD 采样，再决定是否创建计划。用户已明确授权一个窄资源例外：仅对已验证动作栏来源且已有真实 BindingToken 的可选 spell 注入，可经共享 `RuntimeSnapshot:GetSpellUsability()` 按精确 SpellID 读取 `usable` / `insufficientPower` 两个公开布尔值，并以 `GetActionUsability()` 作为动作槽兼容回退。普通注入仅明确 `usable=false` 且 `notEnoughResource=true` 才视为资源不足；由于 Retail 对噬灭光环型特殊资源可能只返回 `usable=false` 而不设置通用 `insufficientPower`，仅 `DEMONHUNTER_3` 的 `1217605`（虚空变形）可在相同已验证动作栏/真实 BindingToken 前提下，于计划运行期、首次派发前或等待确认时把精确探针的 `usable=false` 解释为资源不足，并必须记录 `specialResourceUnusableCompat=true`；初始预检不得用该兼容形态提前丢弃位于根除之后的虚空变形步骤：
-
-- `simple`：首次派发只接受明确自身可用（`OWN_READY`）及其公开 GCD 时序；明确自身 CD 或 UNKNOWN 均不得以 GCD 状态降级为候选。绑定/装备身份仍有效的 CD/UNKNOWN 步骤可作为未越过位置的候补，只有位于当前配置游标之后并重新取得明确可用证据时才可按原位置补入；已越过步骤永久失效，剩余步骤相对顺序不变。
-- `focused`：任何已启用可选步骤存在明确自身 CD、无绑定、未装备、装备变化或其他硬失效时不创建计划；单帧资源不足可进入运行期稳定确认，通用临时不可用必须保留原步骤等待恢复。
-- 单帧资源不足或通用不可用不得删除可选注入；明确资源不足仍需两个不同共享业务快照稳定确认。通用 `usable=false` 且 `notEnoughResource=false` 在静止时标记为 `TEMPORARILY_UNUSABLE`，运行期输出 `BindingToken=0` 的 `burst_step_wait_usable`；玩家移动时，该布尔值只作诊断，不得否决已经由明确自身可用证据建立的派发资格。冷却来源不确定不得首次派发；只有当前 `WAIT_CONFIRM` 步骤已经以明确 `OWN_READY` 进入派发后，后续短暂 UNKNOWN 才可保持同一步共享节奏。普通读条、引导、蓄力期间必须在规则选择、候补扫描和步骤采样前 observation-only 暂停，不得改变 plan/group/stepIndex；明确自身 CD、绑定/装备变化与生命周期硬终止仍优先。噬灭虚空变形的 `usable=false/false` 兼容仍受其专用范围约束。
-- 所有可选步骤均不可用时原则上不创建计划；仅 `simple` 中位于窗口之后、绑定/装备身份有效的 CD/UNKNOWN 候补可允许先建立窗口计划，以便在游标越过前取得明确可用证据后按原位置加入。位于窗口之前的候补不得因此重获机会。
-- `READY_NOW`、`QUEUE_WINDOW` 与 `GCD_LOCKED` 是可用时序，不是自身 CD；共享 GCD 永远不得排除或确认一个步骤。
-- 对 resolver 已验证的直接可信默认动作条，当前按钮的显式 ready（`isActive=false` 或可解释 `0/0`）可仅用于纠正覆盖/天赋变体造成的旧 SpellID 自身 CD；该证据不构成 CD 跳过、成功确认或任何额外派发资格。
-- 窗口步骤始终保留；真实计划不得把窗口替换为旧缓存 SpellID。
-
-预检只使用 `IconState:CollectCooldownOnly()`、`CollectInventoryCooldownOnly()`、`GCDGate`、已验证的动作条绑定、当前官方推荐，以及上述可选 spell 注入的资源不足双布尔例外。除该例外外，不得使用 Buff、Debuff、资源、目标生命、敌人数量、首领机制、距离、范围或读条对象作为爆发时机输入；不得读取、保存或导出具体资源数值，UNKNOWN 不得视为资源不足。
-
-### 3.3 执行、确认与运行期漂移
-
-- 每个计划严格按用户 sequence 的实际筛选结果逐步执行；每帧最多一个 BindingToken。
-- 每步派发前再次实时采样。`simple` 运行期失效时只跳过该可选步骤并继续；`focused` 在窗口尚未派发时释放官方窗口，窗口已派发后才保留离开锁。
-- 步骤仅由当前 `WAIT_CONFIRM` 的精确 `UNIT_SPELLCAST_SUCCEEDED`、自身非 GCD CD 开始或充能减少确认；饰品还必须匹配锁定 slot + ItemID。
-- UNKNOWN、图标灰度、泛 GCD、单个失败事件、Buff、资源/目标状态不得作为首次派发、跳过或成功证据。当前 `WAIT_CONFIRM` 精确 SpellID/等效 SpellID 的匹配 `UNIT_SPELLCAST_FAILED`、`UNIT_SPELLCAST_FAILED_QUIET` 或 `UNIT_SPELLCAST_INTERRUPTED` 收据只为已锁定可选步骤建立两帧无 Token 隔离与同一步重试，不得按次数删除该步骤；移动只记录诊断，不建立持续等待，隔离结束后仍按共享节奏派发当前步骤。仅窗口步骤仍允许两个匹配失败形成有界活性释放；不得用候选帧数、固定睡眠或泛超时替代该精确失败证据。
-- 已确认窗口后需观察官方窗口离开，避免重复派发；已创建计划内官方推荐旋转仅记录诊断，不取消完成中的步骤。
-
-### 3.4 Handoff、脱战硬门控与切图
-
-- `PreWindowCapture` 仅可在 **已进入战斗** 后、官方窗口已观察到且第一实际步骤位于窗口之前时创建。paused→armed 的四帧 `observationOnly + BindingToken=0` handoff 仍只适用于已进入战斗后的 transport ownership 交接；事件/状态刷新不得消耗该预算。
-- **绝对脱战门控**：任何 `inCombat=false` 帧必须在规则预检、capture 恢复、计划创建、候选材料化之前返回 `none`。该帧必须清除遗留 `plan`/`preWindowCapture`；不得因 `Run`、`intentState=armed`、`effectiveState=paused`、官方窗口、切图、旧 bridge 字段、已有 handoff 或任何 SavedVariables 产生 Burst candidate、TEAP Burst 帧或 TEK 请求。
-- `SignalFrame:SetState("armed")` 不得调用或间接授权任何脱战爆发路径。`AuthorizePreCombatBridge` 只可作为向后兼容的 no-op 诊断接口；不得恢复其授权语义。
-- `PLAYER_REGEN_DISABLED` 必须从干净 encounter epoch 开始，不能接续脱战 plan/capture。切图事件仍需清除临时状态；它们不得引入新的脱战例外。
-
-### 3.5 UI 与诊断
-
-自动注入页只允许：总开关、最多三个可选择/折叠的独立技能组、每组启用状态/名称/`simple|focused`、唯一窗口 SpellID、最多九步顺序编辑、可选步骤启停/移动/移除、已实测确认的饰品脱 GCD 标记与纯标量冲突原因。窗口步骤固定存在且不可停用；普通技能窗口仍须在运行期经过既有动作条与 BindingToken 校验。不得重新加入旧全局手填规则或“测试规则”入口。
-
-必须保留并导出：`sequence_preflight_selected`、`sequence_preflight_no_eligible`、`selectedOrder`、`excludedOrder`、`sequenceLength`、`sequenceKeys`、handoff 帧数、当前步骤、锁定饰品 slot/ItemID、计划中止/释放原因，以及 `activeGroupId`、`activeGroupName`、`matchedGroupId`、组窗口/签名/长度/键、组代次/离开锁/收据、忽略组与配置冲突/迁移结果。诊断不得导出宏正文、原始受保护 cooldown 数值或用户敏感数据。
-
-## 3.6 HUD 冷却展示、实时对象与真实动作条数值
-
-- `IconState`、`CooldownResolver` 与 `CooldownTracker` 负责 CD/GCD/充能的安全语义和标量状态；`TacticalHudModel` 只传递普通标量，绝不保存 `DurationObject`、受保护值、宏正文或任何派发权限。
-- `TacticalIconButton` 使用 1.0.31 已实测稳定的实时渲染路径：`showDurationObjectCooldown()` 可为**视觉展示**查询当前 `C_ActionBar`、`C_Spell` 与 `CooldownResolver`，顺序选择一个可用客户端 `DurationObject` 绘制转盘。此读取不得回写推荐、AutoBurst、BindingToken、TEAP、TEK 或任何输入条件。
-- 每次卡片绘制只允许附着一份最终选定的客户端转盘对象。安全普通数值可读时隐藏 `DurationObject` CountdownNumbers，由 HUD 徽标使用 `IconState`/Tracker 已确认数值并向上取整显示纯秒数；已验证技能自身非 GCD 冷却但 start/duration 为 opaque 时，允许同一最终 DurationObject 显示 Blizzard 原生准确倒计时，并必须清空 HUD 徽标与连续性缓存。共享 GCD、物品和不可信来源不得启用原生数字。
-- 当前专精防御、爆发窗口与爆发注入技能必须在脱战时由 `CooldownTracker:PrimeCurrentSpec()` 预注册。预注册条目可缓存 Tooltip/Base 时长；后续直接动作条槽位建立时必须迁移同一条目而不丢失缓存。该缓存只用于已确认施放事件后的本地展示计时，并须由后续动作条/技能 API 观察自动校正。
-- HUD 暂无安全数值但同一可信动作槽已确认技能自身非 GCD 冷却时，允许客户端以同一最终 DurationObject 显示准确倒计时，格式可为 Blizzard `MM:SS`；不得以 Tooltip/Base 静态值、宏猜测、图标灰度或不可信动作条伪造即时 HUD 数字。直接可信默认动作条的安全、可解释数值仍优先作为纯秒数权威。
-- `BuildCooldownPresentation`、`TE.HudCooldownDurationObjects`、`cooldownPresentation` 侧车、`runtimeDurationObject` 与 `showSnapshotDurationObject` 不得恢复。该架构在目标 Retail 客户端上会导致普通技能 CD 转盘或数字失效，或 reload 后冷却来源随机切换。
-- 主键与 Burst-window 的纯共享 GCD 必须隐藏；13/14 槽饰品和其他物品卡不得显示泛 GCD。自身 CD 与共享 GCD 同时存在时，展示自身 CD。`cooldownGcdAlias` 可由 `IconState` 透传到 HUD，仅用于阻止 `61304` 别名误显示。
-- HUD CD 展示数据不得改变 AutoBurst 预检、步骤跳过、成功确认、TEAP、TEK 或任何输入派发权限。
-
-
-## 3.8 P5.3–P5.6 自动打断历史契约（P5.8 继续暂停）
-
-> **P5.8 优先级覆盖：**本节其余内容仅保留既有观察/路由安全历史与未来恢复设计参考；生产运行时不得根据其任何条件创建自动打断候选。不得添加隐式测试开关或 SavedVariables 旁路。自动打断设置必须可见但禁用；只有只读提示、高亮、诊断和 HUD 对现有动作条/宏的真实人工点击可继续存在。
-
-- 仅允许 `AutoReaction` 生成自动**打断**候选；不得实现单体控制、群控、HUD 点击、自动选目标或宏改写。
-- 候选必须同时满足：战斗内、intent/effective state 均为 `armed`、敌对存活、P3 证明为真实活跃读条（非 `transient_gap_hold`）、以及已有 P2 `safeForFutureAuto=true` 的真实 BindingToken 路由。
-- **P5.6 API/事件确认路径**：可打断资格只接受：① 当前 `UnitCastingInfo` 或 `UnitChannelInfo` 可材料化的 `notInterruptible=false`；② 同源、未过期 `UNIT_SPELLCAST_INTERRUPTIBLE`。`notInterruptible=true`、当前真实原生盾组件可见、同源 `UNIT_SPELLCAST_NOT_INTERRUPTIBLE` 均硬否决。`notInterruptible=nil`、Secret/opaque 值、pending/stale 事件、`showShield`、`barType`、P3 bridge、profile fallback 与原生无盾提示均只能诊断，绝不得授权 reaction。直接 API 的 `false` 必须通过显式赋值保留，禁止使用会把 false 折为 nil 的 Lua `and/or` 习惯写法。
-- `ReactionObservation` 必须优先读取真实盾组件的 `IsShown()` / `IsVisible()`：直接字段、常见全局子组件、以及名称/atlas/texture 明确包含 shield/uninterruptible/notinterruptible 的当前子组件或 region。不得以 generic decoration、`showShield` 配置位或 `barType` 伪造钢条结论。
-- **打断冷却门控**：候选路由建立后，`AutoReaction` 必须用 `IconState:CollectCooldownOnly()` 对将被 TEK 实际按下的 action slot 做只读实时采样。该打断动作存在已知、非 GCD、自身 CD 且无可用 charges 时，记录 `interrupt_action_cooldown`、`bindingToken=0`，不得产生 reaction candidate 或占用主键；只读宏按钮的 ready 不能据此授权候选。CD UNKNOWN / sampler unavailable 只能诊断，不能伪造冷却或失去 P4.3 兼容能力。
-- 事件状态帧可能没有 spellID/castGUID；`ReactionInterruptEvents` 必须保留最近一次 START 事件的可读身份，不能被 status 事件的 nil 覆盖。缓存仍受 TTL、目标切换和终止事件约束；读条与缓存都可读 SpellID 且不一致时 fail-closed。
-- 同一活跃读条保持同一个 `reaction` candidate，直到读条消失/身份变化。SignalFrame 必须为这段候选保持稳定 sequence；TEK 仅在该 sequence 第一次成功 SendInput 后抑制重复帧。不得通过缩短候选为单帧或新增第二输入通道规避跨进程采样竞争。
-- **宏兼容性默认原则（用户明确要求）**：未得到用户明确要求时，必须尽量保留现有玩家自定义宏的兼容性、发现、绑定与既有自动路由能力；不得仅因理论歧义而收紧、移除或改变已经支持的宏形态。确需收紧、移除或改变既有宏兼容性时，必须先说明具体运行证据、影响范围和原因，并取得用户确认后才能改动。该原则同样适用于后续 P4/P5 自动打断与 P2 宏解析变更。
-- **整合宏资格**：严格 `[@mouseover,exists?,harm,nodead][@focus,exists?,harm,nodead][@target?,exists?,harm,nodead]` 单技能宏可登记为 `macro_priority_chain`，但针对 focus/target 候选派发前必须确认不存在更高优先级、仍满足宏 `harm,nodead` 的单位；否则 `macro_priority_preempted_by_<source>` fail-closed。该宏不能判断“是否正在施法”。
-- **目标管理宏**：保持对既有同技能目标管理宏的宽松发现与绑定，不因含 `/cleartarget`、`/targetenemy`、`/targetlasttarget` 而从 P2 移除。P4 自动打断可使用精确 `focus → target` legacy fallback：只有 `macroManagedTargetFallback=true`、顺序为 `{focus,target}`、当前来源为 `target` 且不存在存活敌对 `focus` 抢占第一分支时，记录 `macro_managed_target_target_compat` 并允许派发；focus 分支照常支持。其他无法精确归属的目标管理 target/mouseover 路由仍只在自动派发层 fail-closed，且任何扩大或收紧既有形态的兼容性必须先按上述原则征得用户确认。当前目标优先普通技能按钮或无目标管理命令的严格 target 宏。
-- **P5.5/P5.6 宏身份与当前动作栏兼容**：先判断 `GetActionInfo(actionSlot).id` 是否处于当前账号/角色宏的有效 numeric index 范围；是时仅可对同一 index 有界重读 `GetMacroInfo(index)`。若不在范围，Retail 可通过 action-info `id` 或 macro-spell 返回代表 SpellID；常规正文恢复仍必须以动作条 `GetActionText` 或 action-info handle 只读名称、代表 SpellID 与唯一宏正文语义共同确认，多个同名同技能候选必须 `macro_semantic_identity_ambiguous` fail-closed；不得调用 `GetMacroInfo(name)`，不得按名称取第一枚，宏正文不得持久化。**例外仅用于 P4 reaction target transport**：当当前可见默认动作条宏按钮以 `action_info_represented_spell` 或 `action_info_macro_spell` 明确暴露所请求打断技能、已有真实 BindingToken、但正文/索引不可读时，可登记对应 `action_info_*_compat` 的 target-only 路由，以保留 P4.3 已实机成功链路；不得从宏名、图标、宏列表或此路由推断 focus/mouseover 分支，也不得授权 AutoBurst。
-- 活跃 `AutoBurst` plan 或 pre-window capture 具有优先权：只高亮，不自动打断；不得调用 `AutoBurst:Abort`、推进或重置其状态。
-- SignalEncoder 使用 TEAP v3 预留 bit `0x40` 标记 `reaction`，并保持单一 20-byte 传输。TEK 在 `0x20|0x40` 同时存在时拒绝帧。
-- 当 eligible 读条没有 P2 安全路由时，仅可对该读条调用一次 `ReactionBindings:RefreshForAuto()` 重建既有默认动作条缓存。`castSerial` 用于区分外部打断后的下一段读条；状态诊断必须区分 runtime、确认、兼容资格、兼容采样、视觉采样、动作 CD 与路由阻断。
-
-## 3.7 P3 只读打断/控制候选与 HUD 高亮
-
-- `ReactionObservation` 只能由既有 `ProtocolMonitor` 轮询节奏采样；不得注册事件、建立独立高频 OnUpdate、创建 BindingToken 或向任何输入链写入数据。
-- P3 读条存在性可在 `pcall` 内依据 `UnitCastingInfo` / `UnitChannelInfo` 的完整 API 返回位数判断；不得以可保存/可显示的技能名称或其真值判断作为活跃读条前提，也不得保存原始读条名称。当前目标观察器若遗漏但同轮 `ProtocolMonitor` 已确认读条，可仅回填该显示事实，不得猜测敌对、存活或钢条状态。若直接单位读条 API 被 Retail 的 Secret Value 限制，P3 可只读查询 Blizzard 已显示的目标/焦点/姓名板施法条的 `casting/channeling/empowering/isActiveCast` 与盾牌状态（包括 `BorderShield:IsShown()`）；直接 API 的明确 true 与原生**可见盾**必须保持不可打断，原生明确无盾/false 才可作为可打断状态补足。仅来自原生 `notInterruptible` / `isUninterruptible` 的 true、但没有可见盾的状态不得作为硬钢条结论：它只能降级为 `interrupt_unverified` 验证预警，并强制 `bindingToken=0`、`reactionProbeOnly=true`、`reactionAutoEligible=false`；它不是可打断结论，绝不能进入 P4/P5 派发资格。目标/焦点/鼠标指向可在一次轮询短暂缺失时保持最多 0.22 秒的未验证显示桥接，桥接不得恢复自动资格。该兜底不得注册事件、保存 frame/读条名称、创建 BindingToken 或写入输入链。P2 映射缺失或缓存重建时，P3 可显示 `bindingToken=0` 的只读资料表回退高亮，供观察验证；该回退绝不能成为 P4/P5 派发资格。
-- 观察范围仅限当前目标、焦点、鼠标指向和**当前客户端可见**姓名板。可打断候选必须是敌对、存活且 API 明确判定为可打断的读条；不可打断钢条绝不能高亮为打断。
-- 单体控制候选必须是敌对、存活、API 明确判定为不可打断的读条，且目标为敌对玩家或非精英 NPC；`elite`、`rareelite`、`worldboss`、`UnitLevel=-1` 或 `UnitIsBossMob` 均 fail-closed。
-- 群控候选只统计当前可见姓名板中 4 个及以上有效不可打断读条，且必须已有已识别的 `@cursor` 群控宏路由；无法证实路由时只显示观察状态，不产生群控卡。
-- 反应高亮固定只选择一个优先项：`打断 > 群控 > 单体控制`。高亮读取 `autoReaction` 的来源勾选和排序，但不受自动开关影响，以便关闭自动化时仍能手动观察。
-- P3 只能设置 `bindingToken=0`、`readOnly=true`、`dispatchAllowed=false` 的 HUD 数据；不得调用 `SignalFrame`、`SignalEncoder`、TEK、SendInput，亦不得影响 AutoBurst、官方推荐、HUD 冷却、标签或现有输入门禁。
-
-### 3.9 P5.8 HUD 真实点击入口
-
-- 主键继续只调用既有 `ControlPanel:ToggleRun()`。爆发、打断、控制、防御/生存 HUD 卡只可代理一个当前可见、已验证的 Blizzard 默认动作条按钮或 Resolver 已识别宏。
-- secure proxy 必须是 `UIParent` sibling，使用 `SecureActionButtonTemplate` 的 `type="click"` / `clickbutton` 指向原始按钮；不得调用 `Button:Click()`，不得创建 spell/item 属性、按键或宏。代理必须同时注册 `LeftButtonDown` 与 `LeftButtonUp`，并位于 card 之上的输入层，以兼容 `ActionButtonUseKeyDown`。
-- HUD proxy 与原生默认动作条的真实左键都必须先写入既有 `manual_hold`。在该短暂让权窗口中 SignalFrame 必须输出动作码 0、BindingToken 0；HUD 手动点击及原生动作条手动点击优先于 TEAP/TEK 的后续派发。
-- 13/14 槽物品卡必须优先按装备槽位解析真实来源；找不到安全来源、特殊动作条、按钮不可见或战斗中映射变化时，HUD 卡保持显示但 blocker 必须 fail-closed 并给出原因。
-
-## 4. 宏与动作条
-
-- 只支持 Blizzard 默认可见动作条。载具、控制单位、覆盖动作条、宠物战斗 fail-closed；ExtraActionBar 仅观察。
-- Phase 1.5 允许用户已经放在**可见 Blizzard 默认动作条**上的宏按钮。宏关联可读取 `/cast`、`/use`、条件/分号分支、目标修饰（包括 `@cursor`）、多行辅助命令与 `/castsequence` 中的明确 SpellID/本地化技能名；饰品宏可关联明确的 `/use 13` 或 `/use 14`；TE 只按玩家现有绑定，不写入、改造或执行宏分支。
-- 解析器优先采用 Blizzard `GetActionInfo` / `GetMacroSpell` 的当前宏技能；文本宽松关联用于 API 未提供关联时。它不判断哪一个条件分支会成立，派发后仍必须通过**当前步骤的精确施法事件、技能自身非 GCD CD 或充能变化**确认，否则按现有受控超时/窗口锁规则失败关闭。
-- 宏正文优先使用动作条返回的有效 numeric macro index；当该索引首读仅有名称或正文缺失时，只可对同一 index 有界重读。若 `GetActionInfo(...).id` 不属于当前有效宏 index 范围，Retail 可能返回代表 SpellID；此时必须以动作条 `GetActionText`、代表 SpellID 与解析后的宏正文语义做**唯一**匹配，才能恢复正文。不得调用 `GetMacroInfo(name)`，不得按名称取第一枚，多个同名同技能候选必须 fail-closed。宏内 `/cast` 技能名称可只读解析为 SpellID 作为名称 API 临时不可用时的关联后备；不得依据宏名称、图标、动作条文本或部分文本猜测技能身份。
-- 包含 `/cleartarget`、`/targetenemy`、`/targetlasttarget`、`/target`、`/focus`、`/assist` 等目标管理命令的宏，继续宽松关联到玩家现有可见按钮；TE 不会拆分、重排或执行其目标管理命令。若宏只包含一个被请求技能身份、无 `/castsequence`、且所有可执行施法动作均为该技能，可标为 `macroManagedTargetAuto`。特别是精确 `@focus → /targetenemy → /targetlasttarget` fallback 在当前目标来源、无存活敌对 focus 抢占时，可自动承担 current-target 候选；其它无法精确归属的 target/mouseover mutation 分支仍只在自动派发层 fail-closed。不得因理论歧义将玩家既有宏从发现、绑定或手动可用性中移除；任何收紧既有宏兼容性的改动必须先向用户说明并取得确认。
-- 多技能条件宏和 `/castsequence` 可以作为已关联宏按钮进入 Phase 1.5；诊断必须保留宏关联方式与宏形态摘要，但不得保存宏正文。一个宏同时包含 `/use 13` 与 `/use 14` 必须拒绝关联，双饰品必须建模为两个显式步骤；无法关联到规则 ActionRef、没有真实绑定、装备已变更或无法取得确认信号的宏仍 fail-closed。
-
-## 5. 协议、审计与状态展示
-
-- TEAP v3 保持 20 字节长度；flags bit 5（`0x20`）固定表示 `dispatchOrigin=burst`。
-- 保留 `officialSpellID`、`dispatchSpellID`、`dispatchActionKind`、`dispatchInventorySlot`、`dispatchItemID`、`dispatchOrigin`、`planId`、步骤角色与派发尝试号用于 SavedVariables、Trace 和状态遥测。
-- AddOn 保存的 Burst 元数据必须是简化审计记录，不得保存完整 resolver 对象、宏诊断对象或潜在 secret 值。
-- AutoBurst 必须持续记录 `official_not_window`、`window_edge_missing`、规则不完整与 evaluator 故障；`/temapping` 的安全映射快照仅导出规则、计划和最近原因的纯标量摘要。
-- TEK Trace 与状态快照必须暴露 `dispatch_origin` / `last_dispatch_origin`。
-
-## 6. 绝对禁止
-
-- HUD、Tooltip、视觉层、防御、打断、控制、位移或普通 Burst 展示层建立 Token、改写官方推荐、写 TEAP 或请求 TEK 输入。
-- AutoBurst 绕过 BindingToken、TEAP、TEK、前台、Hook、手动让权、新鲜度、CRC、会话、限频或动作条解析。
-- 用固定睡眠毫秒代替 GCDGate 与确认状态机；持续候选派发只能经 TEK 的既有全局限频、前台、Hook、手动让权与新鲜度门禁。
-- 将原始 GCD 剩余数值泄漏给 AutoBurst 状态机；原始数值只能存在于 GCDGate 时序适配层。
-
-## 7. 性能与刷新约束
-
-- HUD 与视觉层仅用于呈现；不得改变推荐、候选、BindingToken、TEAP 或派发条件。
-- 不新增高频 OnUpdate 链。AutoBurst 必须复用 SignalFrame 刷新、官方推荐和 GCD 上下文。
-- Bootstrap 之外不得直接 `:RegisterEvent()`；AddOn 仅可经 `TE:RegisterEventSafe` / `TE:RegisterEventsSafe` 注册一次性事件。
-- HUD 冷却展示继续使用现有缓存/事件驱动路径。AutoBurst 的单一规则步骤与 GCDGate 可在既有 SignalFrame 刷新内读取一次实时公共冷却快照；该窄例外不得扩展为 HUD 全量扫描或独立高频 OnUpdate。
-- 所有物品来源 HUD 卡（`itemID`，或临时仍只保留的稳定装备槽位/物品类别；包括 13/14 槽饰品、药水及其他物品卡）必须使用 `CooldownResolver` 已归一化的非 GCD 自身冷却作为展示权威；不得绘制 `gcdCooldown` 或 `61304` 通用覆盖层。主、Burst、打断、控制、防御、药水模块均复用 `TacticalIconButton.lua`，不得另建 Cooldown 绘制路径。此展示判断不得反馈到 AutoBurst、BindingToken、TEAP 或 TEK。
-- 主键和 Burst-window 卡必须隐藏纯共享 GCD 的转盘与数字；真实自身 CD 仍显示。该判断由 `TacticalIconButton` 的实时展示分支执行，不得改变 `GCDGate`、AutoBurst 预检、计划组装、TEAP 或 TEK。
-- 直接映射动作条的技能不得以 Tooltip / `GetSpellBaseCooldown` 静态值启动本地 HUD 倒计时；天赋、英雄天赋或覆盖技能造成的实际 CD 差异，必须优先读取同一可信动作条的安全数值快照作为 HUD 自定义文本权威。实时 `DurationObject` 默认仅保留转盘/动画；只有用户明确选择 `duration` 文本模式，或已确认非 GCD 自身 CD 但安全数值暂不可读时，才可显示同一最终原生对象的倒计时。无法取得可信数值不得展示静态错误秒数。
-- 设置窗口的周期刷新只允许同步当前可见页面；运行时 readout 可刷新，隐藏页面的列表、排序控件和文本输入不得在 0.25 秒轮询中被重建或抢占焦点。
-
-## 8. Windows 实机验收
-
-以下始终属于人工实机验收：Windows 前台识别、Hook、真实 SendInput、采样相位、SpellQueueWindow、不同急速/GCD、宏、DPI、多显示器、窗口模式，以及四种双技能组合的实际释放顺序。
-
-## 9. 必需验证
-
-```powershell
-python scripts/verify-baseline-contract.py --repo-root .
-python -m pytest -q tek/tests tests/unit
-python -m unittest discover -s tek/tests -q
-python -m unittest discover -s tests/unit -q
-python -m compileall -q tek/src tek/app tek/runtime
-```
-
-如系统存在 `luac` 或 `texluac`，还必须检查全部 AddOn Lua 语法。交付前验证完整 ZIP 只有一个顶层根目录且内容干净。
-
-## P5.3.1 补充：legacy 目标管理宏
-- 当前目标可使用的唯一目标管理宏形态是已解析为 `focus → target` 的 strict fallback，且没有存活敌对 focus 抢占首分支；其他 target mutation macro 与 mouseover 仍不得自动路由。
-- action-info 代表 SpellID 的 `GetMacroInfo(handle)` 名称仅可作为唯一语义 join key；正文仍必须来自当前真实宏 index。
-
-- TEF 0.12.0：五份用户参考文件重设WotLK规则；统一Class Pack内手选arcane/fire/frost构筑模板，不按现代Spec或不完整天赋自动切换。保留原条件与顺序，BLOCKED/DROP不执行；依模板最终填充或显式覆盖。源火焰AoE关闭不自动启用。公开CD/GCD门禁不变。
-
-- TEF 0.12.1用户授权：APL不查询61304、不判断GCD准入，不伪造ready；保留自身CD和其它公开条件。失败事件身份统一进入Engine已有4096会话预算，不另设128失败预算；旧失败及旧代次身份不可淘汰，真正总预算饱和需reload。
+# Tactic Echo Forever — independent project
+
+## Current contract (2026-10-12)
+
+- Baseline 1.0.1, independent Forever/Infinite project. No Retail TE runtime,
+  sibling checkout, shared directory, submodule or symlink dependency.
+- Class + Talent + Learned Skills; no modern specialization identity. Profiles
+  use CLASS:base; Mage Class Pack MAGE_FOREVER_60. Spell ranks use independently
+  learned exact IDs; static catalogue/rank/maximum SpellID never authorize.
+- UNKNOWN != FALSE. Secret values must pass Safety normalization before any
+  comparison, indexing, formatting or persistence; never treat unknown as ready.
+- State / Conditions / Recommendation / Runtime / Dispatch layering remains.
+  Built-in normal spells default to usable_only; explicit public-ready checks
+  require public 0/0. No GCD/61304 eligibility query. Rules are declarative.
+- Auto source strategy uses actual key talent rank; ambiguous/unknown builds
+  require manual override. BuildSignature is diagnostic only; no filler inference.
+- Only TEF_DB; no other AddOn SavedVariables. TEF TEK support bundles do not
+  import Retail mapping exports. No writes to WTF, spell bindings or macros.
+- Unique Runtime.intent, existing Dispatch / TEAP v3 / TEF TEK input chain.
+  APL never requests input directly. Preserve current initiation/receipt identity;
+  exact SUCCEEDED advances, failure retries; generation/index/receipt guards and
+  identity tombstones remain. Candidate replacement is not a user Reset.
+- Default fixed sequence, APL explicit; automatic scene switching remains bypassed.
+  Automatic standby previews are read-only and dispatch requires public combat.
+  Auto-start creates new intent only; manual stop must not resurrect in combat.
+- Setting/target/focus/cast/UNKNOWN temporary blocking preserves intent and zeroes
+  tokens; lifecycle edits/reset/world/fatal fault clear intent. HUD hide is visual.
+- Preserve fixed attempt semantics and 5019 ShootActive/hand-off gates. Limits:
+  16 steps, 1–99 repeats, exact IDs; pause retains counts, edit/reload clears them.
+- Custom APL existing public mana %, checked UnitDistanceSquared and exact CDM
+  frame identity remain bounded; missing/hidden/Secret/conflicting CDM is UNKNOWN.
+  No aura truth inferred from CDM; no new timers, hooks or input paths.
+- 0.05s dirty coalescing / 0.20s fallback on existing heartbeat, no full per-frame
+  spellbook/talent scan. Bounded 12 RuleActions / 16 custom rules.
+- TEF TEK in tek/ belongs to this project and can evolve independently; do not
+  synchronize with Retail TE automatically. Preserve foreground, hook, manual
+  hold/release, freshness, CRC, replay and rate gates; one SendInput per dispatch.
+- TEAP namespace TEF, current wire unchanged. Never enable both AddOn signal
+  sources simultaneously. Wire identity changes require a separate task.
+- Preserve player's existing macro compatibility; do not generate/edit macros.
+  Control hotkeys use only TEF overrides, not SaveBindings/skill bindings.
+- Version changes must sync VERSION, Config, TOC, Bootstrap, CHANGELOG and
+  docs/baselines/tef/BASELINE_<version>.md. This split does not bump versions.
+  Baselines only under docs/baselines; patch manifests only docs/patch-manifests.
+- Release outputs isolated under dist; never stop/replace active TEK. Full clean
+  source ZIP with one root and SHA256 required. Offline tests/build/startup do
+  not prove Hook, SendInput or game success. Historical S76 does not prove new
+  rank/talent/APL paths or fixed 5019 hand-off.
+- Run README checks and Lua 5.1 syntax checks before delivery. No remote push
+  without a separate explicit request; source remote is provenance only.

@@ -63,15 +63,15 @@ function Stop-ExactTargetTekProcess {
     if (Test-FileExclusiveAccess -Path $TargetExe) { return $true }
 
     Write-Warning "Existing build target is locked: $TargetExe"
-    Write-Host "[TEK] Looking only for a running TEK.exe launched from this exact dist path..."
+    Write-Host "[TEK] Looking only for a running TEK-TEF.exe launched from this exact dist path..."
 
     $targets = @()
     try {
-        $targets = @(Get-CimInstance -ClassName Win32_Process -Filter "Name = 'TEK.exe'" | Where-Object {
+        $targets = @(Get-CimInstance -ClassName Win32_Process -Filter "Name = 'TEK-TEF.exe'" | Where-Object {
             $_.ExecutablePath -and (Test-SameCanonicalPath -Left $_.ExecutablePath -Right $TargetExe)
         })
     } catch {
-        Write-Warning "Could not inspect TEK.exe process paths. The staged build fallback will remain available if replacement is still locked."
+        Write-Warning "Could not inspect TEK-TEF.exe process paths. The staged build fallback will remain available if replacement is still locked."
     }
 
     foreach ($target in $targets) {
@@ -149,13 +149,13 @@ function Publish-OneFileArtifact {
     if (Test-Path -LiteralPath $FinalExe) {
         $canReplace = Test-FileExclusiveAccess -Path $FinalExe
         if ($canReplace) {
-            $backupExe = Get-BackupPath -Directory $outputDirectory -Name "TEK.exe"
+            $backupExe = Get-BackupPath -Directory $outputDirectory -Name "TEK-TEF.exe"
             try {
                 Move-Item -LiteralPath $FinalExe -Destination $backupExe -Force
             } catch {
                 $canReplace = $false
                 $backupExe = $null
-                Write-Warning "Could not stage the previous TEK.exe for safe replacement: $($_.Exception.Message)"
+                Write-Warning "Could not stage the previous TEK-TEF.exe for safe replacement: $($_.Exception.Message)"
             }
         }
     }
@@ -172,19 +172,19 @@ function Publish-OneFileArtifact {
                 PublishState = "primary"
             }
         } catch {
-            Write-Warning "Could not publish to dist\\TEK.exe: $($_.Exception.Message)"
+            Write-Warning "Could not publish to dist\\TEK-TEF.exe: $($_.Exception.Message)"
             if ($backupExe) { Restore-BackupArtifact -BackupPath $backupExe -OriginalPath $FinalExe }
         }
     }
 
-    $fallbackExe = Get-FallbackFilePath -Directory $outputDirectory -BaseName "TEK" -Extension ".exe"
+    $fallbackExe = Get-FallbackFilePath -Directory $outputDirectory -BaseName "TEK-TEF" -Extension ".exe"
     try {
         Copy-Item -LiteralPath $StagedExe -Destination $fallbackExe -Force
     } catch {
-        throw "Build succeeded, but neither dist\\TEK.exe nor fallback output could be written. Close programs holding dist\\TEK.exe and retry. Detail: $($_.Exception.Message)"
+        throw "Build succeeded, but neither dist\\TEK-TEF.exe nor fallback output could be written. Close programs holding dist\\TEK-TEF.exe and retry. Detail: $($_.Exception.Message)"
     }
 
-    Write-Warning "The previous dist\\TEK.exe was preserved because it is still locked or could not be safely replaced. New build: $fallbackExe"
+    Write-Warning "The previous dist\\TEK-TEF.exe was preserved because it is still locked or could not be safely replaced. New build: $fallbackExe"
     return [pscustomobject]@{
         Executable = $fallbackExe
         PrimaryPath = $false
@@ -200,13 +200,13 @@ function Publish-OneDirArtifact {
 
     $outputDirectory = Split-Path -Parent $FinalDirectory
     New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
-    $finalExe = Join-Path $FinalDirectory "TEK.exe"
+    $finalExe = Join-Path $FinalDirectory "TEK-TEF.exe"
     $backupDirectory = $null
     $canReplace = -not (Test-Path -LiteralPath $FinalDirectory)
 
     if (Test-Path -LiteralPath $FinalDirectory) {
         if ((Test-Path -LiteralPath $finalExe) -and (Test-FileExclusiveAccess -Path $finalExe)) {
-            $backupDirectory = Get-BackupPath -Directory $outputDirectory -Name "TEK"
+            $backupDirectory = Get-BackupPath -Directory $outputDirectory -Name "TEK-TEF"
             try {
                 Move-Item -LiteralPath $FinalDirectory -Destination $backupDirectory -Force
                 $canReplace = $true
@@ -216,7 +216,7 @@ function Publish-OneDirArtifact {
                 Write-Warning "Could not stage previous one-dir output for safe replacement: $($_.Exception.Message)"
             }
         } else {
-            Write-Warning "Previous one-dir output cannot be safely replaced while its TEK.exe or files are in use."
+            Write-Warning "Previous one-dir output cannot be safely replaced while its TEK-TEF.exe or files are in use."
         }
     }
 
@@ -227,24 +227,24 @@ function Publish-OneDirArtifact {
                 Remove-Item -LiteralPath $backupDirectory -Recurse -Force -ErrorAction SilentlyContinue
             }
             return [pscustomobject]@{
-                Executable = (Join-Path $FinalDirectory "TEK.exe")
+                Executable = (Join-Path $FinalDirectory "TEK-TEF.exe")
                 PrimaryPath = $true
                 PublishState = "primary"
             }
         } catch {
-            Write-Warning "Could not publish to dist\\TEK\\TEK.exe: $($_.Exception.Message)"
+            Write-Warning "Could not publish to dist\\TEK\\TEK-TEF.exe: $($_.Exception.Message)"
             if ($backupDirectory) { Restore-BackupArtifact -BackupPath $backupDirectory -OriginalPath $FinalDirectory }
         }
     }
 
-    $fallbackDirectory = Get-FallbackFilePath -Directory $outputDirectory -BaseName "TEK" -Extension ".new"
+    $fallbackDirectory = Get-FallbackFilePath -Directory $outputDirectory -BaseName "TEK-TEF" -Extension ".new"
     try {
         Move-Item -LiteralPath $StagedDirectory -Destination $fallbackDirectory
     } catch {
         throw "Build succeeded, but neither dist\\TEK nor fallback output could be written. Close programs holding dist\\TEK and retry. Detail: $($_.Exception.Message)"
     }
 
-    $fallbackExe = Join-Path $fallbackDirectory "TEK.exe"
+    $fallbackExe = Join-Path $fallbackDirectory "TEK-TEF.exe"
     Write-Warning "The previous dist\\TEK output was preserved because it is still locked or could not be safely replaced. New build: $fallbackExe"
     return [pscustomobject]@{
         Executable = $fallbackExe
@@ -260,7 +260,7 @@ if (-not $Python) {
 
 & $PythonExe -c "import platform, sys; raise SystemExit(0 if sys.version_info >= (3, 11) and platform.architecture()[0] == '64bit' else 1)"
 if ($LASTEXITCODE -ne 0) {
-    throw "TEK.exe build requires 64-bit Python 3.11+; resolved executable: $PythonExe"
+    throw "TEK-TEF.exe build requires 64-bit Python 3.11+; resolved executable: $PythonExe"
 }
 
 $ProfilePath = Join-Path $RepoRoot "examples\profiles\laptop.json"
@@ -289,19 +289,21 @@ if (-not $SkipTests) {
     Write-Host "Running baseline contract and test suites..."
     & $PythonExe scripts\verify-baseline-contract.py --repo-root $RepoRoot
     if ($LASTEXITCODE -ne 0) { throw "baseline contract failed with exit code $LASTEXITCODE" }
-    & $PythonExe -m pytest -q tek/tests tests/unit
+    & $PythonExe TACTIC-ECHO-FOREVER/tests/run.py
+    if ($LASTEXITCODE -ne 0) { throw "TEF Lua tests failed" }
+    & $PythonExe -m pytest -q tek/tests tests
     if ($LASTEXITCODE -ne 0) { throw "pytest failed with exit code $LASTEXITCODE" }
     & $PythonExe -m unittest discover -s tek/tests -v
     if ($LASTEXITCODE -ne 0) { throw "tek/tests failed with exit code $LASTEXITCODE" }
-    & $PythonExe -m unittest discover -s tests/unit -v
-    if ($LASTEXITCODE -ne 0) { throw "tests/unit failed with exit code $LASTEXITCODE" }
+    & $PythonExe -m unittest discover -s TACTIC-ECHO-FOREVER/tests -v
+    if ($LASTEXITCODE -ne 0) { throw "tests failed with exit code $LASTEXITCODE" }
     & $PythonExe -m compileall -q tek/src tek/app tek/runtime
     if ($LASTEXITCODE -ne 0) { throw "compileall failed with exit code $LASTEXITCODE" }
 
     $luaCompiler = Get-Command texluac -ErrorAction SilentlyContinue
     if (-not $luaCompiler) { $luaCompiler = Get-Command luac -ErrorAction SilentlyContinue }
     if ($luaCompiler) {
-        Get-ChildItem -Path (Join-Path $RepoRoot "addon") -Recurse -Filter *.lua | ForEach-Object {
+        Get-ChildItem -Path (Join-Path $RepoRoot "TACTIC-ECHO-FOREVER") -Recurse -Filter *.lua | ForEach-Object {
             & $luaCompiler.Source -p $_.FullName
             if ($LASTEXITCODE -ne 0) { throw "Lua syntax check failed: $($_.FullName)" }
         }
@@ -319,7 +321,7 @@ if ($OutputDirectory) {
     }
     $DistRoot = $requestedOutput
 }
-$FinalExe = if ($OneDir) { Join-Path $DistRoot "TEK\TEK.exe" } else { Join-Path $DistRoot "TEK.exe" }
+$FinalExe = if ($OneDir) { Join-Path $DistRoot "TEK-TEF\TEK-TEF.exe" } else { Join-Path $DistRoot "TEK-TEF.exe" }
 if ((Test-Path -LiteralPath $FinalExe) -and -not (Stop-ExactTargetTekProcess -TargetExe $FinalExe -WaitSeconds $UnlockWaitSeconds)) {
     Write-Warning "dist target remains locked. PyInstaller will build in an isolated staging directory; the new executable will be retained under dist as TEK.new.exe (or a timestamped variant) if it cannot replace the primary target."
 }
@@ -336,7 +338,7 @@ try {
         "--noconfirm",
         "--clean",
         "--windowed",
-        "--name", "TEK",
+        "--name", "TEK-TEF",
         "--paths", $RepoRoot,
         "--distpath", $StageDist,
         "--workpath", $StageWork,
@@ -362,12 +364,12 @@ try {
     & $PythonExe @PyInstallerArgs
     if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed with exit code $LASTEXITCODE" }
 
-    $stagedExe = if ($OneDir) { Join-Path $StageDist "TEK\TEK.exe" } else { Join-Path $StageDist "TEK.exe" }
-    if (-not (Test-Path -LiteralPath $stagedExe)) { throw "Build finished but staged TEK.exe was not found at $stagedExe" }
-    if ((Get-Item -LiteralPath $stagedExe).Length -lt 1MB) { throw "Staged TEK.exe size is unexpectedly small; treating build as invalid" }
+    $stagedExe = if ($OneDir) { Join-Path $StageDist "TEK-TEF\TEK-TEF.exe" } else { Join-Path $StageDist "TEK-TEF.exe" }
+    if (-not (Test-Path -LiteralPath $stagedExe)) { throw "Build finished but staged TEK-TEF.exe was not found at $stagedExe" }
+    if ((Get-Item -LiteralPath $stagedExe).Length -lt 1MB) { throw "Staged TEK-TEF.exe size is unexpectedly small; treating build as invalid" }
 
     $publish = if ($OneDir) {
-        Publish-OneDirArtifact -StagedDirectory (Split-Path -Parent $stagedExe) -FinalDirectory (Join-Path $DistRoot "TEK")
+        Publish-OneDirArtifact -StagedDirectory (Split-Path -Parent $stagedExe) -FinalDirectory (Join-Path $DistRoot "TEK-TEF")
     } else {
         Publish-OneFileArtifact -StagedExe $stagedExe -FinalExe $FinalExe
     }
@@ -376,14 +378,15 @@ try {
     if (-not $SkipSmokeTest) {
         $process = Start-Process -FilePath $exe -PassThru -WindowStyle Hidden
         Start-Sleep -Seconds 3
-        if ($process.HasExited) { throw "TEK.exe smoke test failed: process exited with code $($process.ExitCode)" }
+        if ($process.HasExited) { throw "TEK-TEF.exe smoke test failed: process exited with code $($process.ExitCode)" }
         Stop-Process -Id $process.Id -Force
     }
 
     $signature = Get-AuthenticodeSignature -LiteralPath $exe
     $manifest = [ordered]@{
         schemaVersion = 2
-        component = "TEK"
+        component = "TEF-TEK"
+        project = "TEF"
         sourceCommit = (& git rev-parse HEAD)
         builtAt = (Get-Date).ToUniversalTime().ToString("o")
         executable = (Resolve-Path -LiteralPath $exe).Path

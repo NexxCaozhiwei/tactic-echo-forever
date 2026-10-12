@@ -46,6 +46,13 @@ function C:EngineCall(method)
     end
     return ok
 end
+function C:ReplaceRecommendation(rows)
+    self.internal=true
+    local ok,result=pcall(self.e.ReplaceRecommendation,self.e,rows)
+    self.internal=false
+    if not ok then self:Fault("RUNTIME_ENGINE_FAILED"); return false end
+    return result
+end
 function C:Initialize(e)
     self.e=e; self.intent=false; self.worldSeen=false; self.state="paused"
     self.reason=nil; self.cycle=0; self.requestSerial=0

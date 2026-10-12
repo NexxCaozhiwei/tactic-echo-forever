@@ -1,3 +1,9 @@
+# TEF current scope
+
+This local TEK belongs to TEF. Current paths and build commands are in ../README.md; namespace in PROTOCOL_NAMESPACE.md. The following inherited text is historical and does not require Retail source or describe the new configuration directory.
+
+## Historical reference
+
 # TEAP v3 自动定位契约（P5.6）
 
 ## 不变的协议

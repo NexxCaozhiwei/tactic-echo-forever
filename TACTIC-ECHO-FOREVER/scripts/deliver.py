@@ -10,7 +10,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = (ROOT / "VERSION").read_text().strip()
 TARGET = Path(r"E:\World of Warcraft\_cn_beta_\Interface\AddOns\TACTIC-ECHO-FOREVER")
-LOAD = ["Config.lua", "Safety.lua", "APL/Packs/Mage/Abilities.lua", "APL/Packs/Mage/Talents.lua", "APL/TalentState.lua", "APL/Registry.lua", "APL/PublicConditions.lua", "APL/Custom.lua", "APL/State.lua", "APL/Conditions.lua", "APL/Trace.lua", "APL/Packs/Mage/Mage60.lua", "APL/Packs/Mage/Rules.lua", "APL/Engine.lua", "Sequence.lua", "HudStyles.lua", "Profiles.lua", "Recommendation.lua", "Research.lua", "UI.lua", "UIComponents.lua", "SequenceEditor.lua", "CustomAPLEditor.lua", "HUD.lua", "Dispatch.lua", "Presentation.lua", "Transport.lua", "Runtime.lua", "Hotkeys.lua", "Core/Bootstrap.lua"]
+LOAD = ["Config.lua", "Safety.lua", "APL/Packs/Mage/Abilities.lua", "APL/Packs/Mage/Talents.lua", "APL/TalentState.lua", "APL/Registry.lua", "APL/PublicConditions.lua", "APL/Custom.lua", "APL/RankResolver.lua", "APL/Packs/Mage/BuildSelector.lua", "APL/State.lua", "APL/Conditions.lua", "APL/Trace.lua", "APL/Packs/Mage/Mage60.lua", "APL/Packs/Mage/Rules.lua", "APL/Engine.lua", "Sequence.lua", "HudStyles.lua", "Profiles.lua", "Recommendation.lua", "Research.lua", "UI.lua", "UIComponents.lua", "SequenceEditor.lua", "CustomAPLEditor.lua", "HUD.lua", "Dispatch.lua", "Presentation.lua", "Transport.lua", "Runtime.lua", "Hotkeys.lua", "Core/Bootstrap.lua"]
 RUNTIME = ["TACTIC-ECHO-FOREVER.toc", "VERSION", "Bindings.xml"] + LOAD + ["README.md", "CHANGELOG.md"]
 
 
@@ -33,18 +33,8 @@ def main():
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     receipt = {"version": VERSION, "interface": 16001, "client_evidence_exe": "1.60.1.70338",
                "simulation_only": True, "target": str(TARGET), "backup": None}
-    receipt["validation"] = {"lua51_cases": 300, "sequence_lua51_cases": 196, "apl_lua51_cases": 104, "tek_interop_dry_run_cases": 6,
-        "exact_manual_packet_encodings": 3, "simulated_single_dispatch_budget": 1, "manual_handoff_dry_run_cases": 2,
-        "paused_start_toggle_handoff": "passed",
-        "acceptance_harness_mock_tests": 2, "startup_dry_run": "not_run_this_delivery",
-        "pytest_passed": 791, "pytest_skipped": 7, "pytest_subtests_passed": 17,
-        "tek_unittest": 234, "addon_unittest": 244, "lua_syntax": "passed", "lua_syntax_files": 88,
-        "baseline_contract": "passed", "compileall": "passed",
-        "new_features_in_game_verified": False, "tek_source_modified": False,
-        "live_pixel_locate_decode": "not_run_this_delivery", "gamma_combinations_limit": 64,
-        "production_tek_signal_found": None, "hud_and_settings_live_layout_observed": False,
-        "real_sendinput_verified": False, "game_success_receipts_verified": False,
-        "request_entry_guard_in_game_verified": False, "continuous_in_game_verified": False}
+    receipt["validation"] = {"performed_by_packager": False,
+        "report": "docs/APL_FOUNDATION_FIX_1.0.1.md", "in_game_verified": False}
     receipt["sequence_editor"] = {"max_steps_per_scene": 16, "repeat_count_min": 1,
         "repeat_count_max": 99, "count_evidence": "public_current_initiation_and_succeeded",
         "legacy_17_32_steps_preserved_inactive": True, "drag_cursor_spell_id_position": 4,
@@ -53,7 +43,7 @@ def main():
     receipt["apl"]={"pack":"MAGE_FOREVER_60","unit":"class","default_source":"sequence",
         "catalog_records":272,"talent_records":54,"catalog_status":"unverified",
         "talent_source_declared_build":"1.60.1.70170","conditions":"three_valued",
-        "automatic_filler_weights_implemented":False,"templates":["arcane","fire","frost","custom"],"template_selection":"manual_build_template","wotlk_source_rules":84,"source_conditions_preserved":True,"gcd_policy":"user_authorized_not_queried_not_gated","failed_identities":"shared_engine_4096_no_eviction","wotlk_classifications":{"KEEP":10,"ADAPT":4,"DROP":37,"BLOCKED":33},"five_reference_hashes_verified":True,"source_identity_order_criteria_checks":84,"enemy_count":"visible_only",
+        "automatic_filler_weights_implemented":False,"templates":["auto","arcane","fire","frost","custom"],"template_selection":"public_key_talents_or_manual_override","wotlk_source_rules":84,"source_conditions_preserved":True,"gcd_policy":"user_authorized_not_queried_not_gated","failed_identities":"shared_engine_4096_no_eviction","wotlk_classifications":{"KEEP":10,"ADAPT":4,"DROP":37,"BLOCKED":33},"five_reference_hashes_verified":True,"source_identity_order_criteria_checks":84,"enemy_count":"visible_only",
         "secret_or_unknown_dependencies_binding_token":0,"modern_spec_required":False,
         "live_learned_ranks_verified":False,"live_talent_provider_verified":False,
         "apl_real_dispatch_verified":False}
@@ -82,7 +72,7 @@ def main():
         "default_enabled": True, "default_request_permission": True, "desktop_tek_ui_linked": True, "per_step_explicit_request": False, "continuous_default_enabled": False, "default_runtime_mode": "auto", "auto_start_preference": True, "runtime_in_game_verified": False, "continuous_requires_public_numeric_evidence": False}
     sources = sorted([ROOT / name for name in RUNTIME] +
                      list((ROOT / "docs").rglob("*.md")) + list((ROOT / "docs/references/wotlk").glob("*.json")) +
-                     [ROOT / "tests/run.lua", ROOT / "tests/run.py", ROOT / "tests/apl.lua", ROOT / "tests/custom_apl.lua", ROOT / "tests/public_conditions.lua", ROOT / "tests/test_acceptance_harness.py", ROOT / "scripts/deliver.py", ROOT / "scripts/import_apl_catalog.py", ROOT / "scripts/import_wotlk_apl.py", ROOT / "scripts/tek_acceptance.py"])
+                     [ROOT / "tests/run.lua", ROOT / "tests/run.py", ROOT / "tests/apl.lua", ROOT / "tests/foundation.lua", ROOT / "tests/custom_apl.lua", ROOT / "tests/public_conditions.lua", ROOT / "tests/test_acceptance_harness.py", ROOT / "scripts/deliver.py", ROOT / "scripts/import_apl_catalog.py", ROOT / "scripts/import_wotlk_apl.py", ROOT / "scripts/tek_acceptance.py"])
     sources += sorted((ROOT.parent / "docs/baselines/tef").glob("BASELINE_*.md"))
     archive = out / f"TACTIC-ECHO-FOREVER-{VERSION}.zip"
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:

@@ -9,16 +9,7 @@ function P:Identity()
     local ok,_,raw=pcall(fn,"player")
     local class=ok and S.Public(raw,"string")
     if not class or not classes[class] then return nil,nil end
-    local specFn=S.Resolve("GetSpecialization")
-    if not specFn then return class .. ":base",class end
-    local called,value=pcall(specFn)
-    if not called then return nil,class end
-    local index,reason=S.Public(value,"number")
-    if reason=="NO_DATA" then return class .. ":base",class end
-    if not index or index<1 or index>5 or index%1~=0 then return nil,class end
-    local got,id=S.Call("GetSpecializationInfo",index)
-    id=got and S.ID(id)
-    return id and (class .. ":" .. id) or nil,class
+    return class .. ":base",class
 end
 local function validKey(key)
     if #key>40 then return false end
@@ -64,6 +55,11 @@ function P:Initialize(e, old)
     local scene = S.Field(old,"scene","string")
     if scene ~= "multi" then scene = "single" end
     e.db.classProfiles={}; e.db.sourceByProfile={}
+    e.db.profileMigrationConflicts={}
+    local conflicts=S.Field(old,"profileMigrationConflicts","table")
+    for class in pairs(classes) do
+        if conflicts and S.Field(conflicts,class,"boolean")==true then e.db.profileMigrationConflicts[class]=true end
+    end
     e.db.apl=TEF.APL and TEF.APL.Clean(S.Field(old,"apl","table")) or nil
     e.db.aplByClass={}
     local aplModes=S.Field(old,"aplByClass","table")
@@ -94,6 +90,28 @@ function P:Initialize(e, old)
             end
         end)
         if not copied then e.db.classProfiles={}; e.db.sourceByProfile={} end
+    end
+    -- Unique populated legacy spec profile migrates once; conflicting profiles
+    -- remain preserved, with an empty base and a visible diagnostic.
+    for class in pairs(classes) do
+        local base=class .. ":base"
+        if not e.db.classProfiles[base] then
+            local candidates={}
+            for key,profile in pairs(e.db.classProfiles) do
+                if key:match("^" .. class .. ":%d+$") and (#profile.single>0 or #profile.multi>0) then candidates[#candidates+1]=key end
+            end
+            if #candidates==1 then
+                local key=candidates[1]
+                e.db.classProfiles[base]={single=self:Clean(e.db.classProfiles[key].single,32),multi=self:Clean(e.db.classProfiles[key].multi,32)}
+                local source=e.db.sourceByProfile[key] or {}
+                e.db.sourceByProfile[base]={single=source.single,multi=source.multi}
+                e:Log("lifecycle","CLASS_BASE_PROFILE_MIGRATED")
+            elseif #candidates>1 then
+                e.db.classProfiles[base]={single={},multi={}}
+                e.db.profileMigrationConflicts[class]=true
+                e:Log("error","CLASS_BASE_PROFILE_MIGRATION_CONFLICT")
+            end
+        end
     end
     -- Legacy unscoped profiles were exclusively mage practice. Never migrate
     -- them to the currently logged-in non-mage character.
@@ -161,6 +179,7 @@ function P:Save(e, key, rows)
     if not clean then return false,"CONFIG_INVALID" end
     e:Reset()
     e.db.profiles[key] = clean
+    e.db.profileMigrationConflicts[e.classToken]=nil
     if e.scene == key then
         local selected=clean
         if TEF.Recommendation then selected=TEF.Recommendation:Rows(e,key) end

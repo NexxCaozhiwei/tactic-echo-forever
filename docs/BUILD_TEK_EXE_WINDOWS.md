@@ -1,3 +1,9 @@
+# TEF current scope
+
+This local TEK belongs to TEF. Current paths and build commands are in ../README.md; namespace in PROTOCOL_NAMESPACE.md. The following inherited text is historical and does not require Retail source or describe the new configuration directory.
+
+## Historical reference
+
 # Windows 构建 `TEK.exe`
 
 在项目根目录双击 `TEKEXEBUILD.CMD`。该文件是唯一的 Windows 构建入口。

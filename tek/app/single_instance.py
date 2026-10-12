@@ -54,7 +54,7 @@ class SingleInstance:
     def _acquire_windows_mutex(self, normalized: str) -> bool:
         import ctypes
 
-        name = "Local\\TacticEcho-" + hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:24]
+        name = "Local\\TacticEchoForever-" + hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:24]
         kernel32 = ctypes.windll.kernel32
         handle = kernel32.CreateMutexW(None, False, name)
         if not handle:

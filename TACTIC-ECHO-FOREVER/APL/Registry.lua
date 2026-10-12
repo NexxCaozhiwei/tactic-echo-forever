@@ -12,12 +12,17 @@ for _,row in ipairs(A.Catalog) do
  A.AbilityNames[row.name]=key; A.CatalogByID[row.id]={key=key,rank=row.rank,learnLevel=row.learnLevel}
  local a=A.Abilities[key]; a.candidates=a.candidates or {}; a.candidates[#a.candidates+1]=row.id
 end
+for _,ability in pairs(A.Abilities) do
+ ability.readinessPolicy="usable_only"
+ ability.ruleStatus="UNVERIFIED"
+ ability.capability={known="public_exact_learned",usable="public_boolean",range="public_boolean",cooldown="explicit_public_zero_only",aura="unsupported"}
+end
 function A.Clean(raw)
  local filler=S.Field(raw,"filler","string")
  local fillers={auto=true,fireball=true,frostbolt=true,scorch=true,arcane_missiles=true,arcane_blast=true}
  local template=S.Field(raw,"template","string")
- if template~="arcane" and template~="fire" and template~="frost" and template~="custom" then
-  template=filler=="frostbolt" and "frost" or filler=="arcane_blast" and "arcane" or "fire"
+ if template~="auto" and template~="arcane" and template~="fire" and template~="frost" and template~="custom" then
+  template="auto"
  end
  local threshold=S.Field(raw,"aoeThreshold","number")
  local ids={}; local saved=S.Field(raw,"exactIDs","table")

@@ -224,7 +224,7 @@ class WorkerController:
         SavedVariables file is never copied to the bundle.
         """
         settings = self.settings_store.load()
-        saved_variables_path = settings.wow_savedvariables_path or None
+        saved_variables_path = None  # TEF never imports another AddOn database.
         return create_diagnostic_bundle(
             paths=self.paths,
             settings_store=self.settings_store,

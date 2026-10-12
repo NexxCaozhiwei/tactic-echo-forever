@@ -1,0 +1,2 @@
+-r requirements-windows.txt
+lupa>=2.0

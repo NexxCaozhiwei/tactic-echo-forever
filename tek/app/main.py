@@ -32,6 +32,7 @@ def main(argv: list[str] | None = None) -> int:
     settings_store = SettingsStore(paths.settings_json)
     settings = settings_store.load()
     configure_logging(paths, level=settings.log_level)
+    logging.info("TEF TEK namespace: TEF")
     logging.info("DPI awareness: %s", dpi_awareness.to_dict())
 
     acceptance_args = _parse_acceptance_args(argv)

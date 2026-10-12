@@ -1,25 +1,7 @@
-# Documentation Index
+# TEF documentation
 
-Current version: `1.4.4`
-
-Start with the root documents:
-
-- `../README.md` for the current project overview and safety contract.
-- `../HANDOFF.md` for current handoff notes.
-- `../TASKS.md` for active validation.
-- `../DECISIONS.md` for current decisions.
-
-Current baseline documents live in `baselines/`; start with `baselines/BASELINE_1.4.4.md`.
-Patch manifest documents live in `patch-manifests/`; root-level `PATCH_MANIFEST*` files are not canonical.
-
-Topic documents:
-
-- `architecture.md`
-- `AUTO_INJECTION.md`
-- `testing-strategy.md`
-- `TEAP_V3_AUTOLOCATION.md`
-- `TEK_EXE.md`
-- `TEK_TRAY_APP.md`
-- `BUILD_TEK_EXE_WINDOWS.md`
-
-Historical documents, including retired reaction/interrupt/control/defense/environment designs and tests, live under `archive/`. Treat archive files as reference only; do not use them as current implementation authority without re-verifying against the live source and obtaining explicit scope approval.
+- [Local split](PROJECT_SPLIT.md)
+- [TEAP namespaces](PROTOCOL_NAMESPACE.md)
+- [APL current contract](../TACTIC-ECHO-FOREVER/docs/APL_FOUNDATION_FIX_1.0.1.md)
+- AddOn history and live evidence: ../TACTIC-ECHO-FOREVER/docs/
+- TEF baselines: baselines/tef/

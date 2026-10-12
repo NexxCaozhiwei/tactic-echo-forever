@@ -77,7 +77,7 @@ class StatusWindow:
     def _thread_main(self) -> None:
         root = tk.Tk()
         self.root = root
-        root.title("Tactic Echo Key")
+        root.title("Tactic Echo Forever — TEF TEK")
         # The status/diagnostics pages intentionally remain usable on high-DPI
         # displays.  The user may resize the tray host within a bounded range;
         # no layout decision depends on a fixed desktop resolution.
@@ -704,8 +704,8 @@ class StatusWindow:
         ttk.Label(frame, text="映射快照（可选）").pack(anchor="w", pady=(8, 0))
         source_row = ttk.Frame(frame)
         source_row.pack(fill="x", pady=(2, 8))
-        ttk.Entry(source_row, textvariable=self._settings_vars["wow_savedvariables_path"], width=52).pack(side="left", fill="x", expand=True)
-        ttk.Button(source_row, text="选择", command=self._choose_savedvariables).pack(side="left", padx=(5, 0))
+        ttk.Entry(source_row, textvariable=self._settings_vars["wow_savedvariables_path"], width=52, state="disabled").pack(side="left", fill="x", expand=True)
+        ttk.Button(source_row, text="TEF不读取其他插件保存变量", state="disabled").pack(side="left", padx=(5, 0))
 
         ttk.Label(frame, text="最近原因计数").pack(anchor="w")
         self.values["reason_counts"] = tk.StringVar(value="-")
@@ -919,7 +919,7 @@ class StatusWindow:
         except OSError as error:
             messagebox.showerror("TEK", f"生成诊断包失败：{error}")
             return
-        mapping_note = "已包含映射快照" if manifest.get("mappingExportIncluded") else "未包含映射快照（可选择 TacticEcho.lua 后重试）"
+        mapping_note = "已包含映射快照" if manifest.get("mappingExportIncluded") else "TEF仅导出自身TEK诊断，不读取其他插件保存变量"
         messagebox.showinfo("TEK", f"诊断包已生成：\n{path}\n{mapping_note}")
 
     def _copy_diagnostic_summary(self) -> None:

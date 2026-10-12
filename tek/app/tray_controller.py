@@ -151,7 +151,7 @@ class TrayController:
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("退出 TEK", lambda _: self.quit()),
         )
-        self._icon = pystray.Icon("TEK", make_image(), "Tactic Echo Key", menu)
+        self._icon = pystray.Icon("TEF-TEK", make_image(), "Tactic Echo Forever — TEF TEK", menu)
 
         def updater():
             while self._icon and not self._stop_event.is_set():
@@ -184,7 +184,7 @@ class TrayController:
             return
         reason = snapshot.last_reason or snapshot.error_message or "未知原因"
         try:
-            self._icon.notify(f"{snapshot.process_state}: {reason}", "Tactic Echo Key")
+            self._icon.notify(f"{snapshot.process_state}: {reason}", "Tactic Echo Forever — TEF TEK")
         except Exception:
             # Notification support differs by Windows shell; the red tray state
             # remains the source of truth even when a toast cannot be shown.

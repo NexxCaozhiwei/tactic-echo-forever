@@ -11,7 +11,7 @@ local function state()
  for key in pairs(A.Talents) do s.talents[key]={status="UNKNOWN"} end
  return s
 end
-local function config() local c=A.Clean(nil); c.filler="fireball"; return c end
+local function config() local c=A.Clean(nil); c.template="fire"; c.filler="fireball"; return c end
 local function talent(s,key,rank) s.talents[key]={known=rank>0,rank=rank,status=rank>0 and "KNOWN" or "NOT_KNOWN"} end
 local function evaluate(s,c) return A:Evaluate(s,c or config(),"MAGE") end
 test("apl_pack_registry_loads_mage_60",function() eq(A.Packs.MAGE.id,"MAGE_FOREVER_60"); eq(#A.Catalog,272); local count=0; for _ in pairs(A.Talents) do count=count+1 end; eq(count,54) end)
@@ -40,7 +40,7 @@ test("mage_pack_does_not_branch_on_build_label",function() local s=state(); s.ac
 test("mage_preferred_filler_manual_override",function() local s,c=state(),config(); s.actions.fireball.known=true; s.actions.frostbolt.known=true; c.filler="frostbolt"; eq(evaluate(s,c).spellID,205) end)
 test("mage_preferred_filler_unlearned_fails_safe",function() local s,c=state(),config(); s.actions.fireball.known=true; c.filler="frostbolt"; eq(evaluate(s,c),nil) end)
 test("mage_template_filler_is_explicit_source_default",function() local s,c=state(),config(); s.actions.fireball.known=true; c.filler="auto"; eq(evaluate(s,c).action,"fireball") end)
-test("preview_has_no_combat_or_gcd_condition_own_cd_remains",function() local s=state(); s.actions.fireball.known=true; s.gcd.ready=nil; eq(evaluate(s).action,"fireball"); s.gcd.ready=false; eq(evaluate(s).action,"fireball"); s.actions.fireball.ready=nil; eq(evaluate(s),nil); s.actions.fireball.ready=true; s.combat.in_combat=nil; eq(evaluate(s).action,"fireball"); s.combat.in_combat=false; eq(evaluate(s).action,"fireball") end)
+test("preview_has_no_combat_or_gcd_condition_own_cd_remains",function() local s=state(); s.actions.fireball.known=true; s.gcd.ready=nil; eq(evaluate(s).action,"fireball"); s.gcd.ready=false; eq(evaluate(s).action,"fireball"); s.actions.fireball.ready=nil; eq(evaluate(s).action,"fireball"); s.actions.fireball.ready=true; s.combat.in_combat=nil; eq(evaluate(s).action,"fireball"); s.combat.in_combat=false; eq(evaluate(s).action,"fireball") end)
 test("aoe_source_radius_condition_not_removed",function() local s,c=state(),config(); c.template="arcane"; s.scene="multi"; c.arcane_explosion=true; s.actions.arcane_explosion.known=true; eq(evaluate(s,c),nil) end)
 test("tri_value_false_dominates_unknown",function() local s=state(); s.actions.fireball.known=nil; s.actions.fireball.usable=false; eq(A.Conditions:All(s,{{op="action",key="fireball",field="known"},{op="action",key="fireball",field="usable"}},config()),false) end)
 test("unsupported_class_never_uses_mage",function() local chosen,why=A:Evaluate(state(),config(),"WARRIOR"); eq(chosen,nil); eq(why,"APL_CLASS_UNSUPPORTED") end)
@@ -115,7 +115,7 @@ test("apl_guard_stale_revision_generation_receipt_and_live_unknown",function()
  e.aplSnapshot={generation=e.generation,receiptSerial=0,revision=A.State.revision,sampledAt=10,talents=s.talents,scene="single"}
  eq(A:Allowed(e,143),true); e.aplSnapshot.generation=e.generation-1; eq(A:Allowed(e,143),false); e.aplSnapshot.generation=e.generation
  e.receiptSerial=1; eq(A:Allowed(e,143),false); e.receiptSerial=0
- C_Spell.GetSpellCooldown=function() return nil end; eq(A:Allowed(e,143),false)
+ C_Spell.GetSpellCooldown=function() return nil end; eq(A:Allowed(e,143),true)
 end)
 test("pause_reset_retires_apl_initiations",function()
  local e=T.Engine.New(T.Config); T.Recommendation:SetSource(e,"apl"); e.steps=T.Engine.Validate({{name="火球术",spellID=143,matchIDs={143}}}); e:Start()
@@ -158,7 +158,7 @@ test("apl_initiated_action_locked_against_new_priority",function()
 end)
 test("apl_packet_live_unknown_immediately_zeroes_old_candidate",function()
  runtime(); T.Runtime:SetIntent(true); T.Dispatch:TickContinuous(); assert(T.Dispatch.pending)
- C_Spell.GetSpellCooldown=function() return {isEnabled=true,isActive=false,startTime=secret,duration=secret} end
+ C_Spell.IsSpellUsable=function() return secret,secret end
  eq(T.Dispatch:Packet(),nil); eq(T.Dispatch.pending,nil)
 end)
 test("apl_sampling_reentry_rejects_stale_generation",function()
@@ -253,6 +253,7 @@ test("wotlk_manual_template_persist_and_invalid_rejected",function()
  local c=A.Clean({template="frost",filler="auto"}); eq(c.template,"frost"); eq(c.schema,3)
  local e=T.Engine.New(T.Config); local ok=A:Configure(e,"template","modern_frost"); eq(ok,false)
 end)
+n=n+assert(loadfile((arg and arg[1] or ".") .. "/tests/foundation.lua"))("TEF",T,{runtime=runtime,secret=secret,receipt=F.receipt})
 n=n+assert(loadfile((arg and arg[1] or ".") .. "/tests/custom_apl.lua"))("TEF",T,{runtime=runtime,secret=secret,receipt=F.receipt})
 for key,value in pairs(saved) do _G[key]=value end
 issecretvalue=originalDetector

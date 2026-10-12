@@ -1,3 +1,9 @@
+# TEF current scope
+
+This local TEK belongs to TEF. Current paths and build commands are in ../README.md; namespace in PROTOCOL_NAMESPACE.md. The following inherited text is historical and does not require Retail source or describe the new configuration directory.
+
+## Historical reference
+
 # TEK / TEF颜色传输兼容更新
 
 TE AddOn基线仍1.5.12，VERSION/TOC/Bootstrap一致；未改TE运行逻辑。本次TEK与TEF协同版本为TEF0.5.0，TEK构建版本由构建清单SHA256识别。

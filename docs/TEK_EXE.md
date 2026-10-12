@@ -1,3 +1,9 @@
+# TEF current scope
+
+This local TEK belongs to TEF. Current paths and build commands are in ../README.md; namespace in PROTOCOL_NAMESPACE.md. The following inherited text is historical and does not require Retail source or describe the new configuration directory.
+
+## Historical reference
+
 # 0.9.51 P5.6 客户区自动定位
 
 TEK 自动模式不要求在 WoW 全屏时操作状态窗口。它从当前 WoW HWND 获取客户区坐标，只在左上 `360×96 → 640×160 → 最大 960×240 px` 区域寻找 v3 的 `T / E / 3` 头部。候选布局需要两帧完整 20 格 CRC/Commit 校验，并要求 freshness 前进；失败时保持等待，绝不改用桌面 `(12,12)` 坐标。

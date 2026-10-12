@@ -1,3 +1,7 @@
+# 1.0.1 — APL foundation
+
+Optional public-ready policy; learned rank resolver; class-base migration; conservative automatic source strategy; recommendation replacement preserving intent and receipts; 50ms dirty coalescing / 200ms fallback. No additional Hekili conditions or input paths. Live acceptance pending.
+
 # TEF 1.0.0
 
 - 用户指定首个发布基线，冻结0.14.3行为；独立TEF版本、TOC、Config与Bootstrap同步1.0.0，TE仍1.5.12。

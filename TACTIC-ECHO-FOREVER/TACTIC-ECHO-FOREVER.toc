@@ -2,7 +2,7 @@
 ## Title: TACTIC-ECHO-FOREVER
 ## Notes: TEF 固定序列与经典法师职业APL v0
 ## Author: TEF
-## Version: 1.0.0
+## Version: 1.0.1
 ## SavedVariables: TEF_DB
 
 Config.lua
@@ -13,6 +13,8 @@ APL/TalentState.lua
 APL/Registry.lua
 APL/PublicConditions.lua
 APL/Custom.lua
+APL/RankResolver.lua
+APL/Packs/Mage/BuildSelector.lua
 APL/State.lua
 APL/Conditions.lua
 APL/Trace.lua

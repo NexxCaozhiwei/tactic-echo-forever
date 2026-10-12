@@ -1,3 +1,11 @@
+# Current Contract — TEF 1.0.1
+
+当前契约见 [APL_FOUNDATION_FIX_1.0.1.md](APL_FOUNDATION_FIX_1.0.1.md)：默认不读取 ready；职业配置 CLASS:base；auto 策略依据关键天赋，无法确认则手选；50ms dirty / 200ms fallback；候选变化使用内部 ReplaceRecommendation。GCD 不查询。源规则仍只执行已闭合子集。
+
+# Historical Notes
+
+以下正文保留历史版本事实，不作为当前实现要求。
+
 当前0.12.1：用户明确授权取消APL GCD条件与61304查询；其他条件不变。失败身份采用原4096共享预算，取消重复128失败上限。以下旧版本GCD限制作为历史记录，按本条覆盖。详见docs/PRODUCTION_0.12.1.md。
 
 当前优先级已于0.12.0按用户五份WotLK文件重设；以下原v0规则说明作为历史背景。当前以WOTLK_MIGRATION_0.12.0.md及Rules.lua为准。

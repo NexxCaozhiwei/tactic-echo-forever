@@ -154,6 +154,27 @@ function Engine:Reset()
     self:Invalidate("RESET")
     self.index, self.completed, self.stepCasts = 1, false, 0
 end
+function Engine:RecommendationLocked()
+    local step=self.steps and self.steps[self.index]
+    for guid,a in pairs(self.associations) do
+        if step and not self.seen[guid] and not a.failed and a.generation==self.generation
+            and a.index==self.index and a.receiptSerial==(self.receiptSerial or 0)
+            and step.matches[a.spellID] then return true end
+    end
+    local d=TEF.Dispatch
+    return d and (d:HasCurrentInitiation() or not d:CastIdle()) or false
+end
+function Engine:ReplaceRecommendation(rows)
+    if self:RecommendationLocked() then return false end
+    local wasRunning=self.running
+    -- Reuse identity retirement and transport revocation, under Runtime's
+    -- internal ownership; this is not a user/configuration reset.
+    self:Invalidate("APL_RECOMMENDATION_REPLACED")
+    self.steps=configuration(rows)
+    self.index,self.completed,self.stepCasts=1,false,0
+    self.running=wasRunning and self.steps~=nil and not self.identitySaturated
+    return true
+end
 function Engine:SetLoop(value)
     self.db.loop = value == true
     if not self.db.loop then self.db.loopMode="none"

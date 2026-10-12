@@ -12,7 +12,7 @@ SETTINGS_SCHEMA_VERSION = 8
 
 @dataclass(frozen=True)
 class AppSettings:
-    """User-facing TEK.exe settings persisted under %LOCALAPPDATA%/TacticEcho."""
+    """User-facing TEK.exe settings persisted under %LOCALAPPDATA%/TacticEchoForever."""
 
     schema_version: int = SETTINGS_SCHEMA_VERSION
     profile_id: str = "laptop"

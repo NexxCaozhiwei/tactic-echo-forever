@@ -1,5 +1,5 @@
 param(
-    [string]$TekExe = (Join-Path (Split-Path -Parent $PSScriptRoot) "dist\TEK.exe"),
+    [string]$TekExe = (Join-Path (Split-Path -Parent $PSScriptRoot) "dist\standalone-build\TEK-TEF.exe"),
     [string]$Binding = "Q",
     [string]$ExpectedProcess = "notepad.exe"
 )
@@ -8,7 +8,7 @@ $ErrorActionPreference = "Stop"
 if (-not (Test-Path -LiteralPath $TekExe)) { throw "TEK.exe not found: $TekExe" }
 if ($ExpectedProcess -match "(?i)wow|warcraft") { throw "Acceptance target must never be a WoW process." }
 
-$diagnostics = Join-Path $env:LOCALAPPDATA "TacticEcho\diagnostics"
+$diagnostics = Join-Path $env:LOCALAPPDATA "TacticEchoForever\diagnostics"
 $before = Get-Date
 $notepad = Start-Process -FilePath "notepad.exe" -PassThru
 Start-Sleep -Milliseconds 750

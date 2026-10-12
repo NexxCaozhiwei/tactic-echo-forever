@@ -11,7 +11,7 @@ issecretvalue=function(v)
 end
 local detector=issecretvalue
 local function load(name) assert(loadfile(root .. "/" .. name))("TACTIC-ECHO-FOREVER",T) end
-load("Config.lua"); load("Safety.lua"); load("APL/Packs/Mage/Abilities.lua"); load("APL/Packs/Mage/Talents.lua"); load("APL/TalentState.lua"); load("APL/Registry.lua"); load("APL/PublicConditions.lua"); load("APL/Custom.lua"); load("APL/State.lua"); load("APL/Conditions.lua"); load("APL/Trace.lua"); load("APL/Packs/Mage/Mage60.lua"); load("APL/Packs/Mage/Rules.lua"); load("APL/Engine.lua"); load("Sequence.lua")
+load("Config.lua"); load("Safety.lua"); load("APL/Packs/Mage/Abilities.lua"); load("APL/Packs/Mage/Talents.lua"); load("APL/TalentState.lua"); load("APL/Registry.lua"); load("APL/PublicConditions.lua"); load("APL/Custom.lua"); load("APL/RankResolver.lua"); load("APL/Packs/Mage/BuildSelector.lua"); load("APL/State.lua"); load("APL/Conditions.lua"); load("APL/Trace.lua"); load("APL/Packs/Mage/Mage60.lua"); load("APL/Packs/Mage/Rules.lua"); load("APL/Engine.lua"); load("Sequence.lua")
 load("HudStyles.lua"); load("Profiles.lua"); load("Recommendation.lua"); load("Research.lua")
 local standard=T.StandardConfig or T.Config
 local count=0
@@ -856,21 +856,19 @@ test("class_profiles_all_classes_isolated_and_legacy_mage_only",function()
         eq(e.steps[1].spellID,100); eq(e.db.classProfiles["MAGE:base"].single[1].spellID,116)
     end
 end)
-test("profile_specialization_switch_invalidates_and_restores_own_rows",function()
-    GetSpecialization=function() return 1 end; GetSpecializationInfo=function() return 62 end
+test("profile_specialization_switch_keeps_class_base_rows",function()
+    GetSpecialization=function() error("MUST_NOT_CALL") end; GetSpecializationInfo=function() error("MUST_NOT_CALL") end
     local e=engine(); T.Profiles:Select(e,"single"); e:Start(); local generation=e.generation
-    GetSpecializationInfo=function() return 63 end; assert(T.Profiles:RefreshIdentity(e))
-    eq(e.profileKey,"MAGE:63"); eq(e.running,false); eq(e.steps,nil); assert(e.generation>generation)
-    assert(T.Profiles:Save(e,"single",{{name="火球",spellID=143,matchIDs={143}}}))
-    GetSpecializationInfo=function() return 62 end; T.Profiles:RefreshIdentity(e); eq(e.steps[1].spellID,116)
+    eq(T.Profiles:RefreshIdentity(e),false); eq(e.profileKey,"MAGE:base"); eq(e.running,true); eq(e.generation,generation)
 end)
-test("profile_secret_unknown_failed_identity_no_fallback",function()
+test("profile_secret_unknown_failed_class_no_fallback",function()
     UnitClass=function() return "职业",secret end; eq(engine().steps,nil)
     UnitClass=function() error("PRIVATE") end; eq(engine().profileKey,nil)
     UnitClass=function() return "法师","MAGE" end; GetSpecialization=function() return secret end
-    eq(engine().profileKey,nil)
-    GetSpecialization=function() error("PRIVATE") end; eq(engine().steps,nil)
+    eq(engine().profileKey,"MAGE:base")
+    GetSpecialization=function() error("PRIVATE") end; eq(engine().profileKey,"MAGE:base")
 end)
+
 test("recommendation_sources_explicit_code_no_manual_fallback",function()
     local e=engine(); assert(T.Profiles:Save(e,"single",{{name="火球",spellID=143,matchIDs={143}}}))
     eq(T.Recommendation:Current(e).source,"manual"); eq(e.steps[1].spellID,143)

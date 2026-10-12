@@ -1,3 +1,11 @@
+当前插件属于独立 Tactic Echo Forever 项目；无需正式服TE仓库。拆分元数据见 ../docs/PROJECT_SPLIT.md。以下TE版本对照仅为历史来源说明。
+
+# TEF 1.0.1
+
+独立插件；TE AddOn 基线保持1.5.12。默认固定序列，APL显式选择。
+
+法师APL基础修复与实机待验清单见 [当前契约](docs/APL_FOUNDATION_FIX_1.0.1.md)。普通动作默认不要求冷却数值；职业配置统一 CLASS:base；自动策略无法确认时请手选。完整84条WotLK源规则已保留，仅14条分类允许评估，其余阻断或停用。
+
 # TACTIC-ECHO-FOREVER 1.0.0
 
 TEF独立插件的首个发布基线，适用无限服1.60.1/build70338/Interface16001/zhCN。人工序列、单体/多目标配置、自定义APL、HUD和TEAP v3/TEK共享传输链独立于TE官方推荐，不读取其他插件数据库。

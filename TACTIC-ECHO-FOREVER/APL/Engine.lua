@@ -1,5 +1,42 @@
 local _,TEF=...
 local A=TEF.APL
+for _,template in pairs(A.Packs.MAGE.templates) do for _,rows in pairs(template.lists) do for _,rule in ipairs(rows) do
+ if (rule.status=="KEEP" or rule.status=="ADAPT") and A.Abilities[rule.action] then
+  A.Abilities[rule.action].ruleStatus="PARTIAL"
+ end
+end end end
+function A:RuleNeedsReady(rule,key)
+ if rule.requireReady==true then return true end
+ for _,term in ipairs(rule.if_all or {}) do
+  if term.op=="action" and term.key==key and term.field=="ready" then return true end
+ end
+ return self.Abilities[key] and self.Abilities[key].readinessPolicy=="public_cooldown_required" or false
+end
+function A:NeedsReady(config,key)
+ local pack=self.Packs.MAGE
+ for name,template in pairs(pack.templates) do
+  if config.template=="auto" or name==config.template then
+   for _,rows in pairs(template.lists) do for _,rule in ipairs(rows) do
+    local action=rule.fallback and config.filler~="auto" and config.filler or rule.action
+    if rule.status~="DROP" and rule.status~="BLOCKED" and action==key and self:RuleNeedsReady(rule,key) then return true end
+   end end
+  end
+ end
+ return false
+end
+function A:SelectTemplate(state,config)
+ if config.template~="auto" then return {template=config.template,confidence="MANUAL_OVERRIDE",reasons={"用户策略覆盖"}} end
+ return self.BuildSelector:Select(state.talents or {},state.actions or {})
+end
+function A:RuleSummary()
+ local counts={total=0,active=0,blocked=0,dropped=0}
+ for _,template in pairs(self.Packs.MAGE.templates) do for _,rows in pairs(template.lists) do for _,rule in ipairs(rows) do
+  counts.total=counts.total+1
+  local key=rule.status=="BLOCKED" and "blocked" or rule.status=="DROP" and "dropped" or "active"
+  counts[key]=counts[key]+1
+ end end end
+ return counts.total .. " total / " .. counts.active .. " active / " .. counts.blocked .. " blocked / " .. counts.dropped .. " dropped",counts
+end
 function A:RuleAllowed(state,rule,config)
  if rule.status=="DROP" or rule.status=="BLOCKED" then return false,rule.reason end
  if rule.id:match(":aoe:") then
@@ -12,8 +49,7 @@ function A:RuleAllowed(state,rule,config)
  local key=rule.fallback and config.filler~="auto" and config.filler or rule.action
  -- Selection is a read-only preview, including automatic standby. Combat
  -- belongs to Allowed/Runtime transport gates, not mandatory eligibility.
- local terms={}
- for _,field in ipairs({"known","usable","power_ok","in_range","ready"}) do terms[#terms+1]={op="action",key=key,field=field} end
+ local terms=self.Conditions:ActionTerms(key,self:RuleNeedsReady(rule,key))
  local good,why=self.Conditions:All(state,terms,config)
  return good,why,key
 end
@@ -21,8 +57,9 @@ function A:Evaluate(state,config,class)
  local pack=self.Packs[class]; local trace={}
  if not pack then return nil,"APL_CLASS_UNSUPPORTED",trace end
  if config.template=="custom" then return self.Custom:Evaluate(state,config,class) end
- local template=pack.templates[config.template]
- if not template then return nil,"APL_TEMPLATE_UNKNOWN",trace end
+ local selection=self:SelectTemplate(state,config)
+ local template=pack.templates[selection.template]
+ if not template then return nil,"APL_TEMPLATE_UNRESOLVED",trace end
  local visited,budget={},0
  local function walk(list,depth)
   if depth>4 or visited[list] then return nil end
@@ -46,12 +83,16 @@ function A:Evaluate(state,config,class)
  return candidate,candidate and "APL_CANDIDATE" or "APL_NO_PUBLIC_ELIGIBLE_RULE",trace
 end
 function A:Ledger(e)
- local config=e.db.apl; if config.template=="custom" then return self.Custom:Ledger(e) end; local template=self.Packs.MAGE.templates[config.template]
- if not template then return "模板未知" end
+ local config=e.db.apl; if config.template=="custom" then return self.Custom:Ledger(e) end
+ local selection=self:SelectTemplate(e.aplSnapshot or {talents={},actions={}},config)
+ local template=self.Packs.MAGE.templates[selection.template]
+ if not template then return "自动推荐模板：未解析（" .. selection.confidence .. "）；请手选APL策略模板。依据：" .. table.concat(selection.reasons,"；")
+  .. "\n完整源规则已导入；当前只执行已闭合子集。" .. self:RuleSummary() end
  local results={}; for _,r in ipairs(e.aplTrace and e.aplTrace.rules or {}) do results[r.rule]=r end
- local lines={"手选构筑模板：" .. config.template .. "；源条件未验证的规则不执行。",
+ local lines={"APL策略模板：" .. selection.template .. "；依据：" .. table.concat(selection.reasons,"；"),
+  "完整源规则已导入；当前只执行已闭合子集。" .. self:RuleSummary(),
   "KEEP保留；ADAPT适配；DROP停用；BLOCKED未支持。",
-  "待命也评估推荐；技能须通过公开已学、可用、资源、范围、自身冷却。派发另要求战斗，不检测GCD。"}
+  "待命也评估推荐；技能须通过公开已学、可用、资源、范围；自身冷却仅显式声明时检查。派发另要求战斗，不检测GCD。"}
  for _,list in ipairs({"default","aoe","combustion","2T10","precombat"}) do
   if template.lists[list] then
    lines[#lines+1]="【" .. list .. "】"
@@ -70,28 +111,34 @@ function A:Invalidate(static) self.State:Invalidate(static) end
 function A:Refresh(e)
  if not self:IsActive(e) then return end
  -- A current public initiation owns its exact identity until success/failure.
- if TEF.Dispatch:HasCurrentInitiation() or not TEF.Dispatch:CastIdle() then return end
+ if e:RecommendationLocked() then return end
  local now=self.State.Time(); local last=self.State.last
- if now and last and now>=last and now-last<.5 and e.aplSnapshot then return end
+ if now and last and now>=last and now-last<(self.State.dirty and .05 or .20) and e.aplSnapshot
+  and e.aplSnapshot.generation==e.generation and e.aplSnapshot.receiptSerial==(e.receiptSerial or 0) then return end
  local state,reason=self.State:Sample(e)
  if not self:IsActive(e) then return end
  if not state then
-  self:Invalidate(); e.aplCandidate=nil; e.aplSnapshot=nil; e.steps=nil
+  if TEF.Runtime.e==e then TEF.Runtime:ReplaceRecommendation(nil) else e:ReplaceRecommendation(nil) end
+  self:Invalidate(); e.aplCandidate=nil; e.aplSnapshot=nil
   self.Trace:Record(e,{},reason,nil,nil); return
  end
  local candidate,why,trace=self:Evaluate(state,e.db.apl,e.classToken)
+ local rows=candidate and {{name=candidate.name or self.Abilities[candidate.action].name,
+  spellID=candidate.spellID,matchIDs={candidate.spellID},repeatCount=1}} or nil
  local previous=e.steps and e.steps[e.index]
  if (previous and previous.spellID or nil)~=(candidate and candidate.spellID or nil) then
-  -- Retire old initiations/requests via the existing lifecycle owner, never
-  -- create a second execution state machine or overwrite saved sequences.
   local runtime=TEF.Runtime
-  if runtime.e==e then runtime:EngineCall("Reset") else e:Reset() end
+  local replaced
+  if runtime.e==e then replaced=runtime:ReplaceRecommendation(rows)
+  else replaced=e:ReplaceRecommendation(rows) end
+  if not replaced then return end
  end
- e.steps=candidate and TEF.Engine.Validate({{name=candidate.name or self.Abilities[candidate.action].name,
-  spellID=candidate.spellID,matchIDs={candidate.spellID},repeatCount=1}}) or nil
- e.index=1; e.completed=false; e.aplCandidate=candidate
+ e.aplCandidate=candidate
+ if state.revision~=(self.State.revision or 0) or state.receiptSerial~=(e.receiptSerial or 0) then
+  e.aplCandidate=nil; e.aplSnapshot=nil; return
+ end
  state.generation=e.generation; state.receiptSerial=e.receiptSerial or 0
- e.aplSnapshot=state; self.State.last=state.sampledAt
+ e.aplSnapshot=state; self.State.last=state.sampledAt; self.State.dirty=false
  self.Trace:Record(e,trace,why,candidate,state)
  if TEF.HUD and TEF.HUD.engine==e then TEF.HUD:Refresh() end
 end
@@ -123,13 +170,14 @@ function A:Allowed(e,id)
   if s.revision~=(self.State.revision or 0) or s.generation~=e.generation or s.receiptSerial~=(e.receiptSerial or 0) then return false,"APL_STALE_OR_UNKNOWN" end
   return true
  end
- local action=self.State:ReadAction(c.action,{known=true,spellID=id,reason="CURRENT_CANDIDATE"})
+ local action=self.State:ReadAction(c.action,{known=true,spellID=id,reason="CURRENT_CANDIDATE"},self:NeedsReady(e.db.apl,c.action))
  action.known=self.State.Boolean("C_SpellBook.IsSpellKnown",id)
  local live={combat={in_combat=self.State.Boolean("InCombatLockdown")},gcd={},
   actions={[c.action]=action},talents=s.talents,enemy_count=s.enemy_count,scene=s.scene,moving=self.State.Boolean("IsPlayerMoving")}
  if live.combat.in_combat~=true then return false,"APL_DISPATCH_COMBAT_REQUIRED" end
  local pack=self.Packs[e.classToken]
- local template=pack and pack.templates[e.db.apl.template]
+ local selection=self:SelectTemplate(s,e.db.apl)
+ local template=pack and pack.templates[selection.template]
  if not template then return false,"APL_TEMPLATE_UNKNOWN" end
  for _,rows in pairs(template.lists) do for _,rule in ipairs(rows) do if rule.id==c.rule then
   local allowed,_,key=self:RuleAllowed(live,rule,e.db.apl)
@@ -142,7 +190,7 @@ end
 function A:Configure(e,key,value)
  local raw=self.Clean(e.db.apl)
  if key=="template" then
-  if value~="arcane" and value~="fire" and value~="frost" and value~="custom" then return false,"APL_TEMPLATE_INVALID" end
+  if value~="auto" and value~="arcane" and value~="fire" and value~="frost" and value~="custom" then return false,"APL_TEMPLATE_INVALID" end
   raw.template=value
  elseif key=="filler" then
   if value~="auto" and value~="fireball" and value~="frostbolt" and value~="scorch" and value~="arcane_missiles" and value~="arcane_blast" then return false,"APL_FILLER_INVALID" end

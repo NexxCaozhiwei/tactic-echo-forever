@@ -115,11 +115,11 @@ function C:Check(state,row,index)
   return value==wanted
  end
  -- Preview eligibility is independent of the transport combat gate.
- for _,field in ipairs({"known","usable","power_ok","in_range"}) do
-  if not require(action[field],true,field) then return false,"custom:" .. field end
- end
- if row.requireReady==true and not require(action.ready,true,"ready") then return false,"custom:ready" end
- if row.moving~="any" and not require(state.moving,row.moving=="yes","moving") then return false,"custom:moving" end
+ local terms=A.Conditions:ActionTerms("custom_" .. index,row.requireReady==true)
+ if row.moving~="any" then terms[#terms+1]={op="moving",equals=row.moving=="yes"} end
+ local basic,why=A.Conditions:All(state,terms,{})
+ if basic==false then return false,"custom:" .. (why:match("([^:]+)$") or why) end
+ if basic==nil then unknown="UNKNOWN:custom:" .. (why:match("([^:]+)$") or why) end
  if row.activity~="any" and not require(action.active,row.activity=="active","activity") then return false,"custom:activity" end
  for _,p in ipairs({{"mana","manaPercent","manaReason"},{"distance","distance","distanceReason"}}) do
   local op=row[p[1] .. "Op"] or "any"
@@ -132,9 +132,9 @@ function C:Check(state,row,index)
  end
  if row.enemyMin or row.enemyMax then
   if not row.experimentalEnemies then return false,"CUSTOM_ENEMIES_UNVERIFIED","BLOCKED" end
-  local n=state.enemy_count
-  if n==nil then unknown=unknown or "UNKNOWN:custom:enemies"
-  elseif (row.enemyMin and n<row.enemyMin) or (row.enemyMax and n>row.enemyMax) then return false,"custom:enemies" end
+  local result=A.Conditions:One(state,{op="enemy_count",min=row.enemyMin or 0,max=row.enemyMax},{})
+  if result==nil then unknown=unknown or "UNKNOWN:custom:enemies"
+  elseif result==false then return false,"custom:enemies" end
  end
  if unknown then return nil,unknown end
  return true,"CUSTOM_CONDITIONS_TRUE"

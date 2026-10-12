@@ -282,7 +282,7 @@ class AppRuntimeTests(unittest.TestCase):
             with patch.dict(os.environ, {"LOCALAPPDATA": directory}):
                 paths = AppPaths.from_environment()
 
-            self.assertEqual(paths.root, Path(directory) / "TacticEcho")
+            self.assertEqual(paths.root, Path(directory) / "TacticEchoForever")
             self.assertEqual(paths.status_json.name, "tek-status.json")
 
     def test_app_paths_seed_default_profile_without_overwrite(self):

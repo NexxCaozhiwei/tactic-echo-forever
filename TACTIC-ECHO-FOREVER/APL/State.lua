@@ -14,7 +14,7 @@ local function int(value,max)
  local v=S.Public(value,"number"); if v and v>=0 and v<=max and v%1==0 then return v end
 end
 function P:Invalidate(static)
- self.revision=(self.revision or 0)+1; self.last=nil
+ self.revision=(self.revision or 0)+1; self.dirty=true
  if static then self.learned=nil; self.talents=nil; self.build=nil end
 end
 function P:Learned(config)
@@ -41,7 +41,19 @@ function P:Learned(config)
      local key=id and name and A.AbilityNames[name]
      if not id or not name or passive==nil then complete=false
      elseif key and passive==false and id~=7268 then
-      sets[key]=sets[key] or {}; sets[key][id]=true
+      -- Rank text is accepted only from the same public spellbook slot and
+      -- matching semantic name. Unsupported localizations remain unresolved.
+      local rank=S.Field(item,"rank","number")
+      local fn=S.Resolve("C_SpellBook.GetSpellBookItemName")
+      if not rank and fn then
+       local ok,rawName,rawRank=pcall(fn,index,bank)
+       local bookName=ok and S.Public(rawName,"string")
+       local text=ok and S.Public(rawRank,"string")
+       if bookName and A.AbilityNames[bookName]==key and text then
+        rank=tonumber(text:match("^Rank (%d+)$") or text:match("^等级 (%d+)$"))
+       end
+      end
+      sets[key]=sets[key] or {}; sets[key][id]={ability=key,rank=rank}
      end
     end
    end
@@ -56,7 +68,7 @@ function P:Learned(config)
    local known=P.Boolean("C_SpellBook.IsSpellKnown",explicit)
    local got,info=S.Call("C_Spell.GetSpellInfo",explicit)
    local name=got and S.Field(info,"name","string")
-   if known==true and name and A.AbilityNames[name]==key then ids={[explicit]=true}
+   if known==true and name and A.AbilityNames[name]==key then ids[explicit]=ids[explicit] or {ability=key}
    else
     local value; if known==false then value=false end
     learned[key]={known=value,reason="EXACT_ID_NOT_CERTIFIED"}; ids={}
@@ -66,23 +78,13 @@ function P:Learned(config)
    local known=P.Boolean("C_SpellBook.IsSpellKnown",id)
    local got,info=S.Call("C_Spell.GetSpellInfo",id)
    local name=got and S.Field(info,"name","string")
-   if known==true and name and A.AbilityNames[name]==key then ids[id]=true end
+   if known==true and name and A.AbilityNames[name]==key then ids[id]={ability=key} end
   end
   if not learned[key] then
-   local count,only,bound,boundCount=0,nil,nil,0
-   for id in pairs(ids) do
-    -- Being in a public book is still independently confirmed as learned.
-    local known=P.Boolean("C_SpellBook.IsSpellKnown",id)
-    if known==true then
-     count=count+1; only=id
-     local binding=TEF.Dispatch and TEF.Dispatch:ResolveCached(id)
-     if binding then bound=id; boundCount=boundCount+1 end
-    elseif known==nil then complete=false end
-   end
-   local chosen=boundCount==1 and bound or (count==1 and only or nil)
+   local resolved=A.RankResolver:Resolve(key,ids,explicit)
    local value
-   if count>0 then value=true elseif complete then value=false end
-   learned[key]={known=value,spellID=chosen,reason=chosen and "PUBLIC_EXACT_LEARNED" or count>1 and "RANK_ID_AMBIGUOUS" or "LEARNED_UNKNOWN_OR_ABSENT"}
+   if #resolved.candidates>0 then value=true elseif complete and not resolved.unknownKnown then value=false end
+   learned[key]={known=value,spellID=resolved.spellID,reason=resolved.reason,candidates=resolved.candidates}
   end
  end
  return learned
@@ -115,7 +117,7 @@ function P:ReadAction(key,learned,readReady)
  end
  if ability.target=="self" then result.in_range=true
  else result.in_range=P.Boolean("C_Spell.IsSpellInRange",id,"target") end
- if readReady~=false then result.ready,result.cooldownReason=P.Ready(id)
+ if readReady==true then result.ready,result.cooldownReason=P.Ready(id)
  else result.cooldownReason="NOT_REQUESTED" end
  return result
 end
@@ -154,7 +156,7 @@ function P:Sample(e)
  -- does not create a per-frame full spell or talent scan.
  for _,key in ipairs(A.RuleActions) do
   if not fresh() then return nil,"APL_STALE_SAMPLE" end
-  state.actions[key]=self:ReadAction(key,learned[key])
+  state.actions[key]=self:ReadAction(key,learned[key],A:NeedsReady(config,key))
  end
  if generation~=e.generation or serial~=(e.receiptSerial or 0) or revision~=(self.revision or 0) then return nil,"APL_STALE_SAMPLE" end
  return state
