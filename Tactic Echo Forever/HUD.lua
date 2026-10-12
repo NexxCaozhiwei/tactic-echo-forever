@@ -116,7 +116,10 @@ function H:Layout()
         x=x+card.size+(i==1 and g.gap1 or i==2 and g.gap2 or 0)
     end
     self.layoutWidth=math.max(244,x+8); self.textShift=maxSize-64
-    U:Paint(self.frame,"SetSize",self.layoutWidth,maxSize+57)
+    U:Paint(self.frame,"SetSize",self.layoutWidth,maxSize+80)
+    U:Paint(self.rangeText,"ClearAllPoints")
+    U:Paint(self.rangeText,"SetPoint","TOPLEFT",self.frame,"TOPLEFT",8,-maxSize-55)
+    U:Paint(self.rangeText,"SetWidth",self.layoutWidth-16)
     TEF.HudStyles:Apply(self)
 end
 function H:Create(e)
@@ -145,6 +148,7 @@ function H:Create(e)
     self.cards={self:Card(8,64,true),self:Card(84,44),self:Card(140,44)}
     self.name=U:Text(self.frame,8,-80,230,"GameFontHighlightSmall")
     self.status=U:Text(self.frame,8,-99,230,"GameFontHighlightSmall")
+    self.rangeText=U:Text(self.frame,8,-119,230,"GameFontHighlightSmall")
     U:Call(self.frame,"SetScript","OnUpdate",function(_,rawElapsed)
         local elapsed=S.Public(rawElapsed,"number")
         if not elapsed or elapsed<0 then return end
@@ -200,6 +204,7 @@ function H:RefreshState()
     end
 end
 function H:VisualTick()
-    -- No spell/action/binding/presence reads in the visual fallback.
+    -- 复用显示节拍，距离及变色只读，不参与派发。
+    TEF.Presentation:UpdateRange(self)
     for _,card in ipairs(self.cards or {}) do TEF.Presentation:Tick(card) end
 end

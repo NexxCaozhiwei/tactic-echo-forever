@@ -2,7 +2,7 @@
 
 面向魔兽世界 Forever / Infinite 的独立项目，采用经典60级式职业、天赋和已学技能模型，包含 APL、Secret Value、TEAP 与 TEF TEK。
 
-项目源自 Tactic Echo，自2026-10-12、源提交 `3e57b9d1713ad3c9d821b416dc073452289c2691` 起独立开发。不是 Tactic Echo 的子模块，不需要相邻仓库。当前版本为 **1.0.14**。
+项目源自 Tactic Echo，自2026-10-12、源提交 `3e57b9d1713ad3c9d821b416dc073452289c2691` 起独立开发。不是 Tactic Echo 的子模块，不需要相邻仓库。当前版本为 **1.0.15**。
 
 - 插件目录：`Tactic Echo Forever/`；SavedVariables：`TEF_DB`。
 - TEF TEK目录：`tek/`；配置、日志和缓存根目录：`%LOCALAPPDATA%/TacticEchoForever`。
@@ -40,3 +40,5 @@ Lua模拟需要 `lupa`（Lua 5.1）。Windows构建依赖见 `requirements-windo
 提前时间滑块范围0–0.5秒、步进0.05秒、默认0.20秒；0不提前。实际窗口取配置值与公开客户端SpellQueueWindow的较小值。修改会停止派发，关闭设置后需重新开启；游戏接受排队的行为需实测。
 
 排队诊断独立保存在 `TEF_DB.queueDiagnostics`（最多512条），淘汰数为 `queueEvicted`。保存公开时间、GUID、事件与请求/回执关联。`TOKEN_PUBLISHED`只证明插件发布，不证明桌面输入；`remaining`是发起排队时的快照。记录不改变派发逻辑。
+
+HUD显示“估测距离”区间，仅供参考；物品档位需实机核验，不参与APL或派发。精确技能范围接口公开超距时图标和键位标红，未知时恢复原色。距离变化日志保存在TEF_DB.rangeDiagnostics（最多32条），rangeEvicted为淘汰数。

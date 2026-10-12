@@ -422,7 +422,7 @@ local function object(name)
             elseif method=="SetBackdropBorderColor" then self.backdropBorderColor={...}
             elseif method=="GetChecked" then return self.checked
             elseif method=="GetPoint" then return "CENTER",UIParent,"CENTER",12,34 end
-            if method=="SetVertexColor" or method=="SetColorTexture" or method=="SetBackdropBorderColor" then self.color={...}
+            if method=="SetVertexColor" or method=="SetColorTexture" or method=="SetBackdropBorderColor" or method=="SetTextColor" then self.color={...}
             elseif method=="Show" then self.shown=true
             elseif method=="Hide" then self.shown=false
             elseif method=="StartMoving" then self.moves=(rawget(self,"moves") or 0)+1 end
@@ -1846,6 +1846,35 @@ test("merged_scroll_pages_keep_content_shown_across_navigation",function()
     end
 end)
 assert(loadfile(root .. "/tests/cast_queue.lua"))(T,{runtimeFixture=runtimeFixture,receipt=receipt,test=test,eq=eq,secret=secret})
+test("range_bracket_unknown_and_friendly_combat_are_display_only",function()
+    deliveryFixture("manual")
+    UnitExists=function() return true end; UnitIsUnit=function() return false end
+    UnitIsDeadOrGhost=function() return false end; UnitCanAttack=function() return true end
+    C_Item={IsItemInRange=function(id) if id==34368 then return true elseif id==8149 then return false end end}
+    local generation,index,serial=T.engine.generation,T.engine.index,T.engine.receiptSerial
+    local low,high,reason=T.Presentation:MeasureDistance()
+    eq(low,5); eq(high,8); eq(reason,"ITEM_BRACKET_ESTIMATE")
+    C_Item.IsItemInRange=function() return secret end
+    low,high,reason=T.Presentation:MeasureDistance()
+    eq(low,nil); eq(high,nil); eq(reason,"ITEM_RANGE_UNKNOWN")
+    UnitCanAttack=function() return false end; InCombatLockdown=function() return true end
+    C_Item.IsItemInRange=function() error("战斗友方不得查询") end
+    low,high,reason=T.Presentation:MeasureDistance(); eq(reason,"FRIENDLY_COMBAT_OR_UNKNOWN")
+    eq(T.engine.generation,generation); eq(T.engine.index,index); eq(T.engine.receiptSerial,serial)
+    C_Item=nil
+end)
+test("hud_range_red_restores_custom_key_color_on_public_or_unknown_range",function()
+    deliveryFixture("manual"); local card=T.HUD.cards[1]
+    card.key.SetTextColor=function(self,...) self.color={...} end
+    UnitExists=function() return true end; UnitIsDeadOrGhost=function() return false end
+    T.engine.db.hud.styles.main.key.color={r=.4,g=.6,b=.8,a=1}
+    C_Spell.IsSpellInRange=function() return false end
+    T.Presentation:PaintRange(card,T.engine.steps[1]); eq(card.icon.color[2],.25); eq(card.key.color[1],1)
+    C_Spell.IsSpellInRange=function() return true end
+    T.Presentation:PaintRange(card,T.engine.steps[1]); eq(card.icon.color[2],1); eq(card.key.color[1],.4)
+    C_Spell.IsSpellInRange=function() return secret end
+    T.Presentation:PaintRange(card,T.engine.steps[1]); eq(card.icon.color[2],1); eq(card.key.color[3],.8)
+end)
 assert(loadfile(root .. "/tests/skip_unavailable.lua"))(T,{runtimeFixture=runtimeFixture,deliveryFixture=deliveryFixture,receipt=receipt,test=test,eq=eq,secret=secret})
 realprint("TEF simulated tests: " .. count .. " passed\n")
 

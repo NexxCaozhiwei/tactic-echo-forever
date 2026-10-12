@@ -1,4 +1,4 @@
-# Tactic Echo Forever 1.0.14
+# Tactic Echo Forever 1.0.15
 
 设置精简：推荐配置只保留人工序列和自定义APL；标签样式合并到HUD外观，循环/重置合并到派发总览，两个页面可滚动。旧职业APL不会自动继续运行，自定义规则保留。
 
@@ -28,3 +28,5 @@ TEF独立插件的首个发布基线，适用无限服1.60.1/build70338/Interfac
 提前排队时间滑块范围0–0.5秒，步进0.05秒，默认0.20秒；0不提前。实际窗口取配置值与公开客户端SpellQueueWindow的较小值。修改会停止派发，关闭设置后需重新开启。
 
 排队诊断独立保存在TEF_DB.queueDiagnostics（最多512条），淘汰数queueEvicted；保存公开时间、GUID、事件与请求/回执关联。TOKEN_PUBLISHED只证明插件发布，不证明桌面输入；remaining是发起排队时的快照。记录不改变派发逻辑。
+
+HUD显示“估测距离”区间，仅供参考；物品档位需实机核验，不参与APL或派发。精确技能范围接口公开超距时图标和键位标红，未知时恢复原色。距离变化日志保存在TEF_DB.rangeDiagnostics（最多32条），rangeEvicted为淘汰数。

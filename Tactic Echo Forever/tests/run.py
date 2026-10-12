@@ -13,7 +13,7 @@ def main():
     assert entries == ["Config.lua", "Safety.lua", "APL/Packs/Mage/Abilities.lua", "APL/Packs/Mage/Talents.lua", "APL/TalentState.lua", "APL/Registry.lua", "APL/PublicConditions.lua", "APL/Custom.lua", "APL/RankResolver.lua", "APL/Packs/Mage/BuildSelector.lua", "APL/State.lua", "APL/Conditions.lua", "APL/Trace.lua", "APL/Packs/Mage/Mage60.lua", "APL/Packs/Mage/Rules.lua", "APL/Engine.lua", "Sequence.lua", "HudStyles.lua", "Profiles.lua", "Recommendation.lua", "Research.lua", "UI.lua", "UIComponents.lua", "SequenceEditor.lua", "CustomAPLEditor.lua", "HUD.lua", "Dispatch.lua", "Presentation.lua", "Transport.lua", "Runtime.lua", "Hotkeys.lua", "Core/Bootstrap.lua"]
     assert "## Interface: 16001" in toc and "## SavedVariables: TEF_DB" in toc
     version = (ROOT / "VERSION").read_text().strip()
-    assert version == "1.0.14" and f"## Version: {version}" in toc
+    assert version == "1.0.15" and f"## Version: {version}" in toc
     assert f'local VERSION = "{version}"' in (ROOT / "Core/Bootstrap.lua").read_text(encoding="utf-8")
     baseline = ROOT / f"docs/baselines/BASELINE_{version}.md"
     if not baseline.is_file():

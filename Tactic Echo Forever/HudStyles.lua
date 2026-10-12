@@ -63,6 +63,7 @@ function A:Apply(hud)
     end
     paint(hud.name,hud.frame,styles.global.name,(hud.layoutWidth or 244)-16)
     paint(hud.status,hud.frame,styles.global.status,(hud.layoutWidth or 244)-16)
+    for _,card in ipairs(hud.cards or {}) do TEF.Presentation:PaintRange(card,card.displayStep) end
 end
 function A:BuildUI(U,parent)
     local module,key="main","key"

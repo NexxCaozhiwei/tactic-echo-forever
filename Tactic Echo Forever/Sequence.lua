@@ -106,6 +106,20 @@ function Engine.New(config, db)
     local evicted = S.Public(db.evicted, "number")
     if evicted and evicted >= 0 and evicted % 1 == 0 then clean.evicted = evicted end
     clean.queueDiagnostics={}; clean.queueEvicted=0
+    clean.rangeDiagnostics={}; clean.rangeEvicted=0
+    local ranges=S.Field(db,"rangeDiagnostics","table")
+    local rangeCount=ranges and #ranges or 0
+    for i=math.max(1,rangeCount-31),rangeCount do
+        local raw=S.Field(ranges,i,"table")
+        local reason=S.Field(raw,"reason","string"); local session=S.Field(raw,"session","number")
+        if reason and #reason<=80 and session then
+            local guid=S.Field(raw,"targetGUID","string")
+            clean.rangeDiagnostics[#clean.rangeDiagnostics+1]={reason=reason,session=session,
+                targetGUID=guid and #guid<=128 and guid or nil,low=S.Field(raw,"low","number"),
+                high=S.Field(raw,"high","number"),time=S.Field(raw,"time","number"),version=S.Field(raw,"version","string")}
+        end
+    end
+    clean.rangeEvicted=S.Field(db,"rangeEvicted","number") or 0
     local history=S.Field(db,"queueDiagnostics","table")
     local count=history and #history or 0
     for i=math.max(1,count-511),count do
