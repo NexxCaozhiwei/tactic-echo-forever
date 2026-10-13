@@ -102,6 +102,40 @@ function P.Ready(id)
  if start==0 and duration==0 then return true,"PUBLIC_ZERO_COOLDOWN" end
  return false,"PUBLIC_COOLDOWN_ACTIVE"
 end
+-- 对象、方法与返回值均先规范化；只保存标量，不保存Duration对象。
+local function durationMethod(object,name,kind)
+ local ok,raw=pcall(function() return object[name] end)
+ if not ok then return nil,"FIELD_FAILED" end
+ local method,why=S.Public(raw,"function"); if not method then return nil,why end
+ local got,value=pcall(method,object); if not got then return nil,"CALL_FAILED" end
+ local result,reason=S.Public(value,kind)
+ if kind=="number" and result and result<0 then return nil,"UNKNOWN_NUMBER" end
+ return result,reason
+end
+function P.ProbeHealth()
+ local probe={}
+ local ok,raw,why=S.Call("UnitHealthPercent","player",true)
+ if not ok then probe.reason=why; return probe end
+ probe.value,probe.reason=S.Public(raw,"number")
+ if probe.value and (probe.value<0 or probe.value>100) then probe.value=nil; probe.reason="UNKNOWN_NUMBER" end
+ return probe
+end
+function P.ProbeCooldown(id)
+ local probe={}
+ local ok,record,why=S.Call("C_Spell.GetSpellCooldown",id)
+ if ok then probe.active,probe.activeReason=S.Field(record,"isActive","boolean")
+ else probe.activeReason=why end
+ local got,raw,reason=S.Call("C_Spell.GetSpellCooldownDuration",id)
+ if not got then probe.objectReason=reason; return probe end
+ local object,status=S.Public(raw,"table")
+ if status=="UNKNOWN_TYPE" then object,status=S.Public(raw,"userdata") end
+ probe.objectReason=status
+ if not object then return probe end
+ probe.isZero,probe.zeroReason=durationMethod(object,"IsZero","boolean")
+ probe.total,probe.totalReason=durationMethod(object,"GetTotalDuration","number")
+ probe.remaining,probe.remainingReason=durationMethod(object,"GetRemainingDuration","number")
+ return probe
+end
 function P:ReadAction(key,learned,readReady)
  local result={known=learned.known,spellID=learned.spellID,reason=learned.reason}
  local ability=A.Abilities[key]; local id=result.spellID

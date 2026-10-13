@@ -9,7 +9,7 @@ function C.CleanRows(raw)
  local ok,size=pcall(function() return #raw end)
  if not ok or size>16 then return {{enabled=false,invalid="CUSTOM_CAPACITY"}} end
  for i=1,size do
-  local r=S.Field(raw,i,"table"); local row={spellID=r and S.ID(S.Field(r,"spellID","number")),enabled=true,requireReady=false,moving="any",activity="any",manaOp="any",distanceOp="any",cdmKind="none",cdmState="inactive"}
+  local r=S.Field(raw,i,"table"); local row={spellID=r and S.ID(S.Field(r,"spellID","number")),enabled=true,moving="any",activity="any",distanceOp="any",cdmKind="none",cdmState="inactive"}
   if not r or not row.spellID then row.invalid="CUSTOM_ID_INVALID" end
   if r then
    for field,kind in pairs({enabled="boolean",requireReady="boolean",moving="string",activity="string",enemyMin="number",enemyMax="number",experimentalEnemies="boolean",manaOp="string",manaValue="number",distanceOp="string",distanceValue="number",cdmKind="string",cdmState="string",cdmSpellID="number"}) do
@@ -20,7 +20,7 @@ function C.CleanRows(raw)
    local valid=pcall(function() for k in pairs(r) do count=count+1; local key=S.Public(k,"string"); if count>24 or not key or not fields[key] then row.invalid="CUSTOM_CONDITION_UNSUPPORTED" end end end)
    if not valid then row.invalid="CUSTOM_CONDITION_UNSUPPORTED" end
    local enabled=S.Field(r,"enabled","boolean"); if enabled~=nil then row.enabled=enabled end
-   row.requireReady=S.Field(r,"requireReady","boolean")==true
+   -- 兼容读取旧配置；已移除的数值冷却条件不再输出。
    local moving=S.Field(r,"moving","string"); local activity=S.Field(r,"activity","string")
    if moving=="yes" or moving=="no" or moving=="any" then row.moving=moving elseif moving then row.invalid="CUSTOM_CONDITION_INVALID" end
    if activity=="active" or activity=="inactive" or activity=="any" then row.activity=activity elseif activity then row.invalid="CUSTOM_CONDITION_INVALID" end
@@ -35,7 +35,7 @@ function C.CleanRows(raw)
     local value=S.Field(r,prefix .. "Value","number")
     if not A.PublicConditions.ops[op] or (value and (value<0 or value>(prefix=="mana" and 100 or 2000)))
      or (op~="any" and value==nil) then row.invalid="CUSTOM_CONDITION_INVALID" end
-    row[prefix .. "Op"],row[prefix .. "Value"]=op,value
+    if prefix=="distance" then row.distanceOp,row.distanceValue=op,value end
    end
    local kind=S.Field(r,"cdmKind","string") or "none"
    local state=S.Field(r,"cdmState","string") or "inactive"
@@ -91,18 +91,20 @@ function C:Read(id,requireReady)
  return action
 end
 function C:Sample(e,state)
- local rows=self:Rows(e); local countNeeded=false
+ local rows=self:Rows(e); local countNeeded=false; local probes={}
  for i,row in ipairs(rows) do
   if row.enabled and row.experimentalEnemies and (row.enemyMin or row.enemyMax) then countNeeded=true end
   local action
-  if row.enabled and not row.invalid then action=self:Read(row.spellID,row.requireReady) else action={spellID=row.spellID} end
-  if row.enabled and not row.invalid and row.activity~="any" then
-   local ok,record=S.Call("C_Spell.GetSpellCooldown",row.spellID)
-   if ok then action.active=S.Field(record,"isActive","boolean") end
+  if row.enabled and not row.invalid then action=self:Read(row.spellID,false) else action={spellID=row.spellID} end
+  if row.enabled and not row.invalid and action.known==true and row.spellID~=61304 then
+   probes[row.spellID]=probes[row.spellID] or A.State.ProbeCooldown(row.spellID)
+   action.cooldownProbe=probes[row.spellID]
+   if row.activity~="any" then action.active=action.cooldownProbe.active end
   end
   state.actions["custom_" .. i]=action
  end
  if countNeeded then local value=T.Research:CountVisible(); if value.state=="PUBLIC_VALUE" then state.enemy_count=value.value end end
+ state.healthProbe=A.State.ProbeHealth()
  A.PublicConditions:Sample(state,rows)
 end
 function C:Check(state,row,index)
@@ -115,18 +117,15 @@ function C:Check(state,row,index)
   return value==wanted
  end
  -- Preview eligibility is independent of the transport combat gate.
- local terms=A.Conditions:ActionTerms("custom_" .. index,row.requireReady==true)
+ local terms=A.Conditions:ActionTerms("custom_" .. index,false)
  if row.moving~="any" then terms[#terms+1]={op="moving",equals=row.moving=="yes"} end
  local basic,why=A.Conditions:All(state,terms,{})
  if basic==false then return false,"custom:" .. (why:match("([^:]+)$") or why) end
  if basic==nil then unknown="UNKNOWN:custom:" .. (why:match("([^:]+)$") or why) end
  if row.activity~="any" and not require(action.active,row.activity=="active","activity") then return false,"custom:activity" end
- for _,p in ipairs({{"mana","manaPercent","manaReason"},{"distance","distance","distanceReason"}}) do
-  local op=row[p[1] .. "Op"] or "any"
-  local result=A.PublicConditions.Compare(state[p[2]],op,row[p[1] .. "Value"])
-  if result==nil then unknown=unknown or "UNKNOWN:custom:" .. p[1] .. ":" .. (state[p[3]] or "UNKNOWN")
-  elseif result==false then return false,"custom:" .. p[1] end
- end
+ local distance=A.PublicConditions.DistanceCompare(state,row.distanceOp or "any",row.distanceValue)
+ if distance==nil then unknown=unknown or "UNKNOWN:custom:distance:" .. (state.distanceReason or "UNKNOWN")
+ elseif distance==false then return false,"custom:distance" end
  if row.cdmKind and row.cdmKind~="none" then
   if not require(action.cdmActive,row.cdmState=="active","cdm:" .. (action.cdmReason or "UNKNOWN")) then return false,"custom:cdm" end
  end
@@ -154,21 +153,20 @@ function C:Evaluate(state,config,class)
 end
 function C:Ledger(e)
  local lines={"自定义优先级：从上往下选第一条满足的规则；成功后重新求值。",
-  "待命也评估；必需：已学、可用、资源足够、技能范围。冷却检查可选，派发另要求战斗。"}
+  "待命也评估；必需：已学、可用、资源足够、技能范围。冷却活动可选，派发另要求战斗。"}
  local state=e.aplSnapshot; local results={}
  lines[#lines+1]="最近观察：移动=" .. tostring(state and state.moving) .. "；可见敌人数=" .. tostring(state and state.enemy_count)
- lines[#lines+1]="蓝量%=" .. tostring(state and state.manaPercent) .. "；距离=" .. tostring(state and state.distance)
+ lines[#lines+1]="距离=" .. A.PublicConditions.DistanceText(state)
  for _,r in ipairs(e.aplTrace and e.aplTrace.rules or {}) do results[r.rule]=r end
  for i,row in ipairs(self:Rows(e)) do
   local a=state and state.actions["custom_" .. i]; local result=results["custom:" .. i]
   lines[#lines+1]=i .. ". ID " .. (row.spellID or "?") .. " · " .. (result and result.result .. " · " .. result.reason or "未评估")
   if a then
-   local parts={}; for _,field in ipairs({"known","usable","power_ok","in_range","ready","active"}) do parts[#parts+1]=field .. "=" .. tostring(a[field]) end
+   local parts={}; for _,field in ipairs({"known","usable","power_ok","in_range","active"}) do parts[#parts+1]=field .. "=" .. tostring(a[field]) end
    lines[#lines+1]=table.concat(parts,"；")
   end
   lines[#lines+1]="移动=" .. row.moving .. "；冷却活动=" .. row.activity .. "；可见敌人=" .. (row.enemyMin or "不限") .. "～" .. (row.enemyMax or "不限")
-  lines[#lines+1]="冷却数值检查=" .. (row.requireReady and "开启" or "关闭") .. "；" .. (a and a.cooldownReason or "未采样")
-  lines[#lines+1]="蓝量=" .. (row.manaOp or "any") .. " " .. (row.manaValue or "") .. "；距离=" .. (row.distanceOp or "any") .. " " .. (row.distanceValue or "") .. "；CDM=" .. (row.cdmKind or "none") .. "/" .. (row.cdmState or "inactive") .. " ID " .. (row.cdmSpellID or row.spellID or "?") .. " · " .. tostring(a and a.cdmActive) .. " / " .. (a and a.cdmReason or "未采样")
+  lines[#lines+1]="距离=" .. (row.distanceOp or "any") .. " " .. (row.distanceValue or "") .. "；CDM=" .. (row.cdmKind or "none") .. "/" .. (row.cdmState or "inactive") .. " ID " .. (row.cdmSpellID or row.spellID or "?") .. " · " .. tostring(a and a.cdmActive) .. " / " .. (a and a.cdmReason or "未采样")
   if a and a.cdmScanReason then lines[#lines+1]="CDM扫描：跳过身份未知帧 " .. (a.cdmSkippedFrames or 0) .. "；仅精确匹配帧决定该技能状态。" end
  end
  return table.concat(lines,"\n")

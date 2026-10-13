@@ -7,10 +7,12 @@ function T:Record(e,trace,reason,candidate,state)
  for _,r in ipairs(trace) do parts[#parts+1]=r.rule .. ":" .. r.result .. ":" .. r.reason end
  for _,tree in ipairs({"ARCANE","FIRE","FROST"}) do parts[#parts+1]=state and state.buildSignature[tree] or "UNKNOWN" end
  if state then
+  local health=state.healthProbe
+  if health then parts[#parts+1]="health=" .. tostring(health.value) .. ":" .. (health.reason or "UNKNOWN") end
   parts[#parts+1]="moving=" .. tostring(state.moving)
   parts[#parts+1]="visible=" .. tostring(state.enemy_count)
   parts[#parts+1]="mana=" .. tostring(state.manaPercent) .. ":" .. (state.manaReason or "UNKNOWN")
-  parts[#parts+1]="distance=" .. tostring(state.distance) .. ":" .. (state.distanceReason or "UNKNOWN")
+  parts[#parts+1]="distance=" .. TEF.APL.PublicConditions.DistanceText(state) .. ":" .. (state.distanceReason or "UNKNOWN")
   for i=1,16 do
    local a=state.actions["custom_" .. i]
    if a then
@@ -18,6 +20,12 @@ function T:Record(e,trace,reason,candidate,state)
     for _,field in ipairs({"known","usable","power_ok","in_range","ready","active"}) do parts[#parts+1]=tostring(a[field]) end
     parts[#parts+1]=tostring(a.cdmActive) .. ":" .. (a.cdmReason or "UNKNOWN")
     parts[#parts+1]=(a.cdmScanReason or "NONE") .. ":" .. tostring(a.cdmSkippedFrames)
+    local p=a.cooldownProbe
+    if p then
+     for _,field in ipairs({"active","isZero","activeReason","objectReason","zeroReason","totalReason","remainingReason"}) do
+      parts[#parts+1]="probe:" .. field .. "=" .. tostring(p[field])
+     end
+    end
    end
   end
   for _,key in ipairs({"arcane_power","presence_of_mind","pyroblast","improved_scorch"}) do
@@ -36,12 +44,15 @@ function T:Record(e,trace,reason,candidate,state)
    row.apl.gcd=state.gcd and state.gcd.ready
    row.apl.inCombat=state.combat.in_combat
    row.apl.moving=state.moving
+   row.apl.healthProbe=state.healthProbe
    row.apl.visibleCount=state.enemy_count
    row.apl.manaPercent,row.apl.distance=state.manaPercent,state.distance
    row.apl.manaReason,row.apl.distanceReason=state.manaReason,state.distanceReason
+   row.apl.distanceLow,row.apl.distanceHigh=state.distanceLow,state.distanceHigh
    row.apl.actions={}; row.apl.talents={}
    for key,action in pairs(state.actions) do
     row.apl.actions[key]={spellID=action.spellID,known=action.known,usable=action.usable,power_ok=action.power_ok,in_range=action.in_range,ready=action.ready,active=action.active,cdmActive=action.cdmActive,cdmReason=action.cdmReason,cooldownReason=action.cooldownReason,cdmScanReason=action.cdmScanReason,cdmSkippedFrames=action.cdmSkippedFrames}
+    row.apl.actions[key].cooldownProbe=action.cooldownProbe
    end
    for _,key in ipairs({"arcane_power","presence_of_mind","pyroblast","improved_scorch"}) do
     local t=state.talents[key]; if t then row.apl.talents[key]={status=t.status,known=t.known,rank=t.rank,maxRank=t.maxRank} end
@@ -55,9 +66,16 @@ function T.Clean(raw)
  if not reason or #reason>80 or not reason:match("^[A-Z_]+$") then return nil end
  local out={reason=reason,build={},rules={},actions={},talents={},inCombat=S.Field(raw,"inCombat","boolean"),gcd=S.Field(raw,"gcd","boolean")}
  out.moving=S.Field(raw,"moving","boolean")
+ local health=S.Field(raw,"healthProbe","table")
+ if health then
+  local p={}; local value=S.Field(health,"value","number")
+  if value and value>=0 and value<=100 then p.value=value end
+  local why=S.Field(health,"reason","string"); if why and #why<=80 and why:match("^[A-Z_]+$") then p.reason=why end
+  out.healthProbe=p
+ end
  local count=S.Field(raw,"visibleCount","number")
  if count and count>=0 and count<=40 and count%1==0 then out.visibleCount=count end
- for _,spec in ipairs({{"manaPercent",100},{"distance",1000000}}) do
+ for _,spec in ipairs({{"manaPercent",100},{"distance",1000000},{"distanceLow",2000},{"distanceHigh",2000}}) do
   local value=S.Field(raw,spec[1],"number"); if value and value>=0 and value<=spec[2] then out[spec[1]]=value end
  end
  for _,field in ipairs({"manaReason","distanceReason"}) do
@@ -88,6 +106,18 @@ function T.Clean(raw)
    local why=S.Field(r,"cdmReason","string"); if why and #why<=80 and why:match("^[A-Z_]+$") then a.cdmReason=why end
    local scan=S.Field(r,"cdmScanReason","string"); if scan=="CDM_FRAME_ID_UNKNOWN" then a.cdmScanReason=scan end
    local skipped=S.Field(r,"cdmSkippedFrames","number"); if skipped and skipped>=1 and skipped<=160 and skipped%1==0 then a.cdmSkippedFrames=skipped end
+   local probe=S.Field(r,"cooldownProbe","table")
+   if probe then
+    local p={}
+    for _,field in ipairs({"active","enabled","publicZero","isZero"}) do p[field]=S.Field(probe,field,"boolean") end
+    for _,field in ipairs({"startTime","duration","total","remaining"}) do
+     local n=S.Field(probe,field,"number"); if n and n>=0 then p[field]=n end
+    end
+    for _,field in ipairs({"activeReason","numericReason","startReason","durationReason","enabledReason","objectReason","zeroReason","totalReason","remainingReason"}) do
+     local why=S.Field(probe,field,"string"); if why and #why<=80 and why:match("^[A-Z_]+$") then p[field]=why end
+    end
+    a.cooldownProbe=p
+   end
    out.actions[key]=a
   end
  end

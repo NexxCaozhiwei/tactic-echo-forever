@@ -10,16 +10,16 @@ function U:CommitCustomNumbers()
   if text==nil then return false end
   if text~="" then
    local n=text:match("^%d+%.?%d*$") and tonumber(text)
-   local limit=field=="manaValue" and 100 or field=="distanceValue" and 2000 or field=="cdmSpellID" and 2147483647 or 40
+   local limit=field=="distanceValue" and 2000 or field=="cdmSpellID" and 2147483647 or 40
    if not n or n>limit or ((field=="enemyMin" or field=="enemyMax" or field=="cdmSpellID") and n%1~=0)
-    or (field=="cdmSpellID" and n<=0) then self:CustomMessage("数值无效：蓝量0～100%、距离0～2000码、敌人数0～40整数、CDM合法ID。"); return false end
+    or (field=="cdmSpellID" and n<=0) then self:CustomMessage("数值无效：距离0～2000码、敌人数0～40整数、CDM合法ID。"); return false end
    values[field]=n
   end
  end
  if values.enemyMin and values.enemyMax and values.enemyMin>values.enemyMax then self:CustomMessage("敌人数下限不能超过上限。"); return false end
  row.enemyMin,row.enemyMax=values.enemyMin,values.enemyMax
- row.manaValue,row.distanceValue,row.cdmSpellID=values.manaValue,values.distanceValue,values.cdmSpellID
- if (row.manaOp and row.manaOp~="any" and not row.manaValue) or (row.distanceOp and row.distanceOp~="any" and not row.distanceValue) then
+ row.distanceValue,row.cdmSpellID=values.distanceValue,values.cdmSpellID
+ if (row.distanceOp and row.distanceOp~="any" and not row.distanceValue) then
   self:CustomMessage("已启用的比较条件必须填写阈值。"); return false
  end
  return true
@@ -47,15 +47,21 @@ function U:RefreshCustomAPL()
  end
  local row=self:CustomRow(); local snapshot=e.aplSnapshot
  local a=snapshot and snapshot.actions["custom_" .. (self.customSelected or 1)]
- local text="必需：已学、可用、资源足够、技能范围；冷却检查默认关闭。"
+ local text="必需：已学、可用、资源足够、技能范围；后台探测不影响派发。"
  if e.db.apl.template=="custom" and a and row and a.spellID==row.spellID and self.customLoadedScene==e.scene then
   local fresh=snapshot.generation==e.generation and snapshot.revision==(T.APL.State.revision or 0) and snapshot.receiptSerial==(e.receiptSerial or 0)
   text=text .. (fresh and "\n已保存规则最近观察：" or "\n旧记录（已过期，不授权派发）：")
-  for _,field in ipairs({"known","usable","power_ok","in_range","ready","cdmActive"}) do text=text .. field .. "=" .. (a[field]==nil and "未知" or tostring(a[field])) .. " " end
-  text=text .. "\n蓝量%=" .. tostring(snapshot.manaPercent) .. " (" .. (snapshot.manaReason or "未启用") .. ") 距离=" .. tostring(snapshot.distance) .. " (" .. (snapshot.distanceReason or "未启用") .. ") CDM=" .. (a.cdmReason or "未启用")
+  for _,field in ipairs({"known","usable","power_ok","in_range","cdmActive"}) do text=text .. field .. "=" .. (a[field]==nil and "未知" or tostring(a[field])) .. " " end
+  text=text .. "\n距离=" .. T.APL.PublicConditions.DistanceText(snapshot) .. " (" .. (snapshot.distanceReason or "未启用") .. ") CDM=" .. (a.cdmReason or "未启用")
+  local probe=a.cooldownProbe
+  if probe then
+   text=text .. "\n后台冷却观察：活动=" .. tostring(probe.active) .. "（" .. (probe.activeReason or "未知") .. "）"
+   text=text .. "；Duration=" .. (probe.objectReason or "未知") .. "；IsZero=" .. tostring(probe.isZero) .. "（" .. (probe.zeroReason or "未知") .. "）"
+   text=text .. "\n总时长=" .. tostring(probe.total) .. "（" .. (probe.totalReason or "未知") .. "）；剩余=" .. tostring(probe.remaining) .. "（" .. (probe.remainingReason or "未知") .. "）"
+  end
   for _,result in ipairs(e.aplTrace and e.aplTrace.rules or {}) do if result.rule=="custom:" .. self.customSelected then text=text .. "\n" .. result.result .. " · " .. result.reason end end
  else text=text .. "\n未采样或正在编辑；实时状态不作为已通过证据。" end
- text=text .. "\n冷却检查=" .. (row and row.requireReady and "开启" or "关闭") .. " · " .. (a and a.cooldownReason or "未采样")
+ if snapshot and snapshot.healthProbe then text=text .. "\n血量比例探测=" .. tostring(snapshot.healthProbe.value) .. "（" .. (snapshot.healthProbe.reason or "未知") .. "）" end
  self:Paint(self.customState,"SetText",text)
 end
 function U:AddCustomSpell(id)
@@ -120,7 +126,7 @@ function U:CreateCustomAPLEditor(parent)
  end
  local conditionScroll=self:Frame("ScrollFrame",parent,"UIPanelScrollFrameTemplate")
  self:Paint(conditionScroll,"SetPoint","TOPLEFT",parent,"TOPLEFT",0,-226); self:Paint(conditionScroll,"SetSize",550,280)
- local settings=self:Frame("Frame",conditionScroll); self:Paint(settings,"SetSize",530,740); self:Paint(conditionScroll,"SetScrollChild",settings)
+ local settings=self:Frame("Frame",conditionScroll); self:Paint(settings,"SetSize",530,580); self:Paint(conditionScroll,"SetScrollChild",settings)
  self:CreateToggleRow(settings,"当前规则启用",0,0,530,function() local r=self:CustomRow(); return r and r.enabled==true end,function(v) local r=self:CustomRow(); if r then r.enabled=v end end)
  self:CreateSelectRow(settings,"移动条件",{{"any","不限"},{"yes","移动中"},{"no","站定"}},0,-36,530,
   function() local r=self:CustomRow(); return r and r.moving or "any" end,function(v) local r=self:CustomRow(); if r then r.moving=v end end)
@@ -132,27 +138,25 @@ function U:CreateCustomAPLEditor(parent)
  self:Paint(self:Text(settings,0,-197,285,"GameFontHighlightSmall"),"SetText","可见敌人数：下限/上限（空白不限）")
  self:Paint(self:Text(settings,370,-197,60,"GameFontHighlightSmall"),"SetText","～")
  local ops={{"any","不限"},{"lt","<"},{"le","≤"},{"eq","="},{"ne","≠"},{"ge","≥"},{"gt",">"}}
- for _,spec in ipairs({{"distance","目标距离（码）",-230,2000},{"mana","玩家蓝量（%）",-330,100}}) do
+ for _,spec in ipairs({{"distance","目标距离（码）",-230,2000}}) do
   local prefix,y=spec[1],spec[3]
   self:CreateSelectRow(settings,spec[2],ops,0,y,530,function() local r=self:CustomRow(); return r and r[prefix .. "Op"] or "any" end,function(v) local r=self:CustomRow(); if r then r[prefix .. "Op"]=v end end)
   self.customNumbers[prefix .. "Value"]=self:SequenceInput(settings,320,y-60,130)
   self:Paint(self:Text(settings,0,y-67,310,"GameFontHighlightSmall"),"SetText","阈值（公开数值才比较；UNKNOWN等待）")
  end
- self:CreateSelectRow(settings,"CDM观察类型（活动≠ready；增益非Aura真值）",{{"none","不限"},{"buff","增益活动"},{"cooldown","冷却活动"}},0,-430,530,
+ self:CreateSelectRow(settings,"CDM观察类型（活动≠ready；增益非Aura真值）",{{"none","不限"},{"buff","增益活动"},{"cooldown","冷却活动"}},0,-330,530,
   function() local r=self:CustomRow(); return r and r.cdmKind or "none" end,function(v) local r=self:CustomRow(); if r then r.cdmKind=v end end)
- self:CreateSelectRow(settings,"CDM要求（帧缺失/Secret为未知）",{{"inactive","未活动"},{"active","活动中"}},0,-490,530,
+ self:CreateSelectRow(settings,"CDM要求（帧缺失/Secret为未知）",{{"inactive","未活动"},{"active","活动中"}},0,-390,530,
   function() local r=self:CustomRow(); return r and r.cdmState or "inactive" end,function(v) local r=self:CustomRow(); if r then r.cdmState=v end end)
- self.customNumbers.cdmSpellID=self:SequenceInput(settings,320,-550,130)
- self:Paint(self:Text(settings,0,-557,310,"GameFontHighlightSmall"),"SetText","CDM目录SpellID（空白=当前技能ID）")
- self:Paint(self:Text(settings,0,-595,530,"GameFontHighlightSmall"),"SetText","例如推荐205，CDM填116；推荐143，CDM填133。仅观察目录身份，不增加施法成功别名。距离检查不可用/Secret时不猜码数；蓝量Secret时不比较。")
- self:CreateToggleRow(settings,"检查技能冷却数值（默认关闭；可能含GCD）",0,-650,530,
-  function() local r=self:CustomRow(); return r and r.requireReady==true end,function(v) local r=self:CustomRow(); if r then r.requireReady=v end end)
+ self.customNumbers.cdmSpellID=self:SequenceInput(settings,320,-450,130)
+ self:Paint(self:Text(settings,0,-457,310,"GameFontHighlightSmall"),"SetText","CDM目录SpellID（空白=当前技能ID）")
+ self:Paint(self:Text(settings,0,-495,530,"GameFontHighlightSmall"),"SetText","例如推荐205，CDM填116；推荐143，CDM填133。仅观察目录身份，不增加施法成功别名。距离：精确值优先，估测跨阈值时等待。")
  local stateScroll=self:Frame("ScrollFrame",parent,"UIPanelScrollFrameTemplate")
  self:Paint(stateScroll,"SetPoint","TOPLEFT",parent,"TOPLEFT",0,-514); self:Paint(stateScroll,"SetSize",550,44)
- local stateChild=self:Frame("Frame",stateScroll); self:Paint(stateChild,"SetSize",530,120); self:Paint(stateScroll,"SetScrollChild",stateChild)
+ local stateChild=self:Frame("Frame",stateScroll); self:Paint(stateChild,"SetSize",530,240); self:Paint(stateScroll,"SetScrollChild",stateChild)
  self.customState=self:Text(stateChild,0,0,530,"GameFontHighlightSmall")
  self.customMessage=self:Text(parent,0,-566,580,"GameFontHighlightSmall")
- self:CustomMessage("规则条件区可滚动；保存后生效，公开值未知会明确等待。")
+ self:CustomMessage("已移除蓝量和冷却数值条件；旧条件迁移删除。血量及Duration仅后台探测。")
 end
 function U:MoveCustomRule(index,direction)
  if not self:CommitCustomNumbers() then return end

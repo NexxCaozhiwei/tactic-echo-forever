@@ -1910,6 +1910,8 @@ test("range_bracket_unknown_and_friendly_combat_are_display_only",function()
     local generation,index,serial=T.engine.generation,T.engine.index,T.engine.receiptSerial
     local low,high,reason=T.Presentation:MeasureDistance()
     eq(low,5); eq(high,8); eq(reason,"ITEM_BRACKET_ESTIMATE")
+    C_Item.IsItemInRange=function(id) if id==34368 then return true elseif id==32321 then return false end end
+    low,high,reason=T.Presentation:MeasureDistance(); eq(reason,"ITEM_RANGE_CONFLICT"); eq(low,nil)
     C_Item.IsItemInRange=function() return secret end
     low,high,reason=T.Presentation:MeasureDistance()
     eq(low,nil); eq(high,nil); eq(reason,"ITEM_RANGE_UNKNOWN")

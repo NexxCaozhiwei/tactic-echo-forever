@@ -22,6 +22,57 @@ function P.Mana()
  if calculated then return S.Public(value,"number") end
  return nil,"UNKNOWN_OPERATION_FAILED"
 end
+-- 固定数量物品探针提供距离区间，不伪造精确码数。
+local probes={{5,8149,136605,63427},{8,34368,33278},{10,32321,17626,10699},
+    {15,33069,31129},{20,10645,21519},{25,13289,24268,41509,31463},
+    {30,17202,835,7734,34191},{35,18904,24269},{40,4945,8348,28767,18640,18662}}
+local function boolean(path,...)
+    local ok,raw=S.Call(path,...)
+    if ok then return S.Public(raw,"boolean") end
+end
+function P:PrepareRangeProbes()
+    if self.rangePrepared then return end
+    self.rangePrepared=true
+    for _,rung in ipairs(probes) do
+        for i=2,#rung do S.Call("C_Item.RequestLoadItemDataByID",rung[i]) end
+    end
+end
+function P:DistanceBracket()
+    if boolean("UnitExists","target")~=true then return nil,nil,"TARGET_MISSING_OR_UNKNOWN" end
+    if boolean("UnitIsUnit","target","player")~=false or boolean("UnitIsDeadOrGhost","target")~=false then
+        return nil,nil,"TARGET_INVALID_OR_UNKNOWN"
+    end
+    local attack=boolean("UnitCanAttack","player","target")
+    if attack==nil then return nil,nil,"TARGET_REACTION_UNKNOWN" end
+    if not attack then
+        if boolean("InCombatLockdown")~=false then return nil,nil,"FRIENDLY_COMBAT_OR_UNKNOWN" end
+        if S.Resolve("C_ChallengeMode.IsChallengeModeActive") and boolean("C_ChallengeMode.IsChallengeModeActive")~=false then
+            return nil,nil,"FRIENDLY_CHALLENGE_OR_UNKNOWN"
+        end
+    end
+    local path=S.Resolve("C_Item.IsItemInRange") and "C_Item.IsItemInRange" or "IsItemInRange"
+    if not S.Resolve(path) then return nil,nil,"ITEM_RANGE_UNAVAILABLE" end
+    local low,high,known=0,nil,false
+    for _,rung in ipairs(probes) do
+        for i=2,#rung do
+            local ok,raw=S.Call(path,rung[i],"target")
+            if ok then
+                local v=S.Public(raw,"boolean")
+                if v==nil then
+                    local n=S.Public(raw,"number")
+                    if n==1 then v=true elseif n==0 then v=false end
+                end
+                if v==true then high=math.min(high or rung[1],rung[1]); known=true end
+                if v==false then low=math.max(low,rung[1]); known=true end
+            end
+        end
+    end
+    if high and low>=high then return nil,nil,"ITEM_RANGE_CONFLICT" end
+    if high then return low,high,"ITEM_BRACKET_ESTIMATE" end
+    if known then return low,nil,"ITEM_LOWER_BOUND_ESTIMATE" end
+    return nil,nil,"ITEM_RANGE_UNKNOWN"
+end
+
 function P.Distance()
  local fn=S.Resolve("UnitDistanceSquared"); if not fn then return nil,"UNAVAILABLE" end
  local ok,raw,checked=pcall(fn,"target"); if not ok then return nil,"CALL_FAILED" end
@@ -31,6 +82,46 @@ function P.Distance()
  local calculated,value=pcall(math.sqrt,squared)
  if calculated then return S.Public(value,"number") end
  return nil,"UNKNOWN_OPERATION_FAILED"
+end
+-- 精确公开距离优先；不可得时实时读取区间，不使用HUD缓存。
+function P:SampleDistance(state)
+ state.distance,state.distanceReason=self.Distance()
+ state.distanceLow,state.distanceHigh=nil,nil
+ if state.distance==nil then
+  self:PrepareRangeProbes()
+  state.distanceLow,state.distanceHigh,state.distanceReason=self:DistanceBracket()
+ end
+end
+function P.DistanceCompare(state,op,threshold)
+ if op=="any" then return true end
+ if state.distance~=nil then return P.Compare(state.distance,op,threshold) end
+ local low,high=state.distanceLow,state.distanceHigh
+ if low==nil then return nil end
+ -- 下界是开区间：公开超出low；上界是闭区间。
+ if op=="lt" then
+  if high and high<threshold then return true end
+  if low>=threshold then return false end
+ elseif op=="le" then
+  if high and high<=threshold then return true end
+  if low>=threshold then return false end
+ elseif op=="gt" then
+  if low>=threshold then return true end
+  if high and high<=threshold then return false end
+ elseif op=="ge" then
+  if low>=threshold then return true end
+  if high and high<threshold then return false end
+ elseif op=="eq" or op=="ne" then
+  if threshold<=low or (high and threshold>high) then return op=="ne" end
+ end
+ return nil
+end
+function P.DistanceText(state)
+ if not state then return "未采样" end
+ if state.distance~=nil then return tostring(state.distance) end
+ if state.distanceLow~=nil then
+  return "(" .. tostring(state.distanceLow) .. "," .. (state.distanceHigh and tostring(state.distanceHigh) or "∞") .. "]（估测）"
+ end
+ return "未知"
 end
 local categories={
  {kind="cooldown",value=0,viewer="EssentialCooldownViewer"},
@@ -118,13 +209,11 @@ function P.CDM(rows)
  return out
 end
 function P:Sample(state,rows)
- local mana,distance=false,false
+ local distance=false
  for _,r in ipairs(rows) do if r.enabled and not r.invalid then
-  mana=mana or (r.manaOp and r.manaOp~="any")
   distance=distance or (r.distanceOp and r.distanceOp~="any")
  end end
- if mana then state.manaPercent,state.manaReason=self.Mana() end
- if distance then state.distance,state.distanceReason=self.Distance() end
+ if distance then self:SampleDistance(state) end
  local cdm=self.CDM(rows)
  for i,row in ipairs(rows) do
   if row.cdmKind and row.cdmKind~="none" then

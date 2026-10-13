@@ -40,25 +40,60 @@ test("experimental_count_opt_in_unknown_and_bounds",function()
 end)
 test("activity_is_not_ready",function()
  local rows={row(143)}; rows[1].activity="inactive"; rows[1].requireReady=true; local s=state(rows)
- eq(evaluate(rows,s).spellID,143); s.actions.custom_1.ready=nil; eq(evaluate(rows,s),nil)
+ eq(evaluate(rows,s).spellID,143); s.actions.custom_1.ready=nil; eq(evaluate(rows,s).spellID,143)
  s.actions.custom_1.ready=true; s.actions.custom_1.active=nil; eq(evaluate(rows,s),nil)
 end)
-test("optional_ready_default_off_true_false_unknown_and_reload",function()
- local rows=C.CleanRows({row(143)}); local s=state(rows)
- eq(rows[1].requireReady,false); s.actions.custom_1.ready=nil; eq(evaluate(rows,s).spellID,143)
- s.actions.custom_1.ready=false; eq(evaluate(rows,s).spellID,143)
- rows[1].requireReady=true; eq(evaluate(rows,s),nil); s.actions.custom_1.ready=nil; eq(evaluate(rows,s),nil)
- s.actions.custom_1.ready=true; eq(evaluate(rows,s).spellID,143)
- eq(C.CleanRows(rows)[1].requireReady,true); rows[1].requireReady=F.secret; assert(C.CleanRows(rows)[1].invalid)
+test("retired_conditions_removed_on_reload",function()
+ local old=row(143); old.requireReady=true; old.manaOp="lt"; old.manaValue=20
+ local clean=C.CleanRows({old})[1]
+ eq(clean.requireReady,nil); eq(clean.manaOp,nil); eq(clean.manaValue,nil)
+ eq(evaluate({clean},state({clean})).spellID,143)
+ old.requireReady=F.secret; assert(C.CleanRows({old})[1].invalid)
 end)
-test("optional_ready_no_query_and_live_recheck_when_enabled",function()
+test("optional_ready_diagnostic_probe_does_not_gate_and_live_recheck_when_enabled",function()
  local e=F.runtime(); local old=C_Spell.GetSpellCooldown; local calls=0
  C_Spell.GetSpellCooldown=function() calls=calls+1; return F.secret end
  local r=row(143); C:Save(e,{r},"single","MAGE"); T.Runtime:SetIntent(true); T.Dispatch:TickContinuous()
- assert(T.Dispatch.pending); eq(calls,0); assert(T.Dispatch:Packet())
+ assert(T.Dispatch.pending); eq(calls,1); assert(T.Dispatch:Packet())
  r.requireReady=true; C:Save(e,{r},"single","MAGE"); T.Runtime:SetIntent(true); T.Dispatch:TickContinuous()
- eq(T.Dispatch.pending,nil); assert(calls>0); C_Spell.GetSpellCooldown=old
+ assert(T.Dispatch.pending); assert(calls>0); C_Spell.GetSpellCooldown=old
 end)
+test("background_health_duration_public_secret_failed_and_reload_clean",function()
+ local old=C_Spell.GetSpellCooldown; local oldDuration=C_Spell.GetSpellCooldownDuration; local oldHealth=UnitHealthPercent
+ C_Spell.GetSpellCooldown=function() return {isActive=false} end
+ C_Spell.GetSpellCooldownDuration=function(id) eq(id,143); return {IsZero=function() return true end,GetTotalDuration=function() return 0 end,GetRemainingDuration=function() return 0 end} end
+ local p=T.APL.State.ProbeCooldown(143); eq(p.active,false); eq(p.isZero,true); eq(p.total,0); eq(p.objectReason,"PUBLIC")
+ UnitHealthPercent=function(unit,predicted) eq(unit,"player"); eq(predicted,true); return .75 end
+ eq(T.APL.State.ProbeHealth().value,.75)
+ C_Spell.GetSpellCooldownDuration=function() return {IsZero=function() return F.secret end,GetTotalDuration=function() return F.secret end,GetRemainingDuration=function() return F.secret end} end
+ p=T.APL.State.ProbeCooldown(143); eq(p.isZero,nil); eq(p.zeroReason,"SECRET"); eq(p.total,nil)
+ UnitHealthPercent=function() return F.secret end; local health=T.APL.State.ProbeHealth(); eq(health.value,nil); eq(health.reason,"SECRET")
+ local clean=A.Trace.Clean({reason="APL_CANDIDATE",healthProbe=health,actions={custom_1={spellID=143,cooldownProbe=p}}})
+ eq(clean.actions.custom_1.cooldownProbe.zeroReason,"SECRET"); eq(clean.healthProbe.reason,"SECRET")
+ p.total=F.secret; health.value=F.secret
+ clean=A.Trace.Clean({reason="APL_CANDIDATE",healthProbe=health,actions={custom_1={spellID=143,cooldownProbe=p}}})
+ eq(clean.actions.custom_1.cooldownProbe.total,nil); eq(clean.healthProbe.value,nil)
+ C_Spell.GetSpellCooldownDuration=function() return F.secret end; eq(T.APL.State.ProbeCooldown(143).objectReason,"SECRET")
+ C_Spell.GetSpellCooldownDuration=function() error("PRIVATE_ERROR") end; eq(T.APL.State.ProbeCooldown(143).objectReason,"CALL_FAILED")
+ C_Spell.GetSpellCooldownDuration=function() return nil end; eq(T.APL.State.ProbeCooldown(143).objectReason,"NO_DATA")
+ C_Spell.GetSpellCooldownDuration=function() return {} end; eq(T.APL.State.ProbeCooldown(143).zeroReason,"NO_DATA")
+ C_Spell.GetSpellCooldownDuration=function() return {GetTotalDuration=function() return -1 end} end
+ eq(T.APL.State.ProbeCooldown(143).totalReason,"UNKNOWN_NUMBER")
+ UnitHealthPercent=nil; eq(T.APL.State.ProbeHealth().reason,"UNAVAILABLE")
+ C_Spell.GetSpellCooldown, C_Spell.GetSpellCooldownDuration,UnitHealthPercent=old,oldDuration,oldHealth
+end)
+
+test("duration_probe_deduplicates_and_never_queries_gcd",function()
+ local e=F.runtime(); local old=C_Spell.GetSpellCooldownDuration; local calls=0
+ C_Spell.GetSpellCooldownDuration=function(id) assert(id~=61304); calls=calls+1; return nil end
+ C:Save(e,{row(143),row(143)},"single","MAGE")
+ local sample={actions={}}; C:Sample(e,sample); eq(calls,1)
+ eq(sample.actions.custom_1.cooldownProbe,sample.actions.custom_2.cooldownProbe)
+ e.db.apl.custom.MAGE.single={C.CleanRows({row(61304)})[1]}
+ C:Sample(e,{actions={}}); eq(calls,1)
+ C_Spell.GetSpellCooldownDuration=old
+end)
+
 test("unsupported_conditions_are_preserved_as_blocked",function()
  for _,field in ipairs({"manaPercent","cdm","distanceYards","gcd","expression"}) do
   local r=row(143); r[field]=30; local rows=C.CleanRows({r}); eq(rows[1].invalid,"CUSTOM_CONDITION_UNSUPPORTED"); eq(evaluate(rows),nil)
@@ -153,17 +188,9 @@ test("combat_unknown_still_previews_but_never_dispatches",function()
  T.Runtime:SetIntent(true); eq(e.aplCandidate.spellID,143); eq(T.Runtime.state,"blocked")
  eq(T.APL:Allowed(e,143),false); T.Dispatch:TickContinuous(); eq(T.Dispatch.pending,nil); eq(T.Dispatch:Packet(),nil)
 end)
-test("standby_resource_threshold_updates_readonly_priority",function()
- local e=F.runtime(); local low=row(143); low.manaOp,low.manaValue="lt",20
- local high=row(205); high.manaOp,high.manaValue="gt",20
- local power,max=UnitPower,UnitPowerMax
- UnitPower=function() return 10 end; UnitPowerMax=function() return 100 end
- C:Save(e,{low,high},"single","MAGE"); e.db.dispatch.mode="auto"; InCombatLockdown=function() return false end
- T.Runtime:SetIntent(true); eq(e.aplCandidate.spellID,143); eq(T.Dispatch:Packet(),nil)
- UnitPower=function() return 50 end; local refreshedAt=GetTime()+.06; GetTime=function() return refreshedAt end; A:Invalidate(); T.Runtime:Reconcile(); eq(e.aplCandidate.spellID,205)
- UnitPower=function() return F.secret end; local refreshedAt=GetTime()+.06; GetTime=function() return refreshedAt end; A:Invalidate(); T.Runtime:Reconcile(); eq(e.aplCandidate,nil)
- eq(T.Runtime.state,"standby"); eq(T.Dispatch.pending,nil); eq(A.Trace:Waiting(e),"APL待命：暂无满足条件的规则")
- UnitPower,UnitPowerMax=power,max
+test("retired_resource_threshold_does_not_survive_save",function()
+ local e=F.runtime(); local r=row(143); r.manaOp,r.manaValue="lt",20
+ assert(C:Save(e,{r},"single","MAGE")); eq(C:Rows(e)[1].manaOp,nil)
 end)
 test("manual_apl_mode_cannot_dispatch_standby_preview",function()
  local e=F.runtime(); C:Save(e,{row(143)},"single","MAGE"); e.db.dispatch.mode="manual"; InCombatLockdown=function() return false end

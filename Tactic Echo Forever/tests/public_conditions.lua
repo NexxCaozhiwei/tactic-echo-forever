@@ -39,6 +39,29 @@ test("distance_requires_checked_and_public_squared",function()
  UnitDistanceSquared=function() return 400,F.secret end; eq(P.Distance(),nil)
  UnitDistanceSquared=nil; local _,why=P.Distance(); eq(why,"UNAVAILABLE")
 end)
+test("distance_bracket_comparators_and_exact_priority",function()
+ local s={distanceLow=5,distanceHigh=8}
+ eq(P.DistanceCompare(s,"lt",10),true); eq(P.DistanceCompare(s,"lt",7),nil)
+ eq(P.DistanceCompare(s,"lt",8),nil); eq(P.DistanceCompare(s,"le",8),true)
+ eq(P.DistanceCompare(s,"gt",5),true); eq(P.DistanceCompare(s,"ge",8),nil)
+ eq(P.DistanceCompare(s,"eq",5),false); eq(P.DistanceCompare(s,"eq",7),nil)
+ eq(P.DistanceCompare(s,"ne",10),true); eq(P.DistanceCompare(s,"ne",7),nil)
+ eq(P.DistanceCompare(s,"le",5),false); eq(P.DistanceCompare(s,"gt",8),false)
+ s.distanceHigh=nil; eq(P.DistanceCompare(s,"gt",40),nil)
+ s.distanceLow=40; eq(P.DistanceCompare(s,"gt",40),true)
+ local bracket=P.DistanceBracket
+ P.DistanceBracket=function() return 5,8,"ITEM_BRACKET_ESTIMATE" end
+ UnitDistanceSquared=function() return 400,false end
+ P:SampleDistance(s); eq(s.distance,nil); eq(s.distanceLow,5); eq(s.distanceHigh,8)
+ local r=row(143); r.distanceOp,r.distanceValue="lt",10
+ local sample=state({r}); sample.distance=nil; sample.distanceLow,sample.distanceHigh=5,8
+ eq(C:Check(sample,r,1),true)
+ r.distanceValue=7; eq(C:Check(sample,r,1),nil)
+ UnitDistanceSquared=function() return 400,true end
+ P:SampleDistance(s); eq(s.distance,20); eq(s.distanceLow,nil); eq(s.distanceHigh,nil)
+ P.DistanceBracket=bracket
+end)
+
 test("cdm_exact_directory_false_and_true",function()
  local r=row(143); r.cdmKind="buff"; r.cdmSpellID=133
  fixtures(false); eq(P.CDM({r})["buff:133"].value,false)
@@ -115,14 +138,14 @@ test("user_examples_numeric_cdm_and_moving",function()
  local rows={row(2136),row(5019),row(205),row(143)}
  rows[1].distanceOp,rows[1].distanceValue,rows[1].moving="lt",20,"yes"
  rows[1].cdmKind="cooldown"
- rows[2].manaOp,rows[2].manaValue,rows[2].moving="lt",20,"no"
+ rows[2].distanceOp,rows[2].distanceValue,rows[2].moving="lt",20,"no"
  rows[3].distanceOp,rows[3].distanceValue,rows[3].cdmKind,rows[3].cdmSpellID="lt",30,"buff",116
  rows[4].distanceOp,rows[4].distanceValue,rows[4].cdmKind,rows[4].cdmSpellID="lt",35,"buff",133
  local s=state(rows); s.moving=true
  local config={custom={MAGE={single=rows}}}
  eq(C:Evaluate(s,config,"MAGE").spellID,2136)
  s.moving=false; eq(C:Evaluate(s,config,"MAGE").spellID,5019)
- s.manaPercent=60; eq(C:Evaluate(s,config,"MAGE").spellID,205)
+ s.distance=25; eq(C:Evaluate(s,config,"MAGE").spellID,205)
  s.actions.custom_3.cdmActive=true; eq(C:Evaluate(s,config,"MAGE").spellID,143)
  s.distance=36; eq(C:Evaluate(s,config,"MAGE"),nil)
  s.distance=nil; eq(C:Evaluate(s,config,"MAGE"),nil)
@@ -130,7 +153,7 @@ end)
 test("config_numeric_invalid_and_secret_preserved_blocked",function()
  local r=row(143); r.manaOp="lt"; r.manaValue=101; assert(C.CleanRows({r})[1].invalid)
  r.manaValue=20; r.distanceOp="lt"; r.distanceValue=F.secret; assert(C.CleanRows({r})[1].invalid)
- r.distanceValue=20; r.cdmKind="buff"; r.cdmSpellID=133; eq(C.CleanRows({r})[1].invalid,nil)
+ r.manaOp="any"; r.distanceValue=20; r.cdmKind="buff"; r.cdmSpellID=133; eq(C.CleanRows({r})[1].invalid,nil)
  r.distanceOp="execute"; assert(C.CleanRows({r})[1].invalid)
 end)
 test("shoot_exact_known_metadata_and_range_fallback",function()
@@ -143,16 +166,23 @@ test("live_distance_and_mana_changes_revoke_packet",function()
  UnitDistanceSquared=function() return 100,true end
  C:Save(e,{r},"single","MAGE"); T.Runtime:SetIntent(true); T.Dispatch:TickContinuous(); assert(T.Dispatch.pending)
  UnitDistanceSquared=function() return 900,true end; eq(T.Dispatch:Packet(),nil)
- local r2=row(143); r2.manaOp,r2.manaValue="lt",20
- UnitPower=function() return 10 end; UnitPowerMax=function() return 100 end
- C:Save(e,{r2},"single","MAGE"); T.Runtime:SetIntent(true); T.Dispatch:TickContinuous(); assert(T.Dispatch.pending)
- UnitPower=function() return F.secret end; eq(T.Dispatch:Packet(),nil)
  local r3=row(143); r3.cdmKind="buff"; r3.cdmSpellID=133
  local frame,pool=fixtures(false)
  BuffIconCooldownViewer.itemFramePool=pool({{},frame,{}})
  C:Save(e,{r3},"single","MAGE"); T.Runtime:SetIntent(true); T.Dispatch:TickContinuous(); assert(T.Dispatch.pending)
  frame.isActive=true; eq(T.Dispatch:Packet(),nil)
 end)
+test("live_bracket_change_revokes_packet",function()
+ local e=F.runtime(); local r=row(143); r.distanceOp,r.distanceValue="lt",20
+ local original=P.DistanceBracket
+ UnitDistanceSquared=function() return 0,false end
+ P.DistanceBracket=function() return 5,8,"ITEM_BRACKET_ESTIMATE" end
+ C:Save(e,{r},"single","MAGE"); T.Runtime:SetIntent(true); T.Dispatch:TickContinuous(); assert(T.Dispatch.pending)
+ P.DistanceBracket=function() return 15,25,"ITEM_BRACKET_ESTIMATE" end
+ eq(T.Dispatch:Packet(),nil)
+ P.DistanceBracket=original
+end)
+
 test("diagnostics_clean_public_new_conditions",function()
  local clean=T.APL.Trace.Clean({reason="APL_NO_PUBLIC_ELIGIBLE_RULE",manaPercent=15,distance=19,manaReason="PUBLIC",distanceReason="PUBLIC",actions={custom_1={cdmActive=false,cdmReason="PUBLIC"}}})
  eq(clean.manaPercent,15); eq(clean.distance,19); eq(clean.actions.custom_1.cdmActive,false)
@@ -167,10 +197,10 @@ test("click_pickup_and_drag_both_add_no_duplicates_after_clear",function()
  T.UI.customDrop.scripts.OnClick(); eq(#T.UI.customDraft,1)
  T.UI.customDrop.scripts.OnReceiveDrag(); eq(#T.UI.customDraft,1)
  held=true; T.UI.customDrop.scripts.OnReceiveDrag(); eq(#T.UI.customDraft,2)
- local r=T.UI:CustomRow(); r.manaOp="lt"; r.distanceOp="lt"; r.cdmKind="buff"
- T.UI.customNumbers.manaValue.text="20"; T.UI.customNumbers.distanceValue.text="30"; T.UI.customNumbers.cdmSpellID.text="116"
+ local r=T.UI:CustomRow(); r.distanceOp="lt"; r.cdmKind="buff"
+ T.UI.customNumbers.distanceValue.text="30"; T.UI.customNumbers.cdmSpellID.text="116"
  T.UI.customSave.scripts.OnClick()
- local savedRow=C:Rows(e)[2]; eq(savedRow.manaOp,"lt"); eq(savedRow.manaValue,20); eq(savedRow.distanceValue,30); eq(savedRow.cdmSpellID,116)
+ local savedRow=C:Rows(e)[2]; eq(savedRow.manaOp,nil); eq(savedRow.distanceValue,30); eq(savedRow.cdmSpellID,116)
  local action=GetActionInfo
  GetCursorInfo=function() return "action",7 end; GetActionInfo=function(slot) eq(slot,7); return "spell",205 end
  T.UI.customDrop.scripts.OnClick(); eq(#T.UI.customDraft,3); eq(T.UI.customDraft[3].spellID,205)

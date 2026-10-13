@@ -4,57 +4,13 @@ TEF.Presentation=P
 -- Display-only. No state is read by Engine, Research or Dispatch.
 P.cooldowns={}
 P.bindings={}
--- 独立固定物品探针，仅估测距离区间；不参与APL或派发资格。
-local probes={{5,8149,136605,63427},{8,34368,33278},{10,32321,17626,10699},
-    {15,33069,31129},{20,10645,21519},{25,13289,24268,41509,31463},
-    {30,17202,835,7734,34191},{35,18904,24269},{40,4945,8348,28767,18640,18662}}
 local function boolean(path,...)
     local ok,raw=S.Call(path,...)
     if ok then return S.Public(raw,"boolean") end
 end
-function P:PrepareRangeProbes()
-    if self.rangePrepared then return end
-    self.rangePrepared=true
-    for _,rung in ipairs(probes) do
-        for i=2,#rung do S.Call("C_Item.RequestLoadItemDataByID",rung[i]) end
-    end
-end
-function P:MeasureDistance()
-    if boolean("UnitExists","target")~=true then return nil,nil,"TARGET_MISSING_OR_UNKNOWN" end
-    if boolean("UnitIsUnit","target","player")~=false or boolean("UnitIsDeadOrGhost","target")~=false then
-        return nil,nil,"TARGET_INVALID_OR_UNKNOWN"
-    end
-    local attack=boolean("UnitCanAttack","player","target")
-    if attack==nil then return nil,nil,"TARGET_REACTION_UNKNOWN" end
-    if not attack then
-        if boolean("InCombatLockdown")~=false then return nil,nil,"FRIENDLY_COMBAT_OR_UNKNOWN" end
-        if S.Resolve("C_ChallengeMode.IsChallengeModeActive") and boolean("C_ChallengeMode.IsChallengeModeActive")~=false then
-            return nil,nil,"FRIENDLY_CHALLENGE_OR_UNKNOWN"
-        end
-    end
-    local path=S.Resolve("C_Item.IsItemInRange") and "C_Item.IsItemInRange" or "IsItemInRange"
-    if not S.Resolve(path) then return nil,nil,"ITEM_RANGE_UNAVAILABLE" end
-    local low,known=0,false
-    for _,rung in ipairs(probes) do
-        local inside,sawFalse=false,false
-        for i=2,#rung do
-            local ok,raw=S.Call(path,rung[i],"target")
-            if ok then
-                local v=S.Public(raw,"boolean")
-                if v==nil then
-                    local n=S.Public(raw,"number")
-                    if n==1 then v=true elseif n==0 then v=false end
-                end
-                if v==true then inside=true; break end
-                if v==false then sawFalse=true end
-            end
-        end
-        if inside then return low,rung[1],"ITEM_BRACKET_ESTIMATE" end
-        if sawFalse then low,known=rung[1],true end
-    end
-    if known then return low,nil,"ITEM_LOWER_BOUND_ESTIMATE" end
-    return nil,nil,"ITEM_RANGE_UNKNOWN"
-end
+-- 显示与APL共用公开距离探针；显示不改变运行意图。
+function P:PrepareRangeProbes() TEF.APL.PublicConditions:PrepareRangeProbes() end
+function P:MeasureDistance() return TEF.APL.PublicConditions:DistanceBracket() end
 function P:PaintRange(card,step)
     local out=false
     if step and step.spellID~=6603 and not step.unverified and boolean("UnitExists","target")==true
