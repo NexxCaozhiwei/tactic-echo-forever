@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-labelledby="title desc">
+  <title id="title">Tactic Echo Forever：编排、推荐、输入与回执</title>
+  <desc id="desc">项目展示与四阶段工作流程，属于流程示意而非游戏截图。</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#11182b"/><stop offset="1" stop-color="#251d38"/></linearGradient>
+    <linearGradient id="accent"><stop stop-color="#65d7cd"/><stop offset="1" stop-color="#bba5fa"/></linearGradient>
+    <radialGradient id="glow"><stop stop-color="#7561ad" stop-opacity=".3"/><stop offset="1" stop-color="#7561ad" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="1200" height="420" rx="24" fill="url(#bg)"/>
+  <circle cx="1020" cy="90" r="260" fill="url(#glow)"/>
+  <path d="M820 0v260M900 0v260M980 0v260M1060 0v260M1140 0v260M800 40h400M800 120h400M800 200h400" stroke="#b9a5ff" stroke-opacity=".045"/>
+  <g font-family="Microsoft YaHei, PingFang SC, Noto Sans CJK SC, sans-serif">
+    <rect x="44" y="35" width="44" height="26" rx="8" fill="#65d7cd"/>
+    <text x="66" y="53" text-anchor="middle" font-size="14" font-weight="700" fill="#11252d">TEF</text>
+    <text x="103" y="54" font-size="14" letter-spacing="2" fill="#b6bacd">魔兽世界无限版 · 独立项目</text>
+    <text x="43" y="116" font-size="45" font-weight="700" fill="#f6f4ff">Tactic Echo Forever</text>
+    <text x="46" y="158" font-size="26" fill="#e1dced">让每一步施法，看得见、控得住。</text>
+    <text x="46" y="195" font-size="16" fill="#a9afc5">编排你的计划 · 看清下一步 · 通过精确回执推进</text>
+    <g font-size="13" fill="#d5dae8" text-anchor="middle">
+      <rect x="46" y="218" width="96" height="29" rx="14" fill="#ffffff" fill-opacity=".06" stroke="#ffffff" stroke-opacity=".12"/>
+      <text x="94" y="237">人工序列</text>
+      <rect x="153" y="218" width="106" height="29" rx="14" fill="#ffffff" fill-opacity=".06" stroke="#ffffff" stroke-opacity=".12"/>
+      <text x="206" y="237">自定义 APL</text>
+      <rect x="270" y="218" width="133" height="29" rx="14" fill="#ffffff" fill-opacity=".06" stroke="#ffffff" stroke-opacity=".12"/>
+      <text x="336" y="237">HUD + 桌面 TEK</text>
+    </g>
+    <g transform="translate(853 48)">
+      <circle cx="128" cy="91" r="77" fill="none" stroke="#b9a5ff" stroke-opacity=".13"/>
+      <circle cx="128" cy="91" r="57" fill="none" stroke="#65d7cd" stroke-opacity=".27" stroke-dasharray="6 9"/>
+      <path d="M42 91h32l16-33 24 65 20-44 15 12h64" fill="none" stroke="url(#accent)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="42" cy="91" r="5" fill="#65d7cd"/>
+      <circle cx="213" cy="91" r="5" fill="#bba5fa"/>
+      <text x="128" y="201" text-anchor="middle" font-size="14" fill="#c4badf">从计划到回执，形成闭环</text>
+    </g>
+    <path d="M46 275h1108" stroke="#ffffff" stroke-opacity=".1"/>
+    <g>
+      <rect x="46" y="294" width="249" height="83" rx="13" fill="#ffffff" fill-opacity=".045" stroke="#ffffff" stroke-opacity=".1"/>
+      <text x="65" y="323" font-size="12" fill="#65d7cd">01 · 游戏内编排</text>
+      <text x="65" y="352" font-size="19" font-weight="700" fill="#f0eff8">序列与优先级规则</text>
+      <rect x="331" y="294" width="249" height="83" rx="13" fill="#ffffff" fill-opacity=".045" stroke="#ffffff" stroke-opacity=".1"/>
+      <text x="350" y="323" font-size="12" fill="#8dbfe8">02 · HUD 展示</text>
+      <text x="350" y="352" font-size="19" font-weight="700" fill="#f0eff8">当前推荐与后续预览</text>
+      <rect x="616" y="294" width="249" height="83" rx="13" fill="#ffffff" fill-opacity=".045" stroke="#ffffff" stroke-opacity=".1"/>
+      <text x="635" y="323" font-size="12" fill="#bba5fa">03 · 桌面 TEK</text>
+      <text x="635" y="352" font-size="19" font-weight="700" fill="#f0eff8">检查条件后发送输入</text>
+      <rect x="901" y="294" width="249" height="83" rx="13" fill="#ffffff" fill-opacity=".045" stroke="#ffffff" stroke-opacity=".1"/>
+      <text x="920" y="323" font-size="12" fill="#f4bf75">04 · 游戏确认</text>
+      <text x="920" y="352" font-size="19" font-weight="700" fill="#f0eff8">精确成功回执</text>
+    </g>
+    <g stroke="#a7aac2" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M304 336h17m-5-5 5 5-5 5"/><path d="M589 336h17m-5-5 5 5-5 5"/><path d="M874 336h17m-5-5 5 5-5 5"/>
+    </g>
+    <text x="1152" y="400" text-anchor="end" font-size="11" fill="#8e93aa">工作流程示意 · 非游戏截图</text>
+  </g>
+</svg>
