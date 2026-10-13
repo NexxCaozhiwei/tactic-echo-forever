@@ -67,21 +67,9 @@ function U:AddCustomSpell(id)
  self.customSelected=#self.customDraft; self:RefreshCustomAPL(); self:CustomMessage("已加入草稿；保存后生效。不猜等级ID。"); return true
 end
 function U:ReceiveCustomSpell()
- local fn=S.Resolve("GetCursorInfo")
- if not fn then self:CustomMessage("GetCursorInfo不可用，可手输ID。"); return false end
- local ok,kind,slot,__,rawID=pcall(fn)
- local public,classification=S.Public(kind,"string")
- if ok and classification=="NO_DATA" then return false end
- if ok and public=="action" then
-  local actionSlot=S.ID(slot); local get=S.Resolve("GetActionInfo")
-  if actionSlot and get then
-   local read,actionType,id=pcall(get,actionSlot)
-   if read and S.Public(actionType,"string")=="spell" then rawID=id; public="spell" end
-  end
- end
- if not ok or public~="spell" then self.engine:Log("display","CUSTOM_CURSOR_KIND_UNVERIFIED"); self:CustomMessage("游标不是公开技能；宏/物品游标不作为技能ID。"); return false end
- local id,why=S.ID(rawID)
- if not id then self.engine:Log("display","CUSTOM_CURSOR_ID_UNVERIFIED"); self:CustomMessage("技能游标ID未解析：" .. (why or "UNKNOWN") .. "；可手输精确ID。"); return false end
+ local id,why=T.ActionSources:Cursor()
+ if why=="NO_DATA" then return false end
+ if not id then self.engine:Log("display",why or "CUSTOM_CURSOR_ID_UNVERIFIED"); self:CustomMessage("技能或宏ID未确认：" .. (why or "UNKNOWN") .. "；可手输精确ID。"); return false end
  if not self:AddCustomSpell(id) then return false end
  S.Call("ClearCursor"); self:Refresh(); return true
 end
@@ -113,7 +101,7 @@ function U:CreateCustomAPLEditor(parent)
   self:CustomMessage(ok and "已保存并停止派发；关闭设置后主动开启。" or (reason or "保存失败"))
  end)
  local scroll=self:Frame("ScrollFrame",parent,"UIPanelScrollFrameTemplate")
- self:Paint(scroll,"SetPoint","TOPLEFT",parent,"TOPLEFT",0,-65); self:Paint(scroll,"SetSize",550,94)
+ self:Paint(scroll,"SetPoint","TOPLEFT",parent,"TOPLEFT",0,-65); self:Paint(scroll,"SetSize",550,154)
  local child=self:Frame("Frame",scroll); self.customChild=child; self:Paint(child,"SetSize",530,108); self:Paint(scroll,"SetScrollChild",child)
  self.customWidgets={}
  for i=1,16 do
@@ -131,7 +119,7 @@ function U:CreateCustomAPLEditor(parent)
   self.customWidgets[i]={frame=frame,name=name}
  end
  local conditionScroll=self:Frame("ScrollFrame",parent,"UIPanelScrollFrameTemplate")
- self:Paint(conditionScroll,"SetPoint","TOPLEFT",parent,"TOPLEFT",0,-166); self:Paint(conditionScroll,"SetSize",550,220)
+ self:Paint(conditionScroll,"SetPoint","TOPLEFT",parent,"TOPLEFT",0,-226); self:Paint(conditionScroll,"SetSize",550,280)
  local settings=self:Frame("Frame",conditionScroll); self:Paint(settings,"SetSize",530,740); self:Paint(conditionScroll,"SetScrollChild",settings)
  self:CreateToggleRow(settings,"当前规则启用",0,0,530,function() local r=self:CustomRow(); return r and r.enabled==true end,function(v) local r=self:CustomRow(); if r then r.enabled=v end end)
  self:CreateSelectRow(settings,"移动条件",{{"any","不限"},{"yes","移动中"},{"no","站定"}},0,-36,530,
@@ -160,11 +148,11 @@ function U:CreateCustomAPLEditor(parent)
  self:CreateToggleRow(settings,"检查技能冷却数值（默认关闭；可能含GCD）",0,-650,530,
   function() local r=self:CustomRow(); return r and r.requireReady==true end,function(v) local r=self:CustomRow(); if r then r.requireReady=v end end)
  local stateScroll=self:Frame("ScrollFrame",parent,"UIPanelScrollFrameTemplate")
- self:Paint(stateScroll,"SetPoint","TOPLEFT",parent,"TOPLEFT",0,-394); self:Paint(stateScroll,"SetSize",550,44)
+ self:Paint(stateScroll,"SetPoint","TOPLEFT",parent,"TOPLEFT",0,-514); self:Paint(stateScroll,"SetSize",550,44)
  local stateChild=self:Frame("Frame",stateScroll); self:Paint(stateChild,"SetSize",530,120); self:Paint(stateScroll,"SetScrollChild",stateChild)
  self.customState=self:Text(stateChild,0,0,530,"GameFontHighlightSmall")
- self.customMessage=self:Text(parent,0,-446,580,"GameFontHighlightSmall")
- self:CustomMessage("规则条件区可滚动；支持魔杖5019。保存后生效，公开值未知会明确等待。")
+ self.customMessage=self:Text(parent,0,-566,580,"GameFontHighlightSmall")
+ self:CustomMessage("规则条件区可滚动；保存后生效，公开值未知会明确等待。")
 end
 function U:MoveCustomRule(index,direction)
  if not self:CommitCustomNumbers() then return end

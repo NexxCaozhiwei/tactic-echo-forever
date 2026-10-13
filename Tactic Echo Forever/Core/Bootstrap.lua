@@ -1,5 +1,5 @@
 local addonName, TEF = ...
-local VERSION = "1.0.15"
+local VERSION = "1.0.22"
 local S = TEF.Safety
 local engine, frame
 
@@ -64,6 +64,10 @@ local function onEvent(_,event,...)
     end
     if event=="PLAYER_TALENT_UPDATE" or event=="TRAIT_CONFIG_UPDATED" or event=="ACTIVE_TALENT_GROUP_CHANGED" then refresh(); return end
     if event == "SPELLS_CHANGED" then TEF.Presentation.bindings={}; TEF.Presentation.cooldowns={}; TEF.HUD.metadata={}; TEF.Dispatch:ClearBindingCache(); refresh(); return end
+    if event == "UPDATE_MACROS" then
+        TEF.ActionSources:Clear(); TEF.Dispatch:BindingsChanged()
+        TEF.Presentation.bindings={}; TEF.Research:Invalidate(); TEF.APL:Invalidate(true); refresh(); return
+    end
     if event == "SPELL_UPDATE_COOLDOWN" or event == "SPELL_UPDATE_CHARGES" then TEF.HUD:Refresh(event=="SPELL_UPDATE_COOLDOWN"); return end
     if event == "PLAYER_REGEN_ENABLED" then
         if engine.db.loopMode=="combat" then TEF.Runtime:ResetCycle("LOOP_COMBAT_RESET") end
@@ -79,6 +83,7 @@ local function onEvent(_,event,...)
         TEF.Research:Invalidate(); TEF.Runtime:Tick(); refresh(); return
     end
     if event == "PLAYER_TARGET_CHANGED" then
+        engine:UsageTargetChanged()
         if engine.db.loopMode=="target" then TEF.Runtime:ResetCycle("LOOP_TARGET_RESET")
         else TEF.Runtime:Suspend("RUNTIME_TARGET_CHANGED") end
         TEF.Presentation.bindings={}; TEF.Research:Invalidate(); refresh(); return
@@ -111,7 +116,7 @@ if created then
         if not handled and engine then TEF.Runtime:Fault("EVENT_CALL_FAILED") end
     end)
     if ok then
-        local events={"ADDON_LOADED","PLAYER_LOGIN","PLAYER_LOGOUT","PLAYER_ENTERING_WORLD","SPELLS_CHANGED",
+        local events={"ADDON_LOADED","PLAYER_LOGIN","PLAYER_LOGOUT","PLAYER_ENTERING_WORLD","SPELLS_CHANGED","UPDATE_MACROS",
             "PLAYER_TARGET_CHANGED","PLAYER_REGEN_ENABLED","PLAYER_REGEN_DISABLED","UI_SCALE_CHANGED","ACTIONBAR_SLOT_CHANGED","UPDATE_BINDINGS","SPELL_UPDATE_COOLDOWN","SPELL_UPDATE_CHARGES","PLAYER_SPECIALIZATION_CHANGED","CHARACTER_POINTS_CHANGED","PLAYER_TALENT_UPDATE","TRAIT_CONFIG_UPDATED","ACTIVE_TALENT_GROUP_CHANGED"}
         for event in pairs(TEF.Events) do events[#events+1]=event end
         for _,event in ipairs({"UNIT_POWER_UPDATE","UNIT_MAXPOWER","COOLDOWN_VIEWER_DATA_LOADED","COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED"}) do events[#events+1]=event end

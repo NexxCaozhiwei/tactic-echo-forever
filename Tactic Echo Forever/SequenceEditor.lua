@@ -37,33 +37,49 @@ function U:EditSequenceRow(index,operation,value)
         rows[index],rows[dest]=rows[dest],rows[index]
     elseif operation=="skip" then
         rows[index].skipUnavailable=S.Public(value,"boolean")==true
+    elseif operation=="usage" then
+        local policy=S.Public(value,"string")
+        if policy~="always" and policy~="target" and policy~="combat" then return false end
+        rows[index].usagePolicy=policy
     elseif operation=="count" then
+        if rows[index].spellID==6603 then
+            self:RefreshSequenceEditor(true)
+            self:SequenceMessage("攻击6603是开启步骤：确认自动攻击已开启一次后推进，不按平砍次数计数。"); return false
+        end
         local text=S.Public(value,"string")
         local n=text and text:match("^%s*(%d+)%s*$") and tonumber(text)
         if not n or n<1 or n>99 then self:SequenceMessage("释放次数须为1–99的整数；草稿未改变。"); return false end
         if rows[index].repeatCount==n then return true end
         rows[index].repeatCount=n
     else return false end
-    self:WriteDraft(rows); self:SequenceMessage("草稿已调整，点击保存生效。")
+    self:WriteDraft(rows); self:SequenceMessage(operation=="usage" and value=="target"
+        and "草稿已调整；目标GUID受限时按本次目标选择计一次，重新选中算新选择。点击保存生效。"
+        or "草稿已调整，点击保存生效。")
     return true
 end
 function U:ReceiveSequenceSpell(index)
-    local fn=S.Resolve("GetCursorInfo")
-    if not fn then self:SequenceMessage("拖入不可用：GetCursorInfo缺失。"); return false end
-    -- Blizzard spell cursor carries the exact spell ID in its fourth result.
-    -- Do not inspect/guess the second spellbook slot or other cursor payloads.
-    local ok,rawKind,_,__,rawID=pcall(fn)
-    local kind,kindReason=S.Public(rawKind,"string")
-    local id,idReason=S.ID(rawID)
-    if not ok or kind~="spell" or not id then
-        self.engine:Log("display",not ok and "CURSOR_CALL_FAILED" or (kind~="spell" and "CURSOR_KIND_UNVERIFIED" or "CURSOR_ID_UNVERIFIED"))
-        self:SequenceMessage("拖入未接纳：仅支持公开的技能游标及精确ID；可改用手输ID。")
+    local id,reason=TEF.ActionSources:Cursor()
+    if reason=="NO_DATA" then return false end
+    if not id then
+        self.engine:Log("display",reason or "CURSOR_ID_UNVERIFIED")
+        self:SequenceMessage("拖入未接纳：技能或宏的当前精确技能ID未确认（" .. (reason or "UNKNOWN") .. "）。")
         return false
     end
     if not self:AddSequenceSpell(id,index) then return false end
     local cleared=S.Call("ClearCursor")
     if not cleared then self.engine:Log("display","CURSOR_CLEAR_FAILED") end
     return true
+end
+function U:BindSequenceDrop(frame,index,click)
+    self:Paint(frame,"EnableMouse",true)
+    self:Paint(frame,"SetScript","OnReceiveDrag",function()
+        self:Guard(function() self:ReceiveSequenceSpell(index) end)
+    end)
+    if click then
+        self:Paint(frame,"SetScript","OnMouseUp",function(_,button)
+            if S.Public(button,"string")=="LeftButton" then self:Guard(function() self:ReceiveSequenceSpell(index) end) end
+        end)
+    end
 end
 function U:SequenceInput(parent,x,y,width)
     local box=self:Frame("EditBox",parent,"InputBoxTemplate")
@@ -90,17 +106,23 @@ function U:RefreshSequenceEditor(force)
             local view=row.unverified and S.Spell(row.name,row.name) or S.Spell(row.spellID,row.name)
             self:Paint(widgets.icon,"SetTexture",view.icon)
             self:Paint(widgets.name,"SetText",i .. ". " .. view.name .. "\nID " .. row.spellID .. " · 匹配 " .. table.concat(row.matchIDs,"/"))
+            if row.spellID==6603 then self:Paint(widgets.name,"SetText",i .. ". " .. view.name .. "\nID 6603 · 确认自动攻击开启一次") end
             self:Paint(widgets.count,"SetText",tostring(row.repeatCount or 1))
             self:Paint(widgets.skip,"SetText",row.skipUnavailable and "不可用跳过：开" or "不可用跳过：关")
+            self:Paint(widgets.skip,row.spellID==6603 and "Hide" or "Show")
+            self:Paint(widgets.usage,"SetText",({always="每轮使用",target="同一目标只用一次",combat="同一战斗只用一次"})[row.usagePolicy or "always"])
             self:SetControlEnabled(widgets.up,i>1); self:SetControlEnabled(widgets.down,i<#rows)
         end
     end
-    self:Paint(self.sequenceChild,"SetHeight",math.max(235,rows and math.min(#rows,16)*72 or 235))
+    self:Paint(self.sequenceChild,"SetHeight",math.max(355,rows and math.min(#rows,16)*72 or 355))
 end
 function U:CreateSequenceEditor(parent)
     self.sequenceAdvanced=false
+    self:BindSequenceDrop(parent,nil,true)
     self.dropZone=self:CreateActionButton(parent,"拖入技能（追加）",4,-80,195,function() self:ReceiveSequenceSpell() end)
-    self:Paint(self.dropZone,"SetScript","OnReceiveDrag",function() self:Guard(function() self:ReceiveSequenceSpell() end) end)
+    self:Paint(self.dropZone,"RegisterForDrag","LeftButton")
+    self:Paint(self.dropZone,"RegisterForClicks","LeftButtonUp")
+    self:BindSequenceDrop(self.dropZone)
     self.spellIDInput=self:SequenceInput(parent,216,-80,90)
     self:Paint(self.spellIDInput,"SetText","")
     self:CreateActionButton(parent,"ID新增",317,-80,94,function()
@@ -109,23 +131,23 @@ function U:CreateSequenceEditor(parent)
         local id=text and text:match("^%s*(%d+)%s*$") and tonumber(text)
         if self:AddSequenceSpell(id) then self:Paint(self.spellIDInput,"SetText",""); self:Paint(self.spellIDInput,"ClearFocus") end
     end)
-    self:CreateActionButton(parent,"射击5019",421,-80,132,function() self:AddSequenceSpell(5019) end)
     self.sequenceCount=self:Text(parent,4,-115,560,"GameFontHighlightSmall")
     local scroll=self:Frame("ScrollFrame",parent,"UIPanelScrollFrameTemplate")
     self.sequenceScroll=scroll
-    self:Paint(scroll,"SetPoint","TOPLEFT",parent,"TOPLEFT",4,-138); self:Paint(scroll,"SetSize",550,226)
+    self:Paint(scroll,"SetPoint","TOPLEFT",parent,"TOPLEFT",4,-138); self:Paint(scroll,"SetSize",550,346)
     local child=self:Frame("Frame",scroll); self.sequenceChild=child
-    self:Paint(child,"SetSize",540,235); self:Paint(scroll,"SetScrollChild",child)
+    self:Paint(child,"SetSize",540,355); self:Paint(scroll,"SetScrollChild",child)
+    self:BindSequenceDrop(scroll,nil,true); self:BindSequenceDrop(child,nil,true)
     self.sequenceRows={}
     for i=1,16 do
         local index=i
         local row=self:Frame("Frame",child,"BackdropTemplate")
         self:Paint(row,"SetPoint","TOPLEFT",child,"TOPLEFT",0,-(i-1)*72); self:Paint(row,"SetSize",540,68)
-        self:Paint(row,"EnableMouse",true)
-        self:Paint(row,"SetScript","OnReceiveDrag",function() self:Guard(function() self:ReceiveSequenceSpell(index) end) end)
+        self:BindSequenceDrop(row,index,true)
         local made,icon=self:Invoke(row,"CreateTexture",nil,"ARTWORK")
         if made then self:Paint(icon,"SetSize",32,32); self:Paint(icon,"SetPoint","TOPLEFT",row,"TOPLEFT",2,-5) end
         local widgets={frame=row,icon=icon,name=self:Text(row,41,-3,230,"GameFontHighlightSmall"),count=self:SequenceInput(row,300,-8,37)}
+        self:BindSequenceDrop(widgets.count,index)
         self:Paint(self:Text(row,275,-14,25,"GameFontHighlightSmall"),"SetText","次")
         self:Paint(widgets.count,"SetScript","OnEnterPressed",function(box)
             self:Guard(function() local ok,raw=self:Invoke(box,"GetText"); if ok then self:EditSequenceRow(index,"count",raw) end end)
@@ -136,15 +158,20 @@ function U:CreateSequenceEditor(parent)
         end)
         widgets.up=self:CreateActionButton(row,"上",350,-8,42,function() self:EditSequenceRow(index,"move",-1) end)
         widgets.down=self:CreateActionButton(row,"下",398,-8,42,function() self:EditSequenceRow(index,"move",1) end)
-        self:CreateActionButton(row,"删除",447,-8,70,function() self:EditSequenceRow(index,"delete") end)
+        widgets.delete=self:CreateActionButton(row,"删除",447,-8,70,function() self:EditSequenceRow(index,"delete") end)
         widgets.skip=self:CreateActionButton(row,"不可用跳过：关",41,-38,145,function()
             local rows=self:DraftRows()
             if rows and rows[index] then self:EditSequenceRow(index,"skip",not rows[index].skipUnavailable) end
         end)
+        widgets.usage=self:CreateActionButton(row,"每轮使用",205,-38,220,function()
+            local rows=self:DraftRows()
+            if rows and rows[index] then self:EditSequenceRow(index,"usage",({always="target",target="combat",combat="always"})[rows[index].usagePolicy or "always"]) end
+        end)
+        for _,control in ipairs({widgets.up,widgets.down,widgets.delete,widgets.skip,widgets.usage}) do self:BindSequenceDrop(control,index) end
         self.sequenceRows[i]=widgets
     end
-    self:CreateActionButton(parent,"高级文本",371,-377,110,function()
+    self:CreateActionButton(parent,"高级文本",371,-497,110,function()
         self.sequenceAdvanced=not self.sequenceAdvanced; self:RefreshSequenceEditor(true)
-        self:SequenceMessage("每行 主ID:匹配ID/匹配ID*次数；例如205:205*3!skip表示不可用跳过；保存生效。")
+        self:SequenceMessage("每行 主ID:匹配ID/匹配ID*次数；例如205:205*3!skip!target；!target同一目标一次，!combat同一战斗一次；保存生效。")
     end)
 end

@@ -11,7 +11,7 @@ issecretvalue=function(v)
 end
 local detector=issecretvalue
 local function load(name) assert(loadfile(root .. "/" .. name))("Tactic Echo Forever",T) end
-load("Config.lua"); load("Safety.lua"); load("APL/Packs/Mage/Abilities.lua"); load("APL/Packs/Mage/Talents.lua"); load("APL/TalentState.lua"); load("APL/Registry.lua"); load("APL/PublicConditions.lua"); load("APL/Custom.lua"); load("APL/RankResolver.lua"); load("APL/Packs/Mage/BuildSelector.lua"); load("APL/State.lua"); load("APL/Conditions.lua"); load("APL/Trace.lua"); load("APL/Packs/Mage/Mage60.lua"); load("APL/Packs/Mage/Rules.lua"); load("APL/Engine.lua"); load("Sequence.lua")
+load("Config.lua"); load("Safety.lua"); load("ActionSources.lua"); load("APL/Packs/Mage/Abilities.lua"); load("APL/Packs/Mage/Talents.lua"); load("APL/TalentState.lua"); load("APL/Registry.lua"); load("APL/PublicConditions.lua"); load("APL/Custom.lua"); load("APL/RankResolver.lua"); load("APL/Packs/Mage/BuildSelector.lua"); load("APL/State.lua"); load("APL/Conditions.lua"); load("APL/Trace.lua"); load("APL/Packs/Mage/Mage60.lua"); load("APL/Packs/Mage/Rules.lua"); load("APL/Engine.lua"); load("Sequence.lua"); load("SequenceUsage.lua")
 load("HudStyles.lua"); load("Profiles.lua"); load("Recommendation.lua"); load("Research.lua")
 local standard=T.StandardConfig or T.Config
 local count=0
@@ -21,6 +21,10 @@ local function test(name,fn)
     C_Spell={GetSpellInfo=function(id) return {name="spell" .. id} end,GetSpellTexture=function() return 123 end}
     C_Spell.IsSpellInRange=function() return true end; C_Spell.IsSpellUsable=function() return true,false end
     GetSpellInfo=nil; GetSpellTexture=nil
+    IsHelpfulSpell=nil; IsHarmfulSpell=nil
+    IsActionInRange=nil; IsCurrentAction=nil; IsAutoRepeatAction=nil
+    GetNumMacros=nil; GetMacroInfo=nil; GetMacroSpell=nil; GetActionText=nil; MAX_ACCOUNT_MACROS=nil
+    T.ActionSources:Clear()
     fn(); count=count+1; print("PASS " .. name)
 end
 local function eq(a,b) assert(a==b,"expected " .. tostring(b) .. ", got " .. tostring(a)) end
@@ -421,6 +425,9 @@ local function object(name)
             elseif method=="SetBackdropColor" then self.backdropColor={...}
             elseif method=="SetBackdropBorderColor" then self.backdropBorderColor={...}
             elseif method=="GetChecked" then return self.checked
+            elseif method=="SetFrameStrata" then self.strata=(...)
+            elseif method=="SetToplevel" then self.toplevel=(...)
+            elseif method=="Raise" then self.raises=(rawget(self,"raises") or 0)+1
             elseif method=="GetPoint" then return "CENTER",UIParent,"CENTER",12,34 end
             if method=="SetVertexColor" or method=="SetColorTexture" or method=="SetBackdropBorderColor" or method=="SetTextColor" then self.color={...}
             elseif method=="Show" then self.shown=true
@@ -886,7 +893,7 @@ end
 test("runtime_default_world_autostart_standby_and_combat",function()
     runtimeFixture(); local e=T.engine; eq(e.db.dispatch.permission,true); eq(e.db.dispatch.signal,true)
     eq(e.db.dispatch.autoStart,true); eq(T.Runtime.intent,false)
-    T.Runtime:World(); eq(T.Runtime.intent,true); eq(T.Runtime.state,"standby"); eq(e.running,false)
+    T.Runtime:World(); eq(T.Runtime.intent,true); eq(T.Runtime.state,"standby"); eq(e.running,true)
     T.Dispatch:TickContinuous(); eq(T.Dispatch.pending,nil)
     InCombatLockdown=function() return true end; T.Runtime:Tick(); T.Dispatch:TickContinuous()
     eq(e.running,true); assert(T.Dispatch.pending)
@@ -1484,6 +1491,55 @@ test("editor_refresh_does_not_overwrite_in_progress_count",function()
     T.UI.sequenceRows[1].count.scripts.OnEnterPressed(T.UI.sequenceRows[1].count)
     eq(T.UI:DraftRows()[1].repeatCount,7)
 end)
+test("editor_action_drop_uses_direct_spell_id_and_preserves_draft_counts",function()
+    editorFixture("205*3"); local cleared=0
+    GetCursorInfo=function() return "action",7,secret,secret end
+    GetActionInfo=function(slot) eq(slot,7); return "spell",143 end
+    ClearCursor=function() cleared=cleared+1 end
+    assert(T.UI:ReceiveSequenceSpell(1)); local rows=T.UI:DraftRows()
+    eq(rows[1].spellID,143); eq(rows[1].matchIDs[1],143)
+    eq(rows[2].spellID,205); eq(rows[2].repeatCount,3); eq(cleared,1)
+    eq(T.engine.db.profiles.single[1].spellID,116)
+end)
+test("editor_action_drop_rejects_macro_item_unknown_slot_and_id",function()
+    editorFixture(); local cleared=0; ClearCursor=function() cleared=cleared+1 end
+    for _,kind in ipairs({"macro","item","unknown"}) do
+        GetCursorInfo=function() return "action",7,nil,205 end
+        GetActionInfo=function() return kind,205 end
+        eq(T.UI:ReceiveSequenceSpell(),false)
+    end
+    GetActionInfo=function() return "spell",secret end; eq(T.UI:ReceiveSequenceSpell(),false)
+    GetCursorInfo=function() return "action",secret,nil,205 end
+    GetActionInfo=function() error("UNKNOWN_SLOT_MUST_NOT_BE_QUERIED") end
+    eq(T.UI:ReceiveSequenceSpell(),false)
+    GetActionInfo=nil; GetCursorInfo=function() return "action",7,nil,205 end
+    eq(T.UI:ReceiveSequenceSpell(),false); eq(cleared,0); eq(#T.UI:DraftRows(),1)
+end)
+test("editor_blank_area_and_held_cursor_click_append_once",function()
+    for _,area in ipairs({"profiles","sequenceScroll","sequenceChild"}) do
+        editorFixture(""); local held=true; local cleared=0
+        GetCursorInfo=function() if held then return "spell",7,nil,143 end end
+        ClearCursor=function() held=false; cleared=cleared+1 end
+        local frame=area=="profiles" and T.UI.pages.profiles or T.UI[area]
+        frame.scripts.OnReceiveDrag(frame); frame.scripts.OnMouseUp(frame,"LeftButton")
+        eq(#T.UI:DraftRows(),1); eq(T.UI:DraftRows()[1].spellID,143); eq(cleared,1)
+        local text=T.UI.editorMessage.text
+        frame.scripts.OnMouseUp(frame,"LeftButton"); eq(T.UI.editorMessage.text,text)
+    end
+    editorFixture(); GetCursorInfo=function() return "spell",7,nil,143 end; ClearCursor=function() end
+    T.UI.sequenceRows[1].frame.scripts.OnMouseUp(T.UI.sequenceRows[1].frame,"LeftButton")
+    eq(T.UI:DraftRows()[1].spellID,143); eq(T.UI:DraftRows()[2].spellID,205)
+end)
+test("editor_row_controls_receive_drop_without_editing_existing_step",function()
+    for _,key in ipairs({"count","skip","delete","down"}) do
+        editorFixture("205*3\n2136"); GetCursorInfo=function() return "spell",7,nil,143 end
+        ClearCursor=function() end
+        local control=T.UI.sequenceRows[1][key]
+        control.scripts.OnReceiveDrag(control)
+        local rows=T.UI:DraftRows(); eq(#rows,3); eq(rows[1].spellID,143)
+        eq(rows[2].spellID,205); eq(rows[2].repeatCount,3); eq(rows[2].skipUnavailable,false)
+    end
+end)
 test("repeat_hud_and_test_panel_progress",function()
     deliveryFixture(); assert(T.Profiles:Save(T.engine,"single",T.Profiles:Parse("116*3\n205")))
     T.Runtime:SetIntent(true); receipt("UNIT_SPELLCAST_SENT",116,"progress"); receipt("UNIT_SPELLCAST_SUCCEEDED",116,"progress")
@@ -1731,7 +1787,7 @@ test("cycle_reset_respects_auto_standby_and_stop_mode",function()
     for _,mode in ipairs({"auto","stop"}) do
         runtimeFixture(mode); InCombatLockdown=function() return true end; T.Runtime:Start(false)
         T.engine.index=2; InCombatLockdown=function() return false end
-        T.Runtime:ResetCycle("LOOP_COMBAT_RESET"); T.Runtime:Tick(); eq(T.engine.index,1); eq(T.engine.running,false)
+        T.Runtime:ResetCycle("LOOP_COMBAT_RESET"); T.Runtime:Tick(); eq(T.engine.index,1); eq(T.engine.running,mode=="auto")
         eq(T.Runtime.intent,mode=="auto"); eq(T.Runtime.state,mode=="auto" and "standby" or "paused")
     end
 end)
@@ -1876,6 +1932,11 @@ test("hud_range_red_restores_custom_key_color_on_public_or_unknown_range",functi
     T.Presentation:PaintRange(card,T.engine.steps[1]); eq(card.icon.color[2],1); eq(card.key.color[3],.8)
 end)
 assert(loadfile(root .. "/tests/skip_unavailable.lua"))(T,{runtimeFixture=runtimeFixture,deliveryFixture=deliveryFixture,receipt=receipt,test=test,eq=eq,secret=secret})
+assert(loadfile(root .. "/tests/standby_receipts.lua"))(T,{runtimeFixture=runtimeFixture,receipt=receipt,test=test,eq=eq,secret=secret})
+assert(loadfile(root .. "/tests/macro_sources.lua"))(T,{deliveryFixture=deliveryFixture,editorFixture=editorFixture,receipt=receipt,test=test,eq=eq,secret=secret,frames=allFrames})
+assert(loadfile(root .. "/tests/self_actions.lua"))(T,{deliveryFixture=deliveryFixture,receipt=receipt,test=test,eq=eq,secret=secret})
+assert(loadfile(root .. "/tests/attack_activation.lua"))(T,{deliveryFixture=deliveryFixture,receipt=receipt,test=test,eq=eq,secret=secret})
+assert(loadfile(root .. "/tests/sequence_usage.lua"))(T,{deliveryFixture=deliveryFixture,receipt=receipt,test=test,eq=eq,secret=secret})
 realprint("TEF simulated tests: " .. count .. " passed\n")
 
 assert(loadfile(root .. "/tests/apl.lua"))("Tactic Echo Forever",T,{runtimeFixture=runtimeFixture,deliveryFixture=deliveryFixture,receipt=receipt})

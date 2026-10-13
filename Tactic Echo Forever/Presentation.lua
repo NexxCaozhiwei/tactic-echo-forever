@@ -57,7 +57,7 @@ function P:MeasureDistance()
 end
 function P:PaintRange(card,step)
     local out=false
-    if step and not step.unverified and boolean("UnitExists","target")==true
+    if step and step.spellID~=6603 and not step.unverified and boolean("UnitExists","target")==true
         and boolean("UnitIsDeadOrGhost","target")==false then
         local ok,raw=S.Call("C_Spell.IsSpellInRange",step.spellID,"target")
         if ok then out=S.Public(raw,"boolean")==false end

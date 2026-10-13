@@ -40,9 +40,13 @@ local function configuration(config)
         local repeats, reason=S.Field(row,"repeatCount","number")
         if reason=="NO_DATA" then repeats=1 end
         if not repeats or repeats<1 or repeats>99 or repeats%1~=0 then return nil end
+        if id==6603 then repeats=1 end
+        local policy,policyReason=S.Field(row,"usagePolicy","string")
+        if policyReason=="NO_DATA" then policy="always" end
+        if policy~="always" and policy~="target" and policy~="combat" then return nil end
         local pending = row.unverified == true and row.spellID == 0 and type(row.matchIDs)=="table" and #row.matchIDs==0
         if pending and name and #name>0 and #name<=128 then
-            steps[i]={name=name,spellID=0,matches={},unverified=true,repeatCount=repeats,skipUnavailable=S.Field(row,"skipUnavailable","boolean")==true}
+            steps[i]={name=name,spellID=0,matches={},unverified=true,repeatCount=repeats,usagePolicy=policy,skipUnavailable=S.Field(row,"skipUnavailable","boolean")==true}
         else
         if not id or id==7268 or not name or #name == 0 or #name > 128 or type(row.matchIDs) ~= "table"
             or #row.matchIDs == 0 or #row.matchIDs > 16 then return nil end
@@ -53,7 +57,7 @@ local function configuration(config)
             if not match or match == 7268 then return nil end
             matches[match] = true
         end
-        steps[i] = {name = name, spellID = id, matches = matches,repeatCount=repeats,skipUnavailable=S.Field(row,"skipUnavailable","boolean")==true}
+        steps[i] = {name = name, spellID = id, matches = matches,repeatCount=repeats,usagePolicy=policy,skipUnavailable=S.Field(row,"skipUnavailable","boolean")==true}
         end
     end
     return steps
@@ -168,8 +172,9 @@ function Engine:Invalidate(reason)
 end
 
 function Engine:Start()
+    self:ClearUsage()
     self:Invalidate("START")
-    self.index, self.completed, self.stepCasts, self.skipStreak = 1, false, 0, 0
+    self.index, self.completed, self.stepCasts, self.skipStreak, self.attackActivationStreak = 1, false, 0, 0, 0
     self.running = self.steps ~= nil and not self.identitySaturated
 end
 function Engine:Pause()
@@ -184,9 +189,10 @@ function Engine:Resume()
     if TEF.APL and TEF.APL:IsActive(self) and self.aplSnapshot then self.aplSnapshot.generation=self.generation end
 end
 function Engine:Reset()
+    self:ClearUsage()
     self.running = false
     self:Invalidate("RESET")
-    self.index, self.completed, self.stepCasts, self.skipStreak = 1, false, 0, 0
+    self.index, self.completed, self.stepCasts, self.skipStreak, self.attackActivationStreak = 1, false, 0, 0, 0
 end
 function Engine:RecommendationLocked()
     local step=self.steps and self.steps[self.index]
@@ -224,7 +230,7 @@ end
 -- Explicit optional step omission is distinct from a successful cast.
 function Engine:SkipUnavailable()
     local step=self.steps and self.steps[self.index]
-    if not step or not step.skipUnavailable or step.spellID==5019 or step.unverified
+    if not step or not step.skipUnavailable or step.spellID==5019 or step.spellID==6603 or step.spellID==75 or step.unverified
         or TEF.Recommendation:Source(self)~="manual" or self:RecommendationLocked() then return false end
     if (self.skipStreak or 0)>=#self.steps then return false end
     local previous=self.index
@@ -235,6 +241,29 @@ function Engine:SkipUnavailable()
     elseif self.db.loop then self.index=1
     else self.completed=true; self.running=false end
     self:Log("observed","UNAVAILABLE_STEP_SKIPPED",step.spellID,previous,self.index)
+    return true
+end
+function Engine:ConfirmAttackEnabled(generation,index,serial)
+    local step=self.steps and self.steps[self.index]
+    if not self.running or self.completed or not step or step.spellID~=6603
+        or generation~=self.generation or index~=self.index or serial~=(self.receiptSerial or 0)
+        or (self.attackActivationStreak or 0)>=#self.steps then return false end
+    local allowed,_,usageContext=self:UsageEligibility()
+    if not allowed or generation~=self.generation or index~=self.index or serial~=(self.receiptSerial or 0) then return false end
+    -- 开启状态确认是用户选择的步骤语义，不伪造施法起始或成功回执。
+    self:Invalidate("ATTACK_ENABLE_CONFIRMED")
+    if self.generation~=generation+1 or self.index~=index or serial~=(self.receiptSerial or 0) or not self.running or self.identitySaturated then return false end
+    self:MarkUsage(usageContext)
+    self.receiptSerial=(self.receiptSerial or 0)+1
+    self.attackActivationStreak=(self.attackActivationStreak or 0)+1
+    self.stepCasts=1; self.skipStreak=0
+    local current,following=self.index,self.index+1
+    if following>#self.steps then
+        if self.db.loop then following=1 else following=current; self.completed=true; self.running=false end
+    end
+    self:Log("observed","ATTACK_ENABLE_CONFIRMED",6603,current,following)
+    self.index=following; self.shootHandoff=nil
+    if not self.completed then self.stepCasts=0 end
     return true
 end
 function Engine:Handle(generation, event, unitRaw, guidRaw, spellRaw)
@@ -252,6 +281,9 @@ function Engine:Handle(generation, event, unitRaw, guidRaw, spellRaw)
     if unit ~= "player" then return end
     if not spellID then log("unknown", "SPELL_" .. sr); return end
     if not guid then log("unknown", "IDENTITY_" .. gr, spellID); return end
+    if spellID==6603 or (self.steps and self.steps[self.index] and self.steps[self.index].spellID==6603) then
+        log("observed","ATTACK_CAST_NOT_ACTIVATION",spellID); return
+    end
     if not self.running then log("ignored", "PAUSED_IGNORED", spellID); return end
     if self.seen[guid] then
         if self.seen[guid]=="retired" then log("ignored","RETIRED_IDENTITY",spellID)
@@ -261,13 +293,15 @@ function Engine:Handle(generation, event, unitRaw, guidRaw, spellRaw)
     end
     if event == "UNIT_SPELLCAST_SENT" or event == "UNIT_SPELLCAST_START" then
         if self.steps[self.index].matches[spellID] then self.shootHandoff=nil end
+        local allowed,_,usageContext=self:UsageEligibility()
+        if not allowed or generation~=self.generation then log("ignored","SEQUENCE_USAGE_RECEIPT_REJECTED",spellID); return end
         -- SENT observes initiation only; no target argument is consumed.
         if not self.associations[guid] then
             if self.associationCount >= 256 then
                 self.running=false; self:Invalidate("ASSOCIATION_CAPACITY_PAUSED"); return
             end
             self.associationCount=self.associationCount+1
-            self.associations[guid] = {generation=generation,spellID=spellID,index=self.index,receiptSerial=self.receiptSerial or 0}
+            self.associations[guid] = {generation=generation,spellID=spellID,index=self.index,receiptSerial=self.receiptSerial or 0,usageContext=usageContext}
             log("associated", "PUBLIC_INITIATION", spellID)
         end
         return
@@ -291,11 +325,17 @@ function Engine:Handle(generation, event, unitRaw, guidRaw, spellRaw)
         log("ignored", "NO_CURRENT_INITIATION", spellID); return
     end
     if a.failed then log("ignored", "FAILED_INITIATION", spellID); return end
+    local allowed,_,usageContext=self:UsageEligibility()
+    if not allowed or generation~=self.generation or not self:SameUsageContext(a.usageContext,usageContext)
+        or (self.usageProgress and not self:SameUsageContext(self.usageProgress,usageContext)) then
+        log("ignored","SEQUENCE_USAGE_RECEIPT_REJECTED",spellID); return
+    end
     -- Never evict success tombstones: on saturation fail closed until reload.
     if self.seenCount >= 4096 then
         self.running=false; self:Invalidate("IDENTITY_CAPACITY_PAUSED"); return
     end
     self.skipStreak=0
+    self.attackActivationStreak=0
     self.seen[guid], self.seenCount = true, self.seenCount+1
     self.receiptSerial=(self.receiptSerial or 0)+1
     self.associations[guid]=nil; self.associationCount=self.associationCount-1
@@ -305,12 +345,14 @@ function Engine:Handle(generation, event, unitRaw, guidRaw, spellRaw)
         TEF.APL:Invalidate()
         return
     end
+    self.usageProgress=usageContext
     self.stepCasts=self.stepCasts+1
     if self.stepCasts<self.steps[self.index].repeatCount then
         log("match","STEP_REPEAT_MATCH",spellID,self.index,self.index)
         if TEF.Dispatch then TEF.Dispatch:SequenceSucceeded(guid) end
         return
     end
+    self:MarkUsage(usageContext)
     local current, following = self.index, self.index+1
     if following > #self.steps then
         if self.db.loop then following=1

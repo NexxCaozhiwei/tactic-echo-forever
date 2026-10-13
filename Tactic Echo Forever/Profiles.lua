@@ -36,6 +36,10 @@ function P:Clean(raw, limit)
         local repeats, repeatReason = S.Field(row,"repeatCount","number")
         if repeatReason=="NO_DATA" then repeats=1 end
         if not repeats or repeats<1 or repeats>99 or repeats%1~=0 then return nil end
+        if id==6603 then repeats=1 end
+        local policy,policyReason=S.Field(row,"usagePolicy","string")
+        if policyReason=="NO_DATA" then policy="always" end
+        if policy~="always" and policy~="target" and policy~="combat" then return nil end
         if (not id and not pending) or id==7268 or not name or #name < 1 or #name > 128 or not ids then return nil end
         local measured, size = pcall(function() return #ids end)
         if not measured or size > 16 or (size<1 and not pending) or (pending and size~=0) then return nil end
@@ -46,7 +50,7 @@ function P:Clean(raw, limit)
             if not match or match == 7268 then return nil end
             matches[j] = match
         end
-        rows[i] = {name=name,spellID=id or 0,matchIDs=matches,unverified=pending or nil,repeatCount=repeats,skipUnavailable=S.Field(row,"skipUnavailable","boolean")==true}
+        rows[i] = {name=name,spellID=id or 0,matchIDs=matches,unverified=pending or nil,repeatCount=repeats,usagePolicy=policy,skipUnavailable=id~=6603 and S.Field(row,"skipUnavailable","boolean")==true}
     end
     return rows
 end
@@ -211,6 +215,7 @@ function P:RowsText(rows)
         lines[#lines+1] = row.unverified and ("?" .. row.name) or (row.spellID .. ":" .. table.concat(ids,"/"))
         if (row.repeatCount or 1)>1 then lines[#lines]=lines[#lines] .. "*" .. row.repeatCount end
         if row.skipUnavailable then lines[#lines]=lines[#lines] .. "!skip" end
+        if row.usagePolicy=="target" or row.usagePolicy=="combat" then lines[#lines]=lines[#lines] .. "!" .. row.usagePolicy end
     end
     return table.concat(lines,"\n")
 end
@@ -221,6 +226,8 @@ function P:Parse(raw, limit)
     if not text or #text>4096 then return nil,"CONFIG_INVALID" end
     local rows = {}
     for line in text:gmatch("[^\r\n]+") do
+        local policy=line:match("!(target)%s*$") or line:match("!(combat)%s*$") or "always"
+        if policy~="always" then line=line:gsub("!" .. policy .. "%s*$","") end
         local skipUnavailable=line:match("!skip%s*$")~=nil
         if skipUnavailable then line=line:gsub("!skip%s*$","") end
         local repeats=1
@@ -228,7 +235,7 @@ function P:Parse(raw, limit)
         if body then line=body; repeats=tonumber(count) end
         local unresolved=line:match("^%?(.+)$")
         if unresolved then
-            rows[#rows+1]={name=unresolved,spellID=0,matchIDs={},unverified=true,repeatCount=repeats,skipUnavailable=skipUnavailable}
+            rows[#rows+1]={name=unresolved,spellID=0,matchIDs={},unverified=true,repeatCount=repeats,usagePolicy=policy,skipUnavailable=skipUnavailable}
         else
         local primary, rest = line:match("^%s*(%d+)%s*:%s*([%d/%s]+)%s*$")
         if not primary then primary=line:match("^%s*(%d+)%s*$"); rest=primary end
@@ -241,7 +248,7 @@ function P:Parse(raw, limit)
         rest=rest:gsub("%s","")
         if rest:sub(1,1)=="/" or rest:sub(-1)=="/" or rest:find("//",1,true) then return nil,"CONFIG_INVALID" end
         for value in rest:gmatch("%d+") do ids[#ids+1]=tonumber(value) end
-        rows[#rows+1]={name="技能 " .. id,spellID=id,matchIDs=ids,repeatCount=repeats,skipUnavailable=skipUnavailable}
+        rows[#rows+1]={name="技能 " .. id,spellID=id,matchIDs=ids,repeatCount=repeats,usagePolicy=policy,skipUnavailable=skipUnavailable}
         end
     end
     local clean=self:Clean(rows,limit)
@@ -262,7 +269,7 @@ function P:ConfirmObserved(e)
             if view.reason=="PUBLIC" and view.name==step.name then
                 local rows=self:Clean(e.db.profiles[e.scene])
                 if not rows then return false,"CONFIG_INVALID" end
-                rows[e.index]={name=step.name,spellID=row.spellID,matchIDs={row.spellID},repeatCount=step.repeatCount,skipUnavailable=step.skipUnavailable}
+                rows[e.index]={name=step.name,spellID=row.spellID,matchIDs={row.spellID},repeatCount=step.repeatCount,usagePolicy=step.usagePolicy,skipUnavailable=step.skipUnavailable}
                 return self:Save(e,e.scene,rows)
             end
         end

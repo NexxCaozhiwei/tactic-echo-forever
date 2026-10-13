@@ -62,6 +62,22 @@ local function publicBoolean(path,...)
     if not ok then return nil end
     return S.Public(value,"boolean")
 end
+local function rangeBoolean(raw)
+    local value,reason=S.Public(raw,"boolean")
+    if reason=="UNKNOWN_TYPE" then
+        local number=S.Public(raw,"number")
+        if number==0 then return false,"PUBLIC" end
+        if number==1 then return true,"PUBLIC" end
+    end
+    return value,reason
+end
+function D:ActionRange(id)
+    local binding=self:ResolveCached(id)
+    if not binding or not self:VerifyCurrent(binding) then return nil end
+    local path=S.Resolve("C_ActionBar.IsActionInRange") and "C_ActionBar.IsActionInRange" or "IsActionInRange"
+    local ok,raw=S.Call(path,binding.slot,"target")
+    if ok then return rangeBoolean(raw) end
+end
 function D:InputIdle()
     local path=S.Resolve("GetCurrentKeyBoardFocus") and "GetCurrentKeyBoardFocus" or "GetCurrentKeyboardFocus"
     local ok,raw=S.Call(path)
@@ -70,27 +86,53 @@ function D:InputIdle()
     -- Any focused object, restricted result or unknown detector blocks input.
     return classification=="NO_DATA"
 end
+function D:IsSelfAction(id)
+    local e=TEF.engine; local c=e.aplCandidate
+    if TEF.APL and TEF.APL:IsActive(e) and c and c.spellID==id then
+        return c.target=="self" or (TEF.APL.Abilities[c.action] and TEF.APL.Abilities[c.action].target=="self") or false
+    end
+    -- 自身目标分类必须由公开元数据确认；不从缺少敌方范围推断。
+    local ok,info=S.Call("C_Spell.GetSpellInfo",id)
+    local min,minReason,max,maxReason
+    if ok then
+        min,minReason=S.Field(info,"minRange","number")
+        max,maxReason=S.Field(info,"maxRange","number")
+    end
+    if (min==nil or max==nil) and minReason~="SECRET" and maxReason~="SECRET" then
+        local fn=S.Resolve("GetSpellInfo")
+        if fn then
+            local read,_,__,___,____,rawMin,rawMax,rawID=pcall(fn,id)
+            if read and S.ID(rawID)==id then
+                min=S.Public(rawMin,"number"); max=S.Public(rawMax,"number")
+            end
+        end
+    end
+    if min~=0 or max~=0 then return false end
+    local helpful=S.Resolve("C_Spell.IsSpellHelpful") and "C_Spell.IsSpellHelpful" or "IsHelpfulSpell"
+    local harmful=S.Resolve("C_Spell.IsSpellHarmful") and "C_Spell.IsSpellHarmful" or "IsHarmfulSpell"
+    return publicBoolean(helpful,id)==true and publicBoolean(harmful,id)==false
+end
 function D:ContinuousEvidence(id)
     if TEF.APL and TEF.APL:IsActive(TEF.engine) then
         local allowed,reason=TEF.APL:Allowed(TEF.engine,id)
         if not allowed then return false,reason end
     end
     if not self:InputIdle() then return false,"CONTINUOUS_TEXT_FOCUS_OR_UNKNOWN" end
-    if publicBoolean("UnitExists","target")~=true
+    local selfAction=self:IsSelfAction(id)
+    if not selfAction and (publicBoolean("UnitExists","target")~=true
         or publicBoolean("UnitCanAttack","player","target")~=true
-        or publicBoolean("UnitIsDeadOrGhost","target")~=false then return false,"CONTINUOUS_TARGET_UNKNOWN_OR_BLOCKED" end
-    local rangeOK,rangeRaw=S.Call("C_Spell.IsSpellInRange",id,"target")
-    local range,rangeReason
-    if rangeOK then range,rangeReason=S.Public(rangeRaw,"boolean") end
-    -- Shoot may not expose spell-range data. Only an exact verified action
-    -- slot can supply this narrow nil-data fallback; false/Secret never do.
-    if id==5019 and rangeOK and rangeReason=="NO_DATA" then
-        local b=self:ResolveCached(id)
-        if b and self:VerifyCurrent(b) then range=publicBoolean("C_ActionBar.IsActionInRange",b.slot,"target") end
+        or publicBoolean("UnitIsDeadOrGhost","target")~=false) then return false,"CONTINUOUS_TARGET_UNKNOWN_OR_BLOCKED" end
+    -- 6603是用户选择的启动开关步骤；开启不等同于近战命中，不要求命中范围。
+    if not selfAction and id~=6603 then
+        local range,rangeReason
+        local rangeOK,rangeRaw,callReason=S.Call("C_Spell.IsSpellInRange",id,"target")
+        if rangeOK then range,rangeReason=rangeBoolean(rangeRaw) end
+        -- 普通技能缺少数据时才回退；公开超距或Secret不绕过。
+        if (rangeOK and rangeReason=="NO_DATA") or (not rangeOK and callReason=="UNAVAILABLE") then
+            range=self:ActionRange(id)
+        end
+        if range~=true then return false,"CONTINUOUS_RANGE_UNKNOWN_OR_BLOCKED" end
     end
-    local c=TEF.engine.aplCandidate
-    local selfAction=TEF.APL and TEF.APL:IsActive(TEF.engine) and c and c.spellID==id and (c.target=="self" or (TEF.APL.Abilities[c.action] and TEF.APL.Abilities[c.action].target=="self"))
-    if not selfAction and range~=true then return false,"CONTINUOUS_RANGE_UNKNOWN_OR_BLOCKED" end
     local fn=S.Resolve("C_Spell.IsSpellUsable")
     if not fn then return false,"CONTINUOUS_USABLE_UNKNOWN_OR_BLOCKED" end
     local ok,usable,power=pcall(fn,id)
@@ -146,10 +188,21 @@ function D:Unavailable(id)
     return nil
 end
 function D:ShootActive(binding)
-    if binding.spellID~=5019 then return false end
+    if binding.spellID~=5019 and binding.spellID~=6603 and binding.spellID~=75 then return false end
     if not self:VerifyCurrent(binding) then return nil end
-    local path=S.Resolve("C_ActionBar.IsCurrentAction") and "C_ActionBar.IsCurrentAction" or "IsCurrentAction"
+    local path
+    if binding.spellID==75 then
+        path=S.Resolve("C_ActionBar.IsAutoRepeatAction") and "C_ActionBar.IsAutoRepeatAction" or "IsAutoRepeatAction"
+    else path=S.Resolve("C_ActionBar.IsCurrentAction") and "C_ActionBar.IsCurrentAction" or "IsCurrentAction" end
     return publicBoolean(path,binding.slot)
+end
+function D:AttackEnabled()
+    local e=TEF.engine; local generation,index,serial=e.generation,e.index,e.receiptSerial or 0
+    if publicBoolean("UnitExists","target")~=true or publicBoolean("UnitCanAttack","player","target")~=true
+        or publicBoolean("UnitIsDeadOrGhost","target")~=false then return false end
+    local binding=self:ResolveCached(6603) or (self.actionSources and self.actionSources[6603])
+    local active=binding and self:ShootActive(binding)
+    return active==true and e==TEF.engine and generation==e.generation and index==e.index and serial==(e.receiptSerial or 0)
 end
 function D:HasCurrentInitiation()
     local e=TEF.engine; local i=self.initiation
@@ -177,7 +230,7 @@ function D:CastQueueWindow()
     local generation,index,serial=e.generation,e.index,e.receiptSerial or 0
     local initiation=self.initiation
     local step=e.steps[index]
-    if step.spellID==5019 then return nil end
+    if step.spellID==5019 or step.spellID==6603 or step.spellID==75 then return nil end
     local cast=S.Resolve("UnitCastingInfo"); local channel=S.Resolve("UnitChannelInfo")
     if not cast or not channel then return nil end
     local ok,name,_,__,startRaw,endRaw,___,____,_____,idRaw=pcall(cast,"player")
@@ -207,7 +260,8 @@ function D:CastQueueWindow()
     if (e.stepCasts or 0)+1>=step.repeatCount then nextIndex=index+1 end
     -- Do not speculate across loop/completion, channel or Shoot boundaries.
     local nextStep=e.steps[nextIndex]
-    if not nextStep or nextStep.unverified or nextStep.spellID==5019 or nextStep.spellID==5143 then return nil end
+    if not nextStep or nextStep.unverified or nextStep.spellID==5019 or nextStep.spellID==6603 or nextStep.spellID==75 or nextStep.spellID==5143 then return nil end
+    if e:UsageEligibility(nextIndex)~=true then return nil end
     if generation~=e.generation or index~=e.index or serial~=(e.receiptSerial or 0)
         or self.initiation~=initiation or not self.continuous or not self.enabled
         or TEF.UI.settingsOpen or not self:HasCurrentInitiation() then return nil end
@@ -234,7 +288,7 @@ function D:TryCastQueue()
     self.castQueue=q
     local requested=self:Request(true,q)
     if not requested then self:DropCastQueue(); return false end
-    q.binding=self.pending.binding; self.castQueueAttempt=q.originGUID
+    q.binding=self.pending.binding; q.usageContext=self.pending.usageContext; self.castQueueAttempt=q.originGUID
     q.request=TEF.Runtime.requestSerial
     e:Log("transport","CAST_QUEUE_REQUEST",q.spellID)
     return true
@@ -276,15 +330,16 @@ function D:TickContinuous()
         self:StopContinuous("CONTINUOUS_LIFECYCLE_STOP"); self:Cancel(); return
     end
     local current=e.steps and e.steps[e.index]
-    if current and current.spellID==5019 then
+    if current and (current.spellID==5019 or current.spellID==6603 or current.spellID==75) then
         local generation,index,serial=e.generation,e.index,e.receiptSerial or 0
-        local binding=self:ResolveCached(5019)
+        local binding=self:ResolveCached(current.spellID)
         local active
         if binding then active=self:ShootActive(binding) end
         if generation~=e.generation or index~=e.index or serial~=(e.receiptSerial or 0) or not self.continuous then return end
         if active~=false then
             self:Cancel("SHOOT_ACTIVE_OR_UNKNOWN")
-            self:ContinuousStatus(active==true and "SHOOT_ACTIVE_WAIT_SUCCESS" or "SHOOT_ACTIVE_UNKNOWN")
+            self:ContinuousStatus(current.spellID==6603 and (active==true and "ATTACK_ACTIVE_CONFIRMED_WAIT" or "ATTACK_ACTIVE_UNKNOWN")
+                or (active==true and "SHOOT_ACTIVE_WAIT_SUCCESS" or "SHOOT_ACTIVE_UNKNOWN"))
             return
         end
         -- A withdrawn toggle without actual initiation owns no success wait.
@@ -318,7 +373,7 @@ function D:SetEnabled(value)
     self.enabled=value==true
     TEF.engine:Log("transport",self.enabled and "TEK_PERMISSION_ON" or "TEK_PERMISSION_OFF")
 end
--- Exact direct spell slots only. Macros/overrides/rank aliases are not guessed.
+-- 直接技能或经正文与公开精确ID核对的当前宏；不猜等级别名。
 local keys={Q=1,E=2,R=3,F=4,["1"]=5,["2"]=6,["3"]=7,["4"]=8,["5"]=9,Z=10,X=11,C=12,V=13,T=14,G=15,F1=16,F2=17,F3=18,F4=19,["`"]=20,["6"]=24,["7"]=25,["8"]=26,["9"]=27,["0"]=28,["-"]=29,["="]=30}
 function D.Token(key)
     local k=S.Public(key,"string"); if not k then return nil end
@@ -359,16 +414,21 @@ function D:Resolve(id)
             local slot=ok and S.ID(raw)
             if not slot then local read,v=pcall(function() return b.action end); slot=read and S.ID(v) end
             if slot and slot<=180 then
-                local called,kind,rawID=pcall(info,slot)
-                local spell=called and S.ID(rawID)
-                if called and S.Public(kind,"string")=="spell" and spell==id then
+                local source=TEF.ActionSources:Action(slot)
+                if source and source.spellID==id then
+                    self.actionSources=self.actionSources or {}
+                    if not self.actionSources[id] then
+                        self.actionSources[id]={slot=slot,spellID=id,command=commands[bar] .. n,button=b,buttonName=name .. n,
+                            source=source.kind,macroID=source.macroID,macroName=source.macroName,macroBody=source.body,actionOnly=true}
+                    end
                     local fn=S.Resolve("GetBindingKey")
                     if fn then
                         local bound,k1,k2=pcall(fn,commands[bar] .. n)
                         local token=bound and (D.SkillToken(k1) or D.SkillToken(k2))
                         if token then
                             local key=D.SkillToken(k1) and S.Public(k1,"string") or S.Public(k2,"string")
-                            return {slot=slot,token=token,key=key,spellID=id,command=commands[bar] .. n,button=b,buttonName=name .. n},"TEK_BINDING_VERIFIED"
+                            return {slot=slot,token=token,key=key,spellID=id,command=commands[bar] .. n,button=b,buttonName=name .. n,
+                                source=source.kind,macroID=source.macroID,macroName=source.macroName,macroBody=source.body},"TEK_BINDING_VERIFIED"
                         end
                     end
                 end
@@ -380,7 +440,7 @@ end
 -- Input sources are cached only between binding/spell lifecycle events.
 -- A positive source is still verified live at Request and every Packet.
 D.bindingCache={}
-function D:ClearBindingCache() self.bindingCache={} end
+function D:ClearBindingCache() self.bindingCache={}; self.actionSources={} end
 function D:ResolveCached(id)
     local cached=self.bindingCache[id]
     if cached==nil then cached=self:Resolve(id); self.bindingCache[id]=cached or false end
@@ -419,10 +479,14 @@ function D:Request(fromContinuous,queue)
     elseif TEF.UI.settingsOpen then blocked="TEK_SETTINGS_OPEN"
     elseif not e.running then blocked="TEK_PRACTICE_PAUSED"
     elseif e.completed then blocked="TEK_PRACTICE_COMPLETED"
+    elseif TEF.Runtime and TEF.Runtime.e==e and TEF.Runtime.intent
+        and TEF.Runtime.state=="standby" and TEF.Runtime.reason=="RUNTIME_AUTO_STANDBY" then blocked="RUNTIME_AUTO_STANDBY"
     elseif not step or step.unverified then blocked="TEK_STEP_UNRESOLVED"
     elseif queue and (queue~=self.castQueue or self:CastQueueWindow()~=queue.nextIndex) then blocked="CAST_QUEUE_WINDOW_CLOSED"
     elseif not queue and not self:CastIdle() then blocked="TEK_CAST_PRESENT_OR_UNKNOWN" end
     if blocked then e:Log("transport",blocked); return false,blocked end
+    local eligible,usageReason,usageContext=e:UsageEligibility(queue and queue.nextIndex or e.index)
+    if eligible~=true then return false,usageReason end
     if TEF.APL and TEF.APL:IsActive(e) then
         local allowed,reason=TEF.APL:Allowed(e,step.spellID)
         if not allowed then return false,reason end
@@ -431,13 +495,18 @@ function D:Request(fromContinuous,queue)
     if fromContinuous then binding,reason=self:ResolveCached(step.spellID) else binding,reason=self:Resolve(step.spellID) end
     if not binding then e:Log("transport",reason); return false,reason end
     if not self:VerifyCurrent(binding) then self.bindingCache[step.spellID]=nil; return false,"TEK_BINDING_CHANGED" end
-    if step.spellID==5019 and self:ShootActive(binding)~=false then return false,"SHOOT_ACTIVE_OR_UNKNOWN" end
+    if self:ShootActive(binding)~=false then return false,"SHOOT_ACTIVE_OR_UNKNOWN" end
     if not TEF.Transport.enabled and not TEF.Transport:SetEnabled(true) then return false,"TEK_SIGNAL_UNAVAILABLE" end
     if generation~=e.generation or index~=e.index or serial~=(e.receiptSerial or 0) or not e.running or not self.enabled
         or TEF.UI.settingsOpen or (fromContinuous==true and not self.continuous) then
         return false,"TEK_REQUEST_STALE"
     end
-    self.pending={generation=e.generation,index=e.index,binding=binding,receiptSerial=serial,castQueue=queue}
+    local stillEligible,_,freshContext=e:UsageEligibility(queue and queue.nextIndex or e.index)
+    if stillEligible~=true or not e:SameUsageContext(usageContext,freshContext)
+        or generation~=e.generation or index~=e.index or serial~=(e.receiptSerial or 0) or not e.running or not self.enabled or TEF.UI.settingsOpen then
+        return false,"SEQUENCE_USAGE_SCOPE_CHANGED"
+    end
+    self.pending={generation=e.generation,index=e.index,binding=binding,receiptSerial=serial,castQueue=queue,usageContext=usageContext}
     if TEF.Runtime and TEF.Runtime.e==e then TEF.Runtime.requestSerial=TEF.Runtime.requestSerial+1 end
     self.pending.request=TEF.Runtime.requestSerial
     if queue then queue.request=self.pending.request end
@@ -450,14 +519,18 @@ function D:VerifyCurrent(b)
     local ok,raw=TEF.UI:Invoke(b.button,"GetAttribute","action")
     local slot=ok and S.ID(raw)
     if not slot then local read,value=pcall(function() return b.button.action end); slot=read and S.ID(value) end
-    local fn=S.Resolve("C_ActionBar.GetActionInfo") or S.Resolve("GetActionInfo")
-    local read,kind,rawID=false,nil,nil
-    if fn and slot then read,kind,rawID=pcall(fn,slot) end
+    local source=slot and TEF.ActionSources:Action(slot)
+    if slot~=b.slot or not source or source.spellID~=b.spellID then return false end
+    if b.source=="macro" then
+        if source.kind~="macro" or source.macroID~=b.macroID or source.macroName~=b.macroName or source.body~=b.macroBody then return false end
+    elseif source.kind~="spell" then return false end
+    -- 无键位的来源仅供确认已开启状态，绝不能发布输入。
+    if b.actionOnly then return true end
     local bindingFn=S.Resolve("GetBindingKey")
     local bound,k1,k2=false,nil,nil
     if bindingFn then bound,k1,k2=pcall(bindingFn,b.command) end
     local token=bound and (D.SkillToken(k1) or D.SkillToken(k2))
-    return slot==b.slot and read and S.Public(kind,"string")=="spell" and S.ID(rawID)==b.spellID and token==b.token
+    return token==b.token
 end
 function D:BindingsChanged()
     self:ClearBindingCache()
@@ -476,6 +549,8 @@ function D:Packet()
     if not p then return nil end
     if not self.enabled or not e.running or e.completed or e.generation~=p.generation or e.index~=p.index
         or p.receiptSerial~=(e.receiptSerial or 0) or TEF.UI.settingsOpen then self:Cancel("TEK_REQUEST_STALE"); return nil end
+    local eligible,usageReason,usageContext=e:UsageEligibility(p.castQueue and p.castQueue.nextIndex or e.index)
+    if eligible~=true or not e:SameUsageContext(p.usageContext,usageContext) then self:Cancel(usageReason or "SEQUENCE_USAGE_SCOPE_CHANGED"); return nil end
     -- Revalidate the locked source; never silently switch to another slot/key.
     if not self:VerifyCurrent(p.binding) then
         self.bindingCache[p.binding.spellID]=nil
@@ -490,7 +565,7 @@ function D:Packet()
         local allowed,reason=TEF.APL:Allowed(e,p.binding.spellID)
         if not allowed then self:Cancel(reason); return nil end
     end
-    if p.binding.spellID==5019 and self:ShootActive(p.binding)~=false then self:Cancel("SHOOT_ACTIVE_OR_UNKNOWN"); return nil end
+    if self:ShootActive(p.binding)~=false then self:Cancel("SHOOT_ACTIVE_OR_UNKNOWN"); return nil end
     if self.continuous then
         local allowed,reason=self:ContinuousEvidence(p.binding.spellID)
         if not allowed then self:Block(reason); return nil end
@@ -500,10 +575,16 @@ function D:Packet()
     local combat
     if ok then combat=S.Public(rawCombat,"boolean") end
     if combat==nil then self:Cancel("TEK_COMBAT_UNKNOWN"); return nil end
+    if TEF.Runtime and TEF.Runtime.e==e and TEF.Runtime.intent
+        and e.db.dispatch.mode=="auto" and combat~=true then self:Cancel("RUNTIME_AUTO_STANDBY"); return nil end
     if p.castQueue and combat~=true then self:Cancel("CAST_QUEUE_COMBAT_REQUIRED"); return nil end
     if TEF.APL and TEF.APL:IsActive(e) and combat~=true then self:Cancel("APL_DISPATCH_COMBAT_REQUIRED"); return nil end
     if self.pending~=p or not self.enabled or not e.running or e.completed
         or e.generation~=p.generation or e.index~=p.index or p.receiptSerial~=(e.receiptSerial or 0) or TEF.UI.settingsOpen then return nil end
+    local stillEligible,_,freshContext=e:UsageEligibility(p.castQueue and p.castQueue.nextIndex or e.index)
+    if stillEligible~=true or not e:SameUsageContext(p.usageContext,freshContext) then self:Cancel("SEQUENCE_USAGE_SCOPE_CHANGED"); return nil end
+    if self.pending~=p or not self.enabled or not e.running or e.completed or TEF.UI.settingsOpen
+        or e.generation~=p.generation or e.index~=p.index or p.receiptSerial~=(e.receiptSerial or 0) then return nil end
     if not p.diagnosticPublished then
         p.diagnosticPublished=true
         self:TraceQueue("TOKEN_PUBLISHED",nil,p.binding.spellID,nil,p.castQueue)
@@ -537,7 +618,7 @@ function D:Event(event,unit,id,guidRaw)
             if not q.guid then
                 if e.associationCount>=256 then runtime:Fault("CAST_QUEUE_IDENTITY_CAPACITY"); return true end
                 q.guid=guid; e.associationCount=e.associationCount+1
-                e.associations[guid]={generation=e.generation,index=q.nextIndex,spellID=q.spellID,receiptSerial=q.receiptSerial+1}
+                e.associations[guid]={generation=e.generation,index=q.nextIndex,spellID=q.spellID,receiptSerial=q.receiptSerial+1,usageContext=q.usageContext}
             end
             self:Cancel("CAST_QUEUE_INITIATED"); return true
         elseif failure or event=="UNIT_SPELLCAST_SUCCEEDED" then

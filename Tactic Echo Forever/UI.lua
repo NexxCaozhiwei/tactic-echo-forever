@@ -98,7 +98,7 @@ function UI:OpenSettings()
     self.settingsOpen=true
     TEF.Runtime:Suspend("RUNTIME_SETTINGS_STANDBY","standby")
     if not self.settings then self:CreateSettings() end
-    self:Paint(self.settings,"Show"); self:ShowPage(self.page or "overview")
+    self:Paint(self.settings,"Show"); self:Paint(self.settings,"Raise"); self:ShowPage(self.page or "overview")
 end
 function UI:CloseSettings()
     self.captureHotkey=false; self.settingsOpen=false
@@ -173,8 +173,8 @@ function UI:CreateSettings()
     local e=self.engine
     local f=self:Frame("Frame",UIParent,"BackdropTemplate","TEF_Settings")
     self.settings=f; self.pages={}; self.readouts={}
-    self:Paint(f,"SetSize",820,600); self:Paint(f,"SetPoint","CENTER",UIParent,"CENTER",0,0)
-    self:Paint(f,"SetFrameStrata","DIALOG"); self:Backdrop(f)
+    self:Paint(f,"SetSize",820,720); self:Paint(f,"SetPoint","CENTER",UIParent,"CENTER",0,0)
+    self:Paint(f,"SetFrameStrata","MEDIUM"); self:Paint(f,"SetToplevel",true); self:Backdrop(f)
     self:Paint(f,"SetBackdrop",{bgFile="Interface\\Buttons\\WHITE8X8",edgeFile="Interface\\Buttons\\WHITE8X8",edgeSize=1})
     self:Paint(f,"SetBackdropColor",.025,.035,.055,.98); self:Paint(f,"SetBackdropBorderColor",.18,.24,.34,1)
     self:Paint(f,"SetMovable",true); self:Paint(f,"EnableMouse",true); self:Paint(f,"RegisterForDrag","LeftButton")
@@ -195,11 +195,11 @@ function UI:CreateSettings()
         self.navigation[key]=self:Button(f,tab[2],18,-78-(i-1)*42,145,function() self:ShowPage(key) end)
         local panel=self:Frame("Frame",f)
         self.pages[key]=panel
-        self:Paint(panel,"SetSize",610,470); self:Paint(panel,"SetPoint","TOPLEFT",f,"TOPLEFT",190,-112)
+        self:Paint(panel,"SetSize",610,590); self:Paint(panel,"SetPoint","TOPLEFT",f,"TOPLEFT",190,-112)
         self.pageFrames[key]=panel
         if key=="overview" or key=="hud" then
             local scroll=self:Frame("ScrollFrame",panel,"UIPanelScrollFrameTemplate")
-            self:Paint(scroll,"SetSize",580,455); self:Paint(scroll,"SetPoint","TOPLEFT",panel,"TOPLEFT",0,0)
+            self:Paint(scroll,"SetSize",580,575); self:Paint(scroll,"SetPoint","TOPLEFT",panel,"TOPLEFT",0,0)
             local content=self:Frame("Frame",scroll)
             self:Paint(content,"SetSize",580,key=="hud" and 1230 or 790)
             self:Paint(scroll,"SetScrollChild",content)
@@ -215,11 +215,11 @@ function UI:CreateSettings()
     button("profiles","单体配置",4,-42,115,function() selectEditor("single") end)
     button("profiles","多目标配置",129,-42,115,function() selectEditor("multi") end)
     local scroll=self:Frame("ScrollFrame",self.pages.profiles,"UIPanelScrollFrameTemplate")
-    self:Paint(scroll,"SetPoint","TOPLEFT",self.pages.profiles,"TOPLEFT",8,-138); self:Paint(scroll,"SetSize",550,226)
+    self:Paint(scroll,"SetPoint","TOPLEFT",self.pages.profiles,"TOPLEFT",8,-138); self:Paint(scroll,"SetSize",550,346)
     self.editorScroll=scroll
     local editor=self:Frame("EditBox",scroll)
     self.editor=editor
-    self:Paint(editor,"SetSize",530,226); self:Paint(editor,"SetMultiLine",true)
+    self:Paint(editor,"SetSize",530,346); self:Paint(editor,"SetMultiLine",true)
     self:Paint(editor,"SetAutoFocus",false); self:Paint(editor,"SetMaxLetters",4096)
     self:Paint(editor,"SetFontObject",ChatFontNormal or GameFontHighlight)
     self:Paint(editor,"SetScript","OnTextChanged",function()
@@ -227,13 +227,13 @@ function UI:CreateSettings()
         local value=ok and S.Public(raw,"string")
         if value and #value<=4096 then
             local _,lines=value:gsub("\n","")
-            self:Paint(editor,"SetHeight",math.max(210,math.min(600,(lines+2)*18)))
+            self:Paint(editor,"SetHeight",math.max(346,math.min(600,(lines+2)*18)))
         end
     end)
     self:Paint(editor,"SetScript","OnEscapePressed",function() self:Paint(editor,"ClearFocus") end)
     self:Paint(scroll,"SetScrollChild",editor)
-    self.editorMessage=self:Text(self.pages.profiles,4,-414,555)
-    button("profiles","保存配置",4,-377,120,function()
+    self.editorMessage=self:Text(self.pages.profiles,4,-534,555)
+    button("profiles","保存配置",4,-497,120,function()
         local ok,raw=self:Invoke(editor,"GetText")
         local rows=ok and self:DraftRows()
         local saved,reason=false,"CONFIG_INVALID"
@@ -242,7 +242,7 @@ function UI:CreateSettings()
         self:Paint(self.editorMessage,"SetText",saved and "已保存；当前练习已暂停并重置。" or ("未保存：" .. reason))
         self:Paint(editor,"ClearFocus")
     end)
-    button("profiles","采用已观察变形术ID",134,-377,220,function()
+    button("profiles","采用已观察变形术ID",134,-497,220,function()
         local saved,reason=false,"SCENE_NOT_CURRENT"
         if self.editScene==e.scene then saved,reason=TEF.Profiles:ConfirmObserved(e) end
         self:Paint(self.editorMessage,"SetText",saved and "已按本会话公开成功ID保存；重新开始再施法。" or ("未保存：" .. reason))

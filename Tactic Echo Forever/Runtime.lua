@@ -26,14 +26,17 @@ end
 function C:ResetCycle(reason)
     -- Reset through the sole runtime owner: preserve intention, invalidate all
     -- old receipts/requests, and let live gates decide when execution resumes.
+    local usage=self.e.usage
     if not self:EngineCall("Reset") then return false end
+    self.e.usage,self.e.usageProgress=usage,nil
     self:Changed("paused",reason); return true
 end
 function C:Changed(state,reason)
     local changed=self.state~=state or self.reason~=reason
     self.state,self.reason=state,reason
     if not changed then return end
-    self.e:Log("transport",reason)
+    local step=self.e.steps and self.e.steps[self.e.index]
+    self.e:Log("transport",reason,step and step.spellID)
     if self.notifying then return end
     self.notifying=true
     if TEF.HUD and TEF.HUD.engine==self.e then pcall(TEF.HUD.RefreshState,TEF.HUD) end
@@ -150,12 +153,36 @@ function C:SetSignal(value)
 end
 function C:World()
     local first=not self.worldSeen; self.worldSeen=true
+    self.e:ClearUsage()
     self:Stop("RUNTIME_WORLD_INVALIDATED")
     if first and self.e.db.dispatch.autoStart then self:SetIntent(true) end
+end
+function C:TryConfirmAttackEnabled()
+    local e=self.e; local step=e.steps and e.steps[e.index]
+    if not self.intent or not step or step.spellID~=6603 or TEF.Recommendation:Source(e)~="manual"
+        or (e.attackActivationStreak or 0)>=#e.steps then return false end
+    local generation,index,serial=e.generation,e.index,e.receiptSerial or 0
+    if not TEF.Dispatch:AttackEnabled() then return false end
+    if not self.intent or self.e~=e or TEF.engine~=e or e.generation~=generation or e.index~=index or (e.receiptSerial or 0)~=serial then return false end
+    if not e.running then
+        if not self:EngineCall("Resume") or not self.intent or not TEF.Dispatch:AttackEnabled() then return false end
+        generation=e.generation
+    end
+    if not self.intent or self.e~=e or TEF.engine~=e or e.index~=index or (e.receiptSerial or 0)~=serial or e.generation~=generation then return false end
+    self.internal=true
+    local ok,confirmed=pcall(e.ConfirmAttackEnabled,e,generation,index,serial)
+    self.internal=false
+    if not ok then self:Fault("ATTACK_CONFIRM_FAILED"); return true end
+    if confirmed then
+        if e.completed then self:Stop("RUNTIME_COMPLETED","completed")
+        else self:Changed("running","ATTACK_ENABLE_CONFIRMED") end
+    end
+    return confirmed
 end
 function C:Reconcile()
     if not self.e or self.e~=TEF.engine then return end
     self.cycle=self.cycle+1
+    self.e:ObserveUsageCombat()
     if not self.intent then return end
     local e=self.e
     if e.identitySaturated then self:Fault("RUNTIME_IDENTITY_CAPACITY_RELOAD_REQUIRED"); return end
@@ -171,7 +198,29 @@ function C:Reconcile()
     if e.db.dispatch.mode=="stop" and combat==false then self:Stop("RUNTIME_OUT_OF_COMBAT_STOP"); return end
     if TEF.UI.settingsOpen then self:Suspend("RUNTIME_SETTINGS_STANDBY","standby"); return end
     if combat==nil then self:Suspend("RUNTIME_COMBAT_UNKNOWN"); return end
-    if e.db.dispatch.mode=="auto" and combat==false then self:Suspend("RUNTIME_AUTO_STANDBY","standby"); return end
+    if e:HasUsagePolicy() then
+        self.internal=true
+        local prepared,allowed,reason=pcall(e.PrepareUsage,e)
+        self.internal=false
+        if not prepared then self:Fault("SEQUENCE_USAGE_FAILED"); return end
+        if not current() then return end
+        if not allowed then self:Suspend(reason); return end
+    end
+    if e.db.dispatch.mode=="auto" and combat==false then
+        if TEF.Recommendation:Source(e)=="manual" then
+            -- 待命保留固定序列的精确回执监听，输入仍由派发门禁控制。
+            -- 不反复恢复或暂停，避免清除手动起手跨进战斗的身份。
+            if not e.running and not self:EngineCall("Resume") then return end
+            TEF.Dispatch:StopContinuous("RUNTIME_AUTO_STANDBY")
+            TEF.Dispatch:Cancel("RUNTIME_AUTO_STANDBY")
+            if self:TryConfirmAttackEnabled() and e.completed then return end
+            if not self.intent or self.e~=e or TEF.engine~=e then return end
+            self:Changed("standby","RUNTIME_AUTO_STANDBY")
+        else self:Suspend("RUNTIME_AUTO_STANDBY","standby") end
+        return
+    end
+    if self:TryConfirmAttackEnabled() then return end
+    if not current() then return end
     -- Keep the already initiated receipt while showing a cast block. Pausing
     -- the Engine here would erase its initiation and lose SUCCEEDED (S61).
     local idle=TEF.Dispatch:CastIdle()
@@ -183,6 +232,12 @@ function C:Reconcile()
         TEF.Dispatch:YieldCast("CONTINUOUS_CAST_PRESENT_OR_UNKNOWN")
         self:Changed("blocked","CONTINUOUS_CAST_PRESENT_OR_UNKNOWN"); return
     end
+    if TEF.Recommendation:Source(e)=="manual" and not TEF.Dispatch:HasCurrentInitiation()
+        and e:RecommendationLocked() then
+        -- 手动起手的回执可能早于客户端公开读条；先等该次结果。
+        TEF.Dispatch:YieldCast("MANUAL_WAIT_CURRENT_RECEIPT")
+        self:Changed("blocked","MANUAL_WAIT_CURRENT_RECEIPT"); return
+    end
     if TEF.APL:IsActive(e) and TEF.Dispatch:HasCurrentInitiation() then
         -- SENT may precede visible cast presence, and SUCCEEDED can precede
         -- cast disappearance. A dirty APL snapshot must not erase its receipt.
@@ -193,7 +248,7 @@ function C:Reconcile()
     local allowed,reason=TEF.Dispatch:ContinuousEvidence(e.steps[e.index].spellID)
     if not current() then return end
     local step=e.steps[e.index]
-    if step.skipUnavailable and step.spellID~=5019 and TEF.Recommendation:Source(e)=="manual"
+    if step.skipUnavailable and step.spellID~=5019 and step.spellID~=6603 and step.spellID~=75 and TEF.Recommendation:Source(e)=="manual"
         and (allowed or reason=="CONTINUOUS_USABLE_UNKNOWN_OR_BLOCKED") then
         -- Focus/target/range and cast gates precede omission; an in-flight
         -- initiation always owns its receipt, even if resources changed.
