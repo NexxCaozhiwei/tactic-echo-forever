@@ -887,10 +887,77 @@ test("recommendation_sources_explicit_code_no_manual_fallback",function()
 end)
 local function runtimeFixture(mode)
     continuousFixture(); T.Dispatch:SetContinuous(false); T.engine:Reset()
-    T.engine.db.dispatch={mode=mode or "auto"}
+    -- 既有用例显式保留旧单次尝试模式，新行为由独立回归覆盖。
+    T.engine.db.dispatch={mode=mode or "auto",ordinaryContinuous=false}
     T.Runtime:Initialize(T.engine); T.Runtime:SetSignal(true)
     T.UI.settingsOpen=false; InCombatLockdown=function() return false end
 end
+test("ordinary_continuous_keeps_token_through_cast_and_exact_success_changes_step",function()
+    runtimeFixture("manual"); local e=T.engine
+    e.db.dispatch.ordinaryContinuous=true; e.db.dispatch.castQueue=false
+    e.steps[1].skipUnavailable=true; InCombatLockdown=function() return true end
+    T.Runtime:Start(false); T.Dispatch:TickContinuous()
+    local pending=T.Dispatch.pending; assert(pending)
+    receipt("UNIT_SPELLCAST_SENT",116,"ordinary-A")
+    eq(T.Dispatch.pending,pending)
+    UnitCastingInfo=function() return "读条" end
+    for i=1,8 do
+        T.Runtime:Reconcile(); T.Dispatch:TickContinuous()
+        assert(T.Dispatch:Packet()); eq(e.index,1); eq(e.stepCasts,0)
+        T.Transport:Paint()
+    end
+    receipt("UNIT_SPELLCAST_SENT",116,"ordinary-extra")
+    receipt("UNIT_SPELLCAST_FAILED_QUIET",116,"ordinary-extra")
+    eq(T.Dispatch.pending,pending); eq(T.Dispatch.initiation.guid,"ordinary-A")
+    receipt("UNIT_SPELLCAST_SUCCEEDED",116,"ordinary-A")
+    eq(e.index,2); eq(T.Dispatch.pending,nil)
+    T.Runtime:Reconcile(); T.Dispatch:TickContinuous()
+    assert(T.Dispatch.pending); eq(T.Dispatch.pending.binding.spellID,205)
+    assert(T.Dispatch:Packet()); T.Runtime:Stop(); eq(T.Dispatch:Packet(),nil)
+end)
+test("ordinary_continuous_channel_secret_and_toggle_spells_still_block",function()
+    runtimeFixture("manual"); local e=T.engine
+    e.db.dispatch.ordinaryContinuous=true; e.db.dispatch.castQueue=false
+    InCombatLockdown=function() return true end
+    T.Runtime:Start(false); T.Dispatch:TickContinuous(); assert(T.Dispatch.pending)
+    UnitChannelInfo=function() return "引导" end
+    T.Runtime:Reconcile(); eq(T.Dispatch:Packet(),nil); eq(T.Runtime.state,"blocked")
+    UnitChannelInfo=function() return secret end
+    T.Runtime:Reconcile(); eq(T.Dispatch:Packet(),nil)
+    UnitChannelInfo=function() return nil end
+    T.Runtime:Reconcile(); T.Dispatch:TickContinuous(); assert(T.Dispatch:Packet())
+    for _,id in ipairs({5019,6603,75}) do e.steps[e.index].spellID=id; eq(T.Dispatch:OrdinaryContinuous(),false) end
+    eq(T.Runtime.Clean({}).ordinaryContinuous,true)
+    eq(T.Runtime.Clean({ordinaryContinuous=secret}).ordinaryContinuous,false)
+end)
+test("ordinary_continuous_same_spell_future_identity_counts_after_current_only",function()
+    runtimeFixture("manual"); local e=T.engine
+    e.db.dispatch.ordinaryContinuous=true; e.db.dispatch.castQueue=false
+    e.steps=T.Engine.Validate({{name="重复读条",spellID=116,matchIDs={116},repeatCount=2},
+        {name="下一技能",spellID=205,matchIDs={205}}})
+    InCombatLockdown=function() return true end
+    T.Runtime:Start(false); T.Dispatch:TickContinuous()
+    receipt("UNIT_SPELLCAST_SENT",116,"repeat-live-A")
+    UnitCastingInfo=function() return "普通读条" end
+    receipt("UNIT_SPELLCAST_SENT",116,"repeat-future-B")
+    eq(e.stepCasts,0); assert(T.Dispatch.castQueue)
+    receipt("UNIT_SPELLCAST_SUCCEEDED",116,"repeat-live-A")
+    eq(e.stepCasts,1); eq(T.Dispatch.initiation.guid,"repeat-future-B")
+    receipt("UNIT_SPELLCAST_SUCCEEDED",116,"repeat-future-B")
+    eq(e.index,2); eq(e.receiptSerial,2)
+end)
+test("ordinary_channel_event_revokes_immediately_without_using_STOP_as_ready",function()
+    runtimeFixture("manual"); local e=T.engine
+    e.db.dispatch.ordinaryContinuous=true; InCombatLockdown=function() return true end
+    T.Runtime:Start(false); T.Dispatch:TickContinuous(); assert(T.Dispatch.pending)
+    receipt("UNIT_SPELLCAST_CHANNEL_START",5143,nil)
+    eq(T.Dispatch.pending,nil); eq(T.Dispatch:TransportCastAllowed(true),false)
+    UnitChannelInfo=function() return "仍在引导" end
+    receipt("UNIT_SPELLCAST_CHANNEL_STOP",5143,nil)
+    eq(T.Dispatch:TransportCastAllowed(true),false)
+    UnitChannelInfo=function() return nil end
+    T.Runtime:Reconcile(); T.Dispatch:TickContinuous(); assert(T.Dispatch:Packet())
+end)
 test("runtime_default_world_autostart_standby_and_combat",function()
     runtimeFixture(); local e=T.engine; eq(e.db.dispatch.permission,true); eq(e.db.dispatch.signal,true)
     eq(e.db.dispatch.autoStart,true); eq(T.Runtime.intent,false)

@@ -136,9 +136,26 @@ function P.ProbeCooldown(id)
  probe.remaining,probe.remainingReason=durationMethod(object,"GetRemainingDuration","number")
  return probe
 end
-function P:ReadAction(key,learned,readReady)
+function P.FriendlyUnit()
+ local exists=P.Boolean("UnitExists","target")
+ if exists==nil then return nil,"FRIENDLY_TARGET_UNKNOWN" end
+ if exists then
+  local assist=P.Boolean("UnitCanAssist","player","target")
+  if assist==nil then return nil,"FRIENDLY_TARGET_UNKNOWN" end
+  if assist then
+   if P.Boolean("UnitIsDeadOrGhost","target")~=false then return nil,"FRIENDLY_TARGET_DEAD_OR_UNKNOWN" end
+   return "target","FRIENDLY_TARGET"
+  end
+ end
+ -- 直接按键遵循游戏自身的自动自施法设置，不改目标、宏或绑定。
+ local path=S.Resolve("C_CVar.GetCVarBool") and "C_CVar.GetCVarBool" or "GetCVarBool"
+ if P.Boolean(path,"autoSelfCast")~=true then return nil,"AUTO_SELF_CAST_DISABLED_OR_UNKNOWN" end
+ if P.Boolean("UnitExists","player")~=true or P.Boolean("UnitIsDeadOrGhost","player")~=false then return nil,"PLAYER_DEAD_OR_UNKNOWN" end
+ return "player","PUBLIC_AUTO_SELF_CAST"
+end
+function P:ReadAction(key,learned,readReady,override)
  local result={known=learned.known,spellID=learned.spellID,reason=learned.reason}
- local ability=A.Abilities[key]; local id=result.spellID
+ local ability=override or A.Abilities[key]; local id=result.spellID
  if result.known~=true or not id then return result end
  local fn=S.Resolve("C_Spell.IsSpellUsable")
  if fn then
@@ -149,7 +166,11 @@ function P:ReadAction(key,learned,readReady)
    if insufficient~=nil then result.power_ok=not insufficient end
   end
  end
- if ability.target=="self" then result.in_range=true
+ if ability.target=="friendly" then
+  local unit,reason=P.FriendlyUnit(); result.targetUnit,result.targetReason=unit,reason
+  if unit=="player" then result.in_range=true
+  elseif unit=="target" then result.in_range=P.Boolean("C_Spell.IsSpellInRange",id,unit) end
+ elseif ability.target=="self" or ability.target=="ground" then result.in_range=true
  else result.in_range=P.Boolean("C_Spell.IsSpellInRange",id,"target") end
  if readReady==true then result.ready,result.cooldownReason=P.Ready(id)
  else result.cooldownReason="NOT_REQUESTED" end

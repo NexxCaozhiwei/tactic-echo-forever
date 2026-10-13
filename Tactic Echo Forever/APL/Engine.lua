@@ -55,8 +55,8 @@ function A:RuleAllowed(state,rule,config)
 end
 function A:Evaluate(state,config,class)
  local pack=self.Packs[class]; local trace={}
- if not pack then return nil,"APL_CLASS_UNSUPPORTED",trace end
  if config.template=="custom" then return self.Custom:Evaluate(state,config,class) end
+ if not pack then return nil,"APL_CLASS_UNSUPPORTED",trace end
  local selection=self:SelectTemplate(state,config)
  local template=pack.templates[selection.template]
  if not template then return nil,"APL_TEMPLATE_UNRESOLVED",trace end
@@ -111,7 +111,14 @@ function A:Invalidate(static) self.State:Invalidate(static) end
 function A:Refresh(e)
  if not self:IsActive(e) then return end
  -- A current public initiation owns its exact identity until success/failure.
- if e:RecommendationLocked() then return end
+ if e:RecommendationLocked() then
+  local now=self.State.Time(); local last=e.aplPreviewSnapshot and e.aplPreviewSnapshot.sampledAt
+  if now and (not last or now<last or now-last>=.20) then
+   local state=self.State:Sample(e)
+   if state then e.aplPreviewSnapshot=state; if TEF.HUD and TEF.HUD.engine==e then TEF.HUD:Refresh() end end
+  end
+  return
+ end
  local now=self.State.Time(); local last=self.State.last
  if now and last and now>=last and now-last<(self.State.dirty and .05 or .20) and e.aplSnapshot
   and e.aplSnapshot.generation==e.generation and e.aplSnapshot.receiptSerial==(e.receiptSerial or 0) then return end
@@ -139,6 +146,7 @@ function A:Refresh(e)
  end
  state.generation=e.generation; state.receiptSerial=e.receiptSerial or 0
  e.aplSnapshot=state; self.State.last=state.sampledAt; self.State.dirty=false
+ e.aplPreviewSnapshot=state
  self.Trace:Record(e,trace,why,candidate,state)
  if TEF.HUD and TEF.HUD.engine==e then TEF.HUD:Refresh() end
 end
@@ -157,13 +165,14 @@ function A:Allowed(e,id)
  if e.db.apl.template=="custom" then
   local row=self.Custom:Rows(e)[c.customIndex]
   if not row or row.spellID~=id then return false,"APL_RULE_UNKNOWN" end
-  local action=self.Custom:Read(id,row.requireReady)
+  local action=self.Custom:Read(id,row.requireReady,row.targetMode)
   if row.activity~="any" then local ok,record=TEF.Safety.Call("C_Spell.GetSpellCooldown",id); if ok then action.active=TEF.Safety.Field(record,"isActive","boolean") end end
   local live={combat={in_combat=self.State.Boolean("InCombatLockdown")},actions={[c.action]=action},moving=self.State.Boolean("IsPlayerMoving")}
   if live.combat.in_combat~=true then return false,"APL_DISPATCH_COMBAT_REQUIRED" end
   local isolated={}
   for i=1,c.customIndex do isolated[i]=i==c.customIndex and row or {enabled=false,cdmKind="none"} end
   self.PublicConditions:Sample(live,isolated)
+  self.Custom:SampleStrategies(live,isolated)
   if row.enemyMin or row.enemyMax then local v=TEF.Research:CountVisible(); if v.state=="PUBLIC_VALUE" then live.enemy_count=v.value end end
   local allowed=self.Custom:Check(live,row,c.customIndex)
   if allowed~=true then return false,"APL_LIVE_DEPENDENCY_BLOCKED" end

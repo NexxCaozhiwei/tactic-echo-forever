@@ -7,7 +7,7 @@ D.continuous=false
 -- Independent bounded evidence only; never read by queue/dispatch admission.
 function D:TraceQueue(reason,event,id,guid,queue)
     local e=TEF.engine
-    if not e or not e.db.dispatch or not e.db.dispatch.castQueue then return end
+    if not e or not e.db.dispatch or (not e.db.dispatch.castQueue and not e.db.dispatch.ordinaryContinuous) then return end
     local q=queue or self.castQueue or (self.pending and self.pending.castQueue)
     local ok,clock=S.Call("GetTime")
     local row={reason=S.Public(reason,"string"),event=S.Public(event,"string"),spellID=S.ID(id),guid=S.Identity(guid),
@@ -89,7 +89,7 @@ end
 function D:IsSelfAction(id)
     local e=TEF.engine; local c=e.aplCandidate
     if TEF.APL and TEF.APL:IsActive(e) and c and c.spellID==id then
-        return c.target=="self" or (TEF.APL.Abilities[c.action] and TEF.APL.Abilities[c.action].target=="self") or false
+        return c.target=="self" or c.target=="ground" or (TEF.APL.Abilities[c.action] and TEF.APL.Abilities[c.action].target=="self") or false
     end
     -- 自身目标分类必须由公开元数据确认；不从缺少敌方范围推断。
     local ok,info=S.Call("C_Spell.GetSpellInfo",id)
@@ -119,11 +119,21 @@ function D:ContinuousEvidence(id)
     end
     if not self:InputIdle() then return false,"CONTINUOUS_TEXT_FOCUS_OR_UNKNOWN" end
     local selfAction=self:IsSelfAction(id)
-    if not selfAction and (publicBoolean("UnitExists","target")~=true
+    local candidate=TEF.engine.aplCandidate
+    if candidate and candidate.spellID==id and candidate.target=="ground" then
+        if publicBoolean("SpellIsTargeting")~=false then return false,"GROUND_TARGETING_OR_UNKNOWN" end
+    end
+    local friendly=TEF.APL:IsActive(TEF.engine) and candidate and candidate.spellID==id and candidate.target=="friendly"
+    local friendlyUnit
+    if friendly then
+        local reason; friendlyUnit,reason=TEF.APL.State.FriendlyUnit()
+        if not friendlyUnit then return false,reason end
+    end
+    if not selfAction and not friendly and (publicBoolean("UnitExists","target")~=true
         or publicBoolean("UnitCanAttack","player","target")~=true
         or publicBoolean("UnitIsDeadOrGhost","target")~=false) then return false,"CONTINUOUS_TARGET_UNKNOWN_OR_BLOCKED" end
     -- 6603是用户选择的启动开关步骤；开启不等同于近战命中，不要求命中范围。
-    if not selfAction and id~=6603 then
+    if not selfAction and friendlyUnit~="player" and id~=6603 then
         local range,rangeReason
         local rangeOK,rangeRaw,callReason=S.Call("C_Spell.IsSpellInRange",id,"target")
         if rangeOK then range,rangeReason=rangeBoolean(rangeRaw) end
@@ -296,7 +306,13 @@ end
 function D:SequenceSucceeded(guid)
     self.castQueueAttempt=nil
     local q,e=self.castQueue,TEF.engine
-    if not q then return end
+    if not q then
+        if self:OrdinaryContinuous() then
+            self:Cancel("CONTINUOUS_SUCCESS_RECOMMENDATION_CHANGED")
+            self.waitReceipt=nil; self.initiation=nil
+        end
+        return
+    end
     if guid~=q.originGUID or e.generation~=q.generation or e.index~=q.nextIndex
         or (e.receiptSerial or 0)~=q.receiptSerial+1 or e.completed then
         self:DropCastQueue(); self:Cancel("CAST_QUEUE_INVALIDATED"); return
@@ -346,16 +362,17 @@ function D:TickContinuous()
         if not self.pending and not self:HasCurrentInitiation() then self.waitReceipt=nil end
     end
     if not self:CastIdle() then
-        if self:TryCastQueue() then self:ContinuousStatus("CAST_QUEUE_WAIT_SUCCESS") end
-        return
+        if self:TryCastQueue() then self:ContinuousStatus("CAST_QUEUE_WAIT_SUCCESS"); return end
+        if not self:TransportCastAllowed(true) then return end
     end
+    if self.castQueue then return end
     if TEF.Runtime and TEF.Runtime.e==e and TEF.Runtime.intent
         and not self.pending and self.waitReceipt==(e.receiptSerial or 0) and not self:HasCurrentInitiation() then
         self.waitReceipt=nil; self.initiation=nil
         e:Log("transport","CONTINUOUS_UNINITIATED_WAIT_RELEASED")
     end
-    if self.pending or self.waitReceipt==(e.receiptSerial or 0) then return end
-    if not self:CastIdle() then self:ContinuousStatus("CONTINUOUS_CAST_PRESENT_OR_UNKNOWN"); return end
+    if self.pending or (not self:OrdinaryContinuous() and self.waitReceipt==(e.receiptSerial or 0)) then return end
+    if not self:TransportCastAllowed(true) then self:ContinuousStatus("CONTINUOUS_CAST_PRESENT_OR_UNKNOWN"); return end
     local recommendation=TEF.Recommendation:Current(e)
     local step=recommendation and e.steps[e.index]
     if not step or step.unverified then self:StopContinuous("CONTINUOUS_STEP_UNRESOLVED"); return end
@@ -465,6 +482,22 @@ function D:CastIdle()
     if e and (generation~=e.generation or index~=e.index or serial~=e.receiptSerial) then return false end
     return true
 end
+-- 普通读条采用TE式持续推荐输出；引导仍是输入锁。
+function D:OrdinaryContinuous()
+    local e=TEF.engine; local r=TEF.Runtime
+    local step=e and e.steps and e.steps[e.index]
+    return r and r.e==e and r.intent and e.db.dispatch.ordinaryContinuous==true
+        and step and step.spellID~=5019 and step.spellID~=6603 and step.spellID~=75 or false
+end
+function D:TransportCastAllowed(continuous)
+    if TEF.engine.db.dispatch.ordinaryContinuous and self.channelInputLock then return false end
+    if continuous and self:OrdinaryContinuous() then
+        local ok,raw=S.Call("UnitChannelInfo","player")
+        local _,reason=S.Public(raw,"string")
+        return ok and reason=="NO_DATA"
+    end
+    return self:CastIdle()
+end
 function D:Request(fromContinuous,queue)
     -- The test button cannot revoke or replace an automatic request (S37).
     if fromContinuous~=true and self.continuous then
@@ -483,7 +516,7 @@ function D:Request(fromContinuous,queue)
         and TEF.Runtime.state=="standby" and TEF.Runtime.reason=="RUNTIME_AUTO_STANDBY" then blocked="RUNTIME_AUTO_STANDBY"
     elseif not step or step.unverified then blocked="TEK_STEP_UNRESOLVED"
     elseif queue and (queue~=self.castQueue or self:CastQueueWindow()~=queue.nextIndex) then blocked="CAST_QUEUE_WINDOW_CLOSED"
-    elseif not queue and not self:CastIdle() then blocked="TEK_CAST_PRESENT_OR_UNKNOWN" end
+    elseif not queue and not self:TransportCastAllowed(fromContinuous==true) then blocked="TEK_CAST_PRESENT_OR_UNKNOWN" end
     if blocked then e:Log("transport",blocked); return false,blocked end
     local eligible,usageReason,usageContext=e:UsageEligibility(queue and queue.nextIndex or e.index)
     if eligible~=true then return false,usageReason end
@@ -560,7 +593,7 @@ function D:Packet()
         if p.castQueue~=self.castQueue or self:CastQueueWindow()~=p.castQueue.nextIndex then
             self:Cancel("CAST_QUEUE_WINDOW_CLOSED"); return nil
         end
-    elseif not self:CastIdle() then self:Cancel("TEK_CAST_PRESENT_OR_UNKNOWN"); return nil end
+    elseif not self:TransportCastAllowed(self.continuous) then self:Cancel("TEK_CAST_PRESENT_OR_UNKNOWN"); return nil end
     if TEF.APL and TEF.APL:IsActive(e) then
         local allowed,reason=TEF.APL:Allowed(e,p.binding.spellID)
         if not allowed then self:Cancel(reason); return nil end
@@ -602,13 +635,36 @@ function D:Event(event,unit,id,guidRaw)
     local unitValue=S.Public(unit,"string")
     local spellValue=S.ID(id)
     local guid=S.Identity(guidRaw)
+    if unitValue=="player" and event=="UNIT_SPELLCAST_CHANNEL_START" then
+        self.channelInputLock=true
+        self:Cancel("CHANNEL_ACTIVE_INPUT_LOCK")
+    elseif unitValue=="player" and event=="UNIT_SPELLCAST_CHANNEL_STOP" then
+        self.channelInputLock=nil -- 只撤销事件锁，派发仍复核实时引导接口。
+    end
     if unitValue=="player" then self:TraceQueue("GAME_EVENT",event,spellValue,guid) end
     if owned and (runtime.e~=e or TEF.engine~=e or e.generation~=eventGeneration or e.index~=eventIndex) then return true end
     if owned and unitValue=="player" and guid and e.seen[guid]=="retired" then
         e:Log("ignored","CONTINUOUS_FAILED_RECEIPT_IGNORED",spellValue,nil,nil,event)
         return true
     end
+    -- 连发可能让客户端提前接受同技能的下一次起始。仅人工固定
+    -- 序列确实还有同ID次数时保留未来回执；失败不影响原起始。
     local q=self.castQueue
+    if not q and self.continuous and self:OrdinaryContinuous() and TEF.Recommendation:Source(e)=="manual"
+        and unitValue=="player" and guid and self:HasCurrentInitiation()
+        and guid~=self.initiation.guid and not e.seen[guid]
+        and (event=="UNIT_SPELLCAST_SENT" or event=="UNIT_SPELLCAST_START") then
+        local step=e.steps[e.index]
+        local nextIndex=(e.stepCasts or 0)+1<step.repeatCount and e.index or e.index+1
+        local nextStep=e.steps[nextIndex]
+        if nextStep and nextStep.spellID==spellValue and spellValue==self.initiation.spellID then
+            q={generation=e.generation,index=e.index,receiptSerial=e.receiptSerial or 0,
+                nextIndex=nextIndex,spellID=spellValue,originGUID=self.initiation.guid,
+                request=TEF.Runtime.requestSerial,implicitContinuous=true}
+            self.castQueue=q
+            self:TraceQueue("ORDINARY_SAME_SPELL_NEXT_RESERVED",event,spellValue,guid,q)
+        end
+    end
     if q and unitValue=="player" and spellValue==q.spellID and guid and guid~=q.originGUID then
         if q.generation~=e.generation or q.index~=e.index or q.receiptSerial~=(e.receiptSerial or 0) then
             self:DropCastQueue(); self:Cancel("CAST_QUEUE_INVALIDATED"); return true
@@ -703,5 +759,9 @@ function D:Event(event,unit,id,guidRaw)
     -- 仅凭相同技能ID撤销尚未起始的新请求。
     if u=="player" and guid and (event=="UNIT_SPELLCAST_SENT" or event=="UNIT_SPELLCAST_START")
         and spell==self.pending.binding.spellID
-        and (not self.pending.castQueue or guid==self.pending.castQueue.guid) then self:Cancel("TEK_GAME_EVENT_RECEIVED") end
+        and (not self.pending.castQueue or guid==self.pending.castQueue.guid) then
+        if self.continuous and self:OrdinaryContinuous() and not self.pending.castQueue then
+            self:TraceQueue("ORDINARY_CONTINUOUS_INITIATED",event,spell,guid)
+        else self:Cancel("TEK_GAME_EVENT_RECEIVED") end
+    end
 end

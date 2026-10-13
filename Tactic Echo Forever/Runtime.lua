@@ -11,10 +11,12 @@ function C.Clean(raw)
     local mode=S.Field(raw,"mode","string")
     local key=S.Field(raw,"hotkey","string")
     local lead=S.Field(raw,"castQueueLead","number")
+    local ordinary,ordinaryReason=S.Field(raw,"ordinaryContinuous","boolean")
     return {mode=modes[mode] and mode or "auto",autoStart=S.Field(raw,"autoStart","boolean")~=false,
         permission=S.Field(raw,"permission","boolean")~=false,signal=S.Field(raw,"signal","boolean")~=false,
         hotkey=key and #key<=40 and key:match("^[A-Z0-9%-=]+$") and key or "",
         hotkeyOverride=S.Field(raw,"hotkeyOverride","boolean")==true,
+        ordinaryContinuous=ordinary==true or ordinaryReason=="NO_DATA",
         castQueue=S.Field(raw,"castQueue","boolean")==true,
         castQueueLead=lead and math.max(0,math.min(.5,lead)) or .2}
 end
@@ -152,6 +154,7 @@ function C:SetSignal(value)
     self:Reconcile(); return ok
 end
 function C:World()
+    TEF.Dispatch.channelInputLock=nil
     local first=not self.worldSeen; self.worldSeen=true
     self.e:ClearUsage()
     self:Stop("RUNTIME_WORLD_INVALIDATED")
@@ -223,7 +226,8 @@ function C:Reconcile()
     if not current() then return end
     -- Keep the already initiated receipt while showing a cast block. Pausing
     -- the Engine here would erase its initiation and lose SUCCEEDED (S61).
-    local idle=TEF.Dispatch:CastIdle()
+    local ordinary=TEF.Dispatch:OrdinaryContinuous()
+    local idle=TEF.Dispatch:TransportCastAllowed(true)
     if not current() then return end
     if not idle then
         if combat==true and TEF.Dispatch:CastQueueWindow() then
@@ -232,13 +236,13 @@ function C:Reconcile()
         TEF.Dispatch:YieldCast("CONTINUOUS_CAST_PRESENT_OR_UNKNOWN")
         self:Changed("blocked","CONTINUOUS_CAST_PRESENT_OR_UNKNOWN"); return
     end
-    if TEF.Recommendation:Source(e)=="manual" and not TEF.Dispatch:HasCurrentInitiation()
+    if not ordinary and TEF.Recommendation:Source(e)=="manual" and not TEF.Dispatch:HasCurrentInitiation()
         and e:RecommendationLocked() then
         -- 手动起手的回执可能早于客户端公开读条；先等该次结果。
         TEF.Dispatch:YieldCast("MANUAL_WAIT_CURRENT_RECEIPT")
         self:Changed("blocked","MANUAL_WAIT_CURRENT_RECEIPT"); return
     end
-    if TEF.APL:IsActive(e) and TEF.Dispatch:HasCurrentInitiation() then
+    if not ordinary and TEF.APL:IsActive(e) and TEF.Dispatch:HasCurrentInitiation() then
         -- SENT may precede visible cast presence, and SUCCEEDED can precede
         -- cast disappearance. A dirty APL snapshot must not erase its receipt.
         TEF.Dispatch:YieldCast("APL_WAIT_CURRENT_RECEIPT")
@@ -252,11 +256,11 @@ function C:Reconcile()
         and (allowed or reason=="CONTINUOUS_USABLE_UNKNOWN_OR_BLOCKED") then
         -- Focus/target/range and cast gates precede omission; an in-flight
         -- initiation always owns its receipt, even if resources changed.
-        if e:RecommendationLocked() then
+        if e:RecommendationLocked() and not ordinary then
             TEF.Dispatch:YieldCast("SKIP_WAIT_CURRENT_RECEIPT")
             self:Changed("blocked","SKIP_WAIT_CURRENT_RECEIPT"); return
         end
-        if not TEF.Dispatch.pending and TEF.Dispatch.waitReceipt~=(e.receiptSerial or 0) then
+        if not e:RecommendationLocked() and not TEF.Dispatch.pending and TEF.Dispatch.waitReceipt~=(e.receiptSerial or 0) then
             local unavailable=TEF.Dispatch:Unavailable(step.spellID)
             if not current() then return end
             if unavailable==nil then self:Suspend("SKIP_AVAILABILITY_UNKNOWN"); return end

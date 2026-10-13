@@ -168,11 +168,13 @@ end
 function H:Refresh(cooldownEvent)
     local e=self.engine; if not self.frame then return end
     self.metadata=self.metadata or {}
+    local display=TEF.Recommendation:HUDSteps(e)
     for i,card in ipairs(self.cards) do
         local index=e.index+i-1
         if e.db.loop and e.steps and index>#e.steps then index=(index-1)%#e.steps+1 end
         local step=e.steps and e.steps[index]
-        if i>1 and (e.completed or not e.db.hud.preview or TEF.APL:IsActive(e)) then step=nil end
+        if display then step=display[i] end
+        if i>1 and (e.completed or not e.db.hud.preview or (TEF.APL:IsActive(e) and not display)) then step=nil end
         local key=step and (step.spellID .. ":" .. step.name)
         local view=key and self.metadata[key]
         if step and not view then view=S.Spell(step.spellID,step.name); self.metadata[key]=view end
@@ -181,7 +183,7 @@ function H:Refresh(cooldownEvent)
         card.displayStep=step
         if TEF.Presentation then TEF.Presentation:Paint(card,step,cooldownEvent) end
     end
-    local step=e.steps and e.steps[e.index]
+    local step=display and display[1] or (e.steps and e.steps[e.index])
     local view=step and self.metadata[step.spellID .. ":" .. step.name]
     U:Paint(self.name,"SetText",e.completed and "完成" or (view and view.name or (TEF.APL:IsActive(e) and TEF.APL.Trace:Waiting(e) or "未配置推荐序列")))
     self:RefreshState()

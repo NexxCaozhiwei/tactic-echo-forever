@@ -115,6 +115,7 @@ function UI:ShowPage(key)
         if draft and #draft<=4096 then self.drafts[(self.loadedProfile or "unknown") .. ":" .. self.loadedScene]=draft end
     end
     self.page=key
+    if key~="customapl" then self:Paint(self.strategyPanel,"Hide") end
     if self.pageTitles then self:Paint(self.pageHeading,"SetText",self.pageTitles[key] or "设置") end
     for name,nav in pairs(self.navigation or {}) do
         self:Paint(nav,"SetText",(name==key and "|cffffcf45" or "|cffb8c6dc") .. (self.pageTitles[name] or name) .. "|r")
@@ -136,7 +137,7 @@ function UI:RefreshPage()
         if self.hotkeyMessage and not self.captureHotkey then self:Paint(self.hotkeyMessage,"SetText",TEF.Hotkeys:Status()) end
         local v=TEF.Runtime:GetViewState()
         self:Paint(self.overviewBadge,"SetText",v.label .. " · " .. (v.intent and "派发意图开启" or "派发意图关闭"))
-        self:Paint(self.readouts.overview,"SetText",(v.source=="apl" and "MAGE_FOREVER_60" or e.profileKey or "职业未解析") .. " · " .. TEF.Profiles:PlanName(e.scene)
+        self:Paint(self.readouts.overview,"SetText",(v.source=="apl" and ((e.classToken or "职业未知") .. " · 自定义APL") or e.profileKey or "职业未解析") .. " · " .. TEF.Profiles:PlanName(e.scene)
             .. " · " .. (v.source=="apl" and "自定义 APL" or "人工序列") .. "\n" .. (v.source=="apl" and (e.aplTrace and e.aplTrace.reason or "等待启动采样") or ("步骤 " .. e.index .. "/" .. (e.steps and #e.steps or 0) .. " · 固定练习不保证ready")))
     elseif self.page=="profiles" then
         if self.loadedProfile~=e.profileKey then self:ShowPage("profiles"); return end

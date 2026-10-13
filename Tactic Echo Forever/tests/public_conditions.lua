@@ -197,16 +197,34 @@ test("click_pickup_and_drag_both_add_no_duplicates_after_clear",function()
  T.UI.customDrop.scripts.OnClick(); eq(#T.UI.customDraft,1)
  T.UI.customDrop.scripts.OnReceiveDrag(); eq(#T.UI.customDraft,1)
  held=true; T.UI.customDrop.scripts.OnReceiveDrag(); eq(#T.UI.customDraft,2)
- local r=T.UI:CustomRow(); r.distanceOp="lt"; r.cdmKind="buff"
- T.UI.customNumbers.distanceValue.text="30"; T.UI.customNumbers.cdmSpellID.text="116"
+ T.UI:ChangeCustomStrategy(function(r) r.strategies={{mode="use",conditions={{kind="distance",max=20},{kind="cdmBuff",value=true}}}} end)
+ for _,entry in ipairs(T.UI.strategyInputs) do
+  if entry.field=="max" then entry.box.text="30" elseif entry.field=="spellID" then entry.box.text="116" end
+ end
  T.UI.customSave.scripts.OnClick()
- local savedRow=C:Rows(e)[2]; eq(savedRow.manaOp,nil); eq(savedRow.distanceValue,30); eq(savedRow.cdmSpellID,116)
+ local savedRow=C:Rows(e)[2]; eq(savedRow.manaOp,nil); eq(savedRow.strategies[1].conditions[1].max,30); eq(savedRow.strategies[1].conditions[2].spellID,116)
  local action=GetActionInfo
  GetCursorInfo=function() return "action",7 end; GetActionInfo=function(slot) eq(slot,7); return "spell",205 end
  T.UI.customDrop.scripts.OnClick(); eq(#T.UI.customDraft,3); eq(T.UI.customDraft[3].spellID,205)
  GetActionInfo=function() return "macro",205 end; T.UI.customDrop.scripts.OnClick(); eq(#T.UI.customDraft,3)
  GetActionInfo=action
  GetCursorInfo,ClearCursor=cursor,clear
+end)
+test("strategy_multiple_cdm_live_recheck_revokes_changed_packet",function()
+ local e=F.runtime(); local _,pool=fixtures(true)
+ local cooldown={cooldownID=11,isActive=false}; local buff={cooldownID=12,isActive=true}
+ C_CooldownViewer={GetCooldownViewerCategorySet=function(category)
+  if category==0 then return {11} elseif category==2 then return {12} end; return {}
+ end,GetCooldownViewerCooldownInfo=function(id) return {spellID=id==11 and 116 or 133} end}
+ EssentialCooldownViewer={itemFramePool=pool({cooldown})}; UtilityCooldownViewer={itemFramePool=pool({})}
+ BuffIconCooldownViewer={itemFramePool=pool({buff})}; BuffBarCooldownViewer={itemFramePool=pool({})}
+ UnitDistanceSquared=function() return 625,true end
+ local r={spellID=143,strategies={{mode="use",conditions={{kind="distance",min=20,max=30},
+  {kind="cdmCooldown",spellID=116,value=false},{kind="cdmBuff",spellID=133,value=true}}}}}
+ assert(C:Save(e,{r},"single","MAGE")); T.Runtime:SetIntent(true); T.Dispatch:TickContinuous(); assert(T.Dispatch.pending)
+ eq(T.APL:Allowed(e,143),true); buff.isActive=false; eq(T.Dispatch:Packet(),nil)
+ buff.isActive=true; assert(C:Save(e,{r},"single","MAGE")); T.Runtime:SetIntent(true); T.Dispatch:TickContinuous(); assert(T.Dispatch.pending)
+ cooldown.isActive=F.secret; eq(T.Dispatch:Packet(),nil)
 end)
 for key,value in pairs(saved) do _G[key]=value[1] end
 TEF_PUBLIC_CONDITION_TEST_COUNT=n

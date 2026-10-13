@@ -3,25 +3,19 @@ local U,S,C=T.UI,T.Safety,T.APL.Custom
 function U:CustomMessage(text) self:Paint(self.customMessage,"SetText",text) end
 function U:CustomRow() return self.customDraft and self.customDraft[self.customSelected or 1] end
 function U:CommitCustomNumbers()
- local row=self:CustomRow(); if not row then return true end
- local values={}
- for field,box in pairs(self.customNumbers or {}) do
-  local ok,raw=self:Invoke(box,"GetText"); local text=ok and S.Public(raw,"string")
-  if text==nil then return false end
-  if text~="" then
-   local n=text:match("^%d+%.?%d*$") and tonumber(text)
-   local limit=field=="distanceValue" and 2000 or field=="cdmSpellID" and 2147483647 or 40
-   if not n or n>limit or ((field=="enemyMin" or field=="enemyMax" or field=="cdmSpellID") and n%1~=0)
-    or (field=="cdmSpellID" and n<=0) then self:CustomMessage("数值无效：距离0～2000码、敌人数0～40整数、CDM合法ID。"); return false end
-   values[field]=n
+ local pending={}
+ for _,entry in ipairs(self.strategyInputs or {}) do
+  local ok,raw=self:Invoke(entry.box,"GetText"); local text=ok and S.Public(raw,"string")
+  if not text then return false end
+  text=text:match("^%s*(.-)%s*$")
+  local n=text~="" and text:match("^%d+%.?%d*$") and tonumber(text) or nil
+  local limit=entry.field=="spellID" and 2147483647 or entry.condition.kind=="distance" and 2000 or 40
+  if text~="" and (not n or n>limit or (entry.condition.kind~="distance" and n%1~=0) or (entry.field=="spellID" and n<=0)) then
+   self:CustomMessage("数值无效：距离0～2000码、敌人数0～40整数、CDM填写合法技能ID。"); return false
   end
+  pending[#pending+1]={condition=entry.condition,field=entry.field,value=n}
  end
- if values.enemyMin and values.enemyMax and values.enemyMin>values.enemyMax then self:CustomMessage("敌人数下限不能超过上限。"); return false end
- row.enemyMin,row.enemyMax=values.enemyMin,values.enemyMax
- row.distanceValue,row.cdmSpellID=values.distanceValue,values.cdmSpellID
- if (row.distanceOp and row.distanceOp~="any" and not row.distanceValue) then
-  self:CustomMessage("已启用的比较条件必须填写阈值。"); return false
- end
+ for _,entry in ipairs(pending) do entry.condition[entry.field]=entry.value end
  return true
 end
 function U:RefreshCustomAPL()
@@ -31,48 +25,29 @@ function U:RefreshCustomAPL()
  if not self.customDraft or self.customEngine~=e or self.customClass~=e.classToken or self.customLoadedScene~=scene then
   self.customEngine=e
   self.customClass,self.customLoadedScene=e.classToken,scene
-  self.customDraft=C.CleanRows(C:Rows(e,scene)); self.customSelected=1; self.customFormIndex=nil
+  self.customDraft=C.CleanRows(C:Rows(e,scene)); self.customSelected=1; self.customFormIndex=nil; self.strategyInputs={}; self:Paint(self.strategyPanel,"Hide")
+  for _,row in ipairs(self.customDraft) do C:UpgradeStrategies(row) end
  end
- self:Paint(self.readouts.customapl,"SetText",(e.classToken or "职业未知") .. " · 编辑" .. T.Profiles:PlanName(scene) .. " · " .. #self.customDraft .. "/16条（首版法师）")
+ self:Paint(self.readouts.customapl,"SetText",(e.classToken or "职业未知") .. " · 编辑" .. T.Profiles:PlanName(scene) .. " · " .. #self.customDraft .. "/16条")
  for i,w in ipairs(self.customWidgets) do
   local row=self.customDraft[i]; self:Paint(w.frame,row and "Show" or "Hide")
   if row then
    local view=S.Spell(row.spellID,tostring(row.spellID or "未解析"))
    self:Paint(w.name,"SetText",(i==self.customSelected and "|cffffcf45" or "") .. i .. ". " .. view.name .. " · ID " .. (row.spellID or "?") .. (row.enabled and "" or " · 已停用") .. "|r")
+   local sampled=self.engine.aplSnapshot and self.engine.aplSnapshot.actions["custom_" .. i]
+   if sampled and sampled.spellID==row.spellID and sampled.reason=="CUSTOM_TARGET_UNKNOWN" then self:Paint(w.name,"SetText",i .. ". " .. view.name .. " |cffffcf45· 请选择施放类型|r") end
   end
  end
  self:Paint(self.customChild,"SetHeight",math.max(108,#self.customDraft*36))
- if self.customFormIndex~=self.customSelected then
-  self.customFormIndex=self.customSelected
-  local row=self:CustomRow()
-  for field,box in pairs(self.customNumbers) do self:Paint(box,"SetText",row and row[field] and tostring(row[field]) or "") end
- end
- local row=self:CustomRow(); local snapshot=e.aplSnapshot
- local a=snapshot and snapshot.actions["custom_" .. (self.customSelected or 1)]
- local text="必需：已学、可用、资源足够、技能范围；后台探测不影响派发。"
- if e.db.apl.template=="custom" and a and row and a.spellID==row.spellID and self.customLoadedScene==e.scene then
-  local fresh=snapshot.generation==e.generation and snapshot.revision==(T.APL.State.revision or 0) and snapshot.receiptSerial==(e.receiptSerial or 0)
-  text=text .. (fresh and "\n已保存规则最近观察：" or "\n旧记录（已过期，不授权派发）：")
-  for _,field in ipairs({"known","usable","power_ok","in_range","cdmActive"}) do text=text .. field .. "=" .. (a[field]==nil and "未知" or tostring(a[field])) .. " " end
-  text=text .. "\n距离=" .. T.APL.PublicConditions.DistanceText(snapshot) .. " (" .. (snapshot.distanceReason or "未启用") .. ") CDM=" .. (a.cdmReason or "未启用")
-  local probe=a.cooldownProbe
-  if probe then
-   text=text .. "\n后台冷却观察：活动=" .. tostring(probe.active) .. "（" .. (probe.activeReason or "未知") .. "）"
-   text=text .. "；Duration=" .. (probe.objectReason or "未知") .. "；IsZero=" .. tostring(probe.isZero) .. "（" .. (probe.zeroReason or "未知") .. "）"
-   text=text .. "\n总时长=" .. tostring(probe.total) .. "（" .. (probe.totalReason or "未知") .. "）；剩余=" .. tostring(probe.remaining) .. "（" .. (probe.remainingReason or "未知") .. "）"
-  end
-  for _,result in ipairs(e.aplTrace and e.aplTrace.rules or {}) do if result.rule=="custom:" .. self.customSelected then text=text .. "\n" .. result.result .. " · " .. result.reason end end
- else text=text .. "\n未采样或正在编辑；实时状态不作为已通过证据。" end
- if snapshot and snapshot.healthProbe then text=text .. "\n血量比例探测=" .. tostring(snapshot.healthProbe.value) .. "（" .. (snapshot.healthProbe.reason or "未知") .. "）" end
- self:Paint(self.customState,"SetText",text)
+ self:RefreshStrategyForm()
 end
 function U:AddCustomSpell(id)
  if not self.customDraft then self:RefreshCustomAPL() end
  id=S.ID(id); if not id then self:CustomMessage("请输入公开合法技能ID。"); return false end
  if not self:CommitCustomNumbers() then return false end
  if #self.customDraft>=16 then self:CustomMessage("最多16条规则。"); return false end
- self.customDraft[#self.customDraft+1]={spellID=id,enabled=true,moving="any",activity="any",experimentalEnemies=false}
- self.customSelected=#self.customDraft; self:RefreshCustomAPL(); self:CustomMessage("已加入草稿；保存后生效。不猜等级ID。"); return true
+ self.customDraft[#self.customDraft+1]={spellID=id,enabled=true,moving="any",activity="any",distanceOp="any",cdmKind="none",experimentalEnemies=false,strategies={}}
+ self.customSelected=#self.customDraft; self.customFormIndex=nil; self:RefreshCustomAPL(); self:CustomMessage("已加入草稿；保存后生效。自动无法识别目标类型时，请编辑施放类型。"); return true
 end
 function U:ReceiveCustomSpell()
  local id,why=T.ActionSources:Cursor()
@@ -86,8 +61,8 @@ function U:CreateCustomAPLEditor(parent)
  self:Paint(parent,"SetScript","OnReceiveDrag",function() self:Guard(function() self:ReceiveCustomSpell() end) end)
  local function action(text,x,y,w,fn) return self:CreateActionButton(parent,text,x,y,w,fn) end
  self.customScene=self.customScene or "single"
- self:CreateSegmentedControl(parent,{{"single","方案一"},{"multi","方案二"},{"third","方案三"}},0,-30,280,
-  function() return self.customScene end,function(key) self.customScene=key; self:RefreshCustomAPL() end)
+ self:CreateSegmentedControl(parent,{{"single","方案一"},{"multi","方案二"},{"third","方案三"}},0,-30,550,
+  function() return self.customScene end,function(key) if self:CommitCustomNumbers() then self.customScene=key; self:RefreshCustomAPL() end end)
  self:CreateToggleRow(parent,"启用本方案",0,-76,250,
   function() return self.engine.db.enabledPlans.apl[self.customScene] end,
   function(value) T.Profiles:SetPlanEnabled(self.engine,"apl",self.customScene,value) end)
@@ -95,8 +70,8 @@ function U:CreateCustomAPLEditor(parent)
   local ok,reason=T.Profiles:UsePlan(self.engine,"apl",self.customScene)
   self:CustomMessage(ok and "已选择并停止派发；关闭设置后开启。" or "请先启用本方案。")
  end)
- self.customID=self:SequenceInput(parent,300,-30,90)
- action("ID新增",400,-30,80,function()
+ self.customID=self:SequenceInput(parent,160,-110,90)
+ action("ID新增",265,-110,80,function()
   local ok,raw=self:Invoke(self.customID,"GetText"); local text=ok and S.Public(raw,"string")
   self:AddCustomSpell(text and text:match("^%d+$") and tonumber(text))
  end)
@@ -116,17 +91,36 @@ function U:CreateCustomAPLEditor(parent)
   if ok and self.engine.db.enabledPlans.apl[self.customLoadedScene] then ok,reason=T.Profiles:UsePlan(self.engine,"apl",self.customLoadedScene) end
   self:CustomMessage(ok and "已保存并停止派发；关闭设置后主动开启。" or (reason or "保存失败"))
  end)
+ self:CreateSectionCard(parent,"技能列表 · 拖动条目或用上下箭头排序",0,-150,575,450)
+ for _,edge in ipairs({{0,-150,575,2},{0,-598,575,2},{0,-150,2,450},{573,-150,2,450}}) do
+  local ok,line=self:Invoke(parent,"CreateTexture",nil,"BORDER")
+  if ok then self:Paint(line,"SetPoint","TOPLEFT",parent,"TOPLEFT",edge[1],edge[2]); self:Paint(line,"SetSize",edge[3],edge[4]); self:Paint(line,"SetColorTexture",.25,.45,.60,1) end
+ end
  local scroll=self:Frame("ScrollFrame",parent,"UIPanelScrollFrameTemplate")
- self:Paint(scroll,"SetPoint","TOPLEFT",parent,"TOPLEFT",0,-154); self:Paint(scroll,"SetSize",550,154)
+ self:Paint(scroll,"SetPoint","TOPLEFT",parent,"TOPLEFT",10,-187); self:Paint(scroll,"SetSize",540,390)
  local child=self:Frame("Frame",scroll); self.customChild=child; self:Paint(child,"SetSize",530,108); self:Paint(scroll,"SetScrollChild",child)
  self.customWidgets={}
  for i=1,16 do
-  local index=i; local frame=self:Frame("Frame",child)
+  local index=i; local frame=self:Frame("Frame",child,"BackdropTemplate")
   self:Paint(frame,"SetPoint","TOPLEFT",child,"TOPLEFT",0,-(i-1)*36); self:Paint(frame,"SetSize",530,32)
   self:Paint(frame,"EnableMouse",true)
   self:Paint(frame,"SetScript","OnReceiveDrag",function() self:Guard(function() self:ReceiveCustomSpell() end) end)
-  local name=self:Text(frame,0,-7,330,"GameFontHighlightSmall")
-  self:CreateActionButton(frame,"编辑",330,-2,48,function() if self:CommitCustomNumbers() then self.customSelected=index; self:RefreshCustomAPL() end end)
+  self:Paint(frame,"SetBackdrop",{bgFile="Interface\\Buttons\\WHITE8X8",edgeFile="Interface\\Buttons\\WHITE8X8",edgeSize=1})
+  self:Paint(frame,"SetBackdropColor",.05,.08,.12,1); self:Paint(frame,"SetBackdropBorderColor",.25,.42,.58,1)
+  self:Paint(frame,"RegisterForDrag","LeftButton")
+  self:Paint(frame,"SetScript","OnDragStart",function() self:Guard(function()
+   if self:CommitCustomNumbers() then self.customDragging=index; self:Paint(frame,"SetAlpha",.5); self:CustomMessage("松开鼠标，将技能移到指向条目的位置。") end
+  end) end)
+  self:Paint(frame,"SetScript","OnDragStop",function() self:Guard(function()
+   local source=self.customDragging; self.customDragging=nil; self:Paint(frame,"SetAlpha",1)
+   if not source then return end
+   for target,w in ipairs(self.customWidgets) do
+    local ok,raw=S.Call("MouseIsOver",w.frame)
+    if ok and S.Public(raw,"boolean")==true and self.customDraft[target] then self:ReorderCustomRule(source,target); break end
+   end
+  end) end)
+  local name=self:Text(frame,6,-7,324,"GameFontHighlightSmall")
+  self:CreateActionButton(frame,"编辑",330,-2,48,function() if self:CommitCustomNumbers() then self.customSelected=index; self.customFormIndex=nil; self:RefreshCustomAPL(); self:Paint(self.strategyPanel,"Show") end end)
   self:CreateActionButton(frame,"↑",383,-2,38,function() self:MoveCustomRule(index,-1) end)
   self:CreateActionButton(frame,"↓",425,-2,38,function() self:MoveCustomRule(index,1) end)
   self:CreateActionButton(frame,"删",467,-2,48,function()
@@ -134,39 +128,9 @@ function U:CreateCustomAPLEditor(parent)
   end)
   self.customWidgets[i]={frame=frame,name=name}
  end
- local conditionScroll=self:Frame("ScrollFrame",parent,"UIPanelScrollFrameTemplate")
- self:Paint(conditionScroll,"SetPoint","TOPLEFT",parent,"TOPLEFT",0,-315); self:Paint(conditionScroll,"SetSize",550,280)
- local settings=self:Frame("Frame",conditionScroll); self:Paint(settings,"SetSize",530,580); self:Paint(conditionScroll,"SetScrollChild",settings)
- self:CreateToggleRow(settings,"当前规则启用",0,0,530,function() local r=self:CustomRow(); return r and r.enabled==true end,function(v) local r=self:CustomRow(); if r then r.enabled=v end end)
- self:CreateSelectRow(settings,"移动条件",{{"any","不限"},{"yes","移动中"},{"no","站定"}},0,-36,530,
-  function() local r=self:CustomRow(); return r and r.moving or "any" end,function(v) local r=self:CustomRow(); if r then r.moving=v end end)
- self:CreateSelectRow(settings,"额外技能冷却活动信号（不是ready）",{{"any","不限"},{"active","活动"},{"inactive","非活动"}},0,-96,530,
-  function() local r=self:CustomRow(); return r and r.activity or "any" end,function(v) local r=self:CustomRow(); if r then r.activity=v end end)
- self:CreateToggleRow(settings,"实验可见敌人数（非命中数）",0,-156,530,
-  function() local r=self:CustomRow(); return r and r.experimentalEnemies end,function(v) local r=self:CustomRow(); if r then r.experimentalEnemies=v end end)
- self.customNumbers={enemyMin=self:SequenceInput(settings,300,-190,60),enemyMax=self:SequenceInput(settings,440,-190,60)}
- self:Paint(self:Text(settings,0,-197,285,"GameFontHighlightSmall"),"SetText","可见敌人数：下限/上限（空白不限）")
- self:Paint(self:Text(settings,370,-197,60,"GameFontHighlightSmall"),"SetText","～")
- local ops={{"any","不限"},{"lt","<"},{"le","≤"},{"eq","="},{"ne","≠"},{"ge","≥"},{"gt",">"}}
- for _,spec in ipairs({{"distance","目标距离（码）",-230,2000}}) do
-  local prefix,y=spec[1],spec[3]
-  self:CreateSelectRow(settings,spec[2],ops,0,y,530,function() local r=self:CustomRow(); return r and r[prefix .. "Op"] or "any" end,function(v) local r=self:CustomRow(); if r then r[prefix .. "Op"]=v end end)
-  self.customNumbers[prefix .. "Value"]=self:SequenceInput(settings,320,y-60,130)
-  self:Paint(self:Text(settings,0,y-67,310,"GameFontHighlightSmall"),"SetText","阈值（公开数值才比较；UNKNOWN等待）")
- end
- self:CreateSelectRow(settings,"CDM观察类型（活动≠ready；增益非Aura真值）",{{"none","不限"},{"buff","增益活动"},{"cooldown","冷却活动"}},0,-330,530,
-  function() local r=self:CustomRow(); return r and r.cdmKind or "none" end,function(v) local r=self:CustomRow(); if r then r.cdmKind=v end end)
- self:CreateSelectRow(settings,"CDM要求（帧缺失/Secret为未知）",{{"inactive","未活动"},{"active","活动中"}},0,-390,530,
-  function() local r=self:CustomRow(); return r and r.cdmState or "inactive" end,function(v) local r=self:CustomRow(); if r then r.cdmState=v end end)
- self.customNumbers.cdmSpellID=self:SequenceInput(settings,320,-450,130)
- self:Paint(self:Text(settings,0,-457,310,"GameFontHighlightSmall"),"SetText","CDM目录SpellID（空白=当前技能ID）")
- self:Paint(self:Text(settings,0,-495,530,"GameFontHighlightSmall"),"SetText","例如推荐205，CDM填116；推荐143，CDM填133。仅观察目录身份，不增加施法成功别名。距离：精确值优先，估测跨阈值时等待。")
- local stateScroll=self:Frame("ScrollFrame",parent,"UIPanelScrollFrameTemplate")
- self:Paint(stateScroll,"SetPoint","TOPLEFT",parent,"TOPLEFT",0,-603); self:Paint(stateScroll,"SetSize",550,44)
- local stateChild=self:Frame("Frame",stateScroll); self:Paint(stateChild,"SetSize",530,240); self:Paint(stateScroll,"SetScrollChild",stateChild)
- self.customState=self:Text(stateChild,0,0,530,"GameFontHighlightSmall")
- self.customMessage=self:Text(parent,0,-655,580,"GameFontHighlightSmall")
- self:CustomMessage("已移除蓝量和冷却数值条件；旧条件迁移删除。血量及Duration仅后台探测。")
+ self.customMessage=self:Text(parent,0,-612,570,"GameFontHighlightSmall")
+ self:CreateStrategyPanel()
+ self:CustomMessage("从上往下检查；使用条件全部满足，否则检查下一技能。")
 end
 function U:MoveCustomRule(index,direction)
  if not self:CommitCustomNumbers() then return end
@@ -174,4 +138,137 @@ function U:MoveCustomRule(index,direction)
  if other<1 or other>#self.customDraft then return end
  self.customDraft[index],self.customDraft[other]=self.customDraft[other],self.customDraft[index]
  self.customSelected=other; self.customFormIndex=nil; self:RefreshCustomAPL()
+end
+
+function U:ReorderCustomRule(index,other)
+ if not self:CommitCustomNumbers() or not self.customDraft[index] or not self.customDraft[other] then return end
+ local row=table.remove(self.customDraft,index); table.insert(self.customDraft,other,row)
+ self.customSelected=other; self.customFormIndex=nil; self:RefreshCustomAPL()
+end
+local strategyKinds={"usable","range","distance","moving","enemies","cdmCooldown","cdmBuff","cooldown"}
+local strategyNames={usable="技能可用性",range="技能范围",distance="目标距离",moving="移动状态",enemies="可见敌人数",cdmCooldown="CDM冷却状态",cdmBuff="CDM增益状态",cooldown="技能是否CD"}
+function U:ChangeCustomStrategy(callback)
+ if not self:CommitCustomNumbers() then return end
+ local row=self:CustomRow(); if not row then return end
+ row.strategies=row.strategies or {}; callback(row)
+ self.customFormIndex=nil; self:RefreshCustomAPL()
+end
+function U:RefreshStrategyForm()
+ if not self.strategyPanel then return end
+ local row=self:CustomRow()
+ self:Paint(self.strategyTitle,"SetText",row and ("策略条件设置 · " .. S.Spell(row.spellID,tostring(row.spellID)).name) or "策略条件设置 · 未选择技能")
+ if self.customFormIndex==self.customSelected then return end
+ self.customFormIndex=self.customSelected
+ self:Paint(self.strategyKindMenu,"Hide")
+ if self.strategyForm then self:Paint(self.strategyForm,"Hide") end
+ if self.strategyFormControls then
+  local keep={}; for _,sync in ipairs(self.controls) do if not self.strategyFormControls[sync] then keep[#keep+1]=sync end end
+  self.controls=keep
+ end
+ local first=#self.controls
+ local form=self:Frame("Frame",self.strategyScroll); self.strategyForm=form
+ self:Paint(form,"SetSize",390,100); self:Paint(self.strategyScroll,"SetScrollChild",form)
+ self.strategyInputs={}; self.customNumbers={}
+ local y=0
+ if row then
+  self:CreateToggleRow(form,"启用当前技能",0,y,390,function() return row.enabled end,function(v) row.enabled=v end); y=y-40
+  self:CreateSelectRow(form,"施放类型（自动无法确认时手动选择）",{{"auto","自动"},{"self","自身"},{"friendly","友方"},{"enemy","敌方"},{"ground","地面"}},0,y,390,
+   function() return row.targetMode or "auto" end,function(v) row.targetMode=v end); y=y-68
+  self:CreateHintText(form,"地面技能只发送现有按键，落点由玩家操作。",0,y,390); y=y-32
+  if (row.moving and row.moving~="any") or (row.activity and row.activity~="any") or (row.distanceOp and row.distanceOp~="any") or (row.cdmKind and row.cdmKind~="none") or row.enemyMin or row.enemyMax then
+   self:CreateHintText(form,"保留旧配置条件，与新策略共同判断；清空可移除旧条件。",0,y,390); y=y-40
+  end
+  for si,strategy in ipairs(row.strategies or {}) do
+   local index=si; local card=self:Frame("Frame",form,"BackdropTemplate")
+   local height=50+#strategy.conditions*98
+   self:Paint(card,"SetPoint","TOPLEFT",form,"TOPLEFT",0,y); self:Paint(card,"SetSize",390,height)
+   self:Paint(card,"SetBackdrop",{bgFile="Interface\\Buttons\\WHITE8X8",edgeFile="Interface\\Buttons\\WHITE8X8",edgeSize=1})
+   self:Paint(card,"SetBackdropColor",.045,.075,.11,1); self:Paint(card,"SetBackdropBorderColor",.25,.45,.60,1)
+   self:CreateSegmentedControl(card,{{"use","使用"},{"skip","跳过"}},8,-8,160,function() return strategy.mode end,function(v) strategy.mode=v end)
+   self:CreateActionButton(card,"+ 条件",176,-8,95,function() self:ChangeCustomStrategy(function()
+    if #strategy.conditions>=8 then self:CustomMessage("每条策略最多8个条件。"); return end
+    strategy.conditions[#strategy.conditions+1]={kind="usable",value=true}
+   end) end)
+   self:CreateActionButton(card,"删除策略",279,-8,102,function() self:ChangeCustomStrategy(function(r) table.remove(r.strategies,index) end) end)
+   for ci,condition in ipairs(strategy.conditions) do
+    local conditionIndex=ci; local cy=-46-(ci-1)*98
+    local typeButton=self:CreateActionButton(card,strategyNames[condition.kind] or "未知条件",8,cy,190,function() end)
+    self:Paint(typeButton,"SetScript","OnClick",function() self:Guard(function()
+     self:Paint(self.strategyKindMenu,"ClearAllPoints"); self:Paint(self.strategyKindMenu,"SetPoint","TOPLEFT",typeButton,"BOTTOMLEFT",0,-2)
+     self.strategyKindTarget=condition; self:Paint(self.strategyKindMenu,"Show")
+    end) end)
+    self:CreateActionButton(card,"删除条件",282,cy,99,function() self:ChangeCustomStrategy(function()
+     table.remove(strategy.conditions,conditionIndex); if #strategy.conditions==0 then table.remove(row.strategies,index) end
+    end) end)
+    local function input(field,x,width)
+     local box=self:SequenceInput(card,x,cy-36,width)
+     self:Paint(box,"SetText",condition[field] and tostring(condition[field]) or "")
+     self.strategyInputs[#self.strategyInputs+1]={box=box,condition=condition,field=field}
+    end
+    if condition.kind=="distance" or condition.kind=="enemies" then
+     if condition.op then
+      local ops={{"lt","<"},{"le","≤"},{"eq","="},{"ne","≠"},{"ge","≥"},{"gt",">"}}
+      self:CreateSegmentedControl(card,ops,8,cy-36,250,function() return condition.op end,function(v) condition.op=v end)
+      input("threshold",280,92)
+      self:CreateHintText(card,"保留旧条件的比较方式；重新选择目标距离可改为区间。",8,cy-70,370)
+     else
+     self:CreateHintText(card,condition.kind=="distance" and "码数：下限～上限（含边界）" or "数量：下限～上限（可见姓名板）",8,cy-40,205)
+     input("min",220,65); input("max",307,65)
+     self:CreateHintText(card,"单边可留空；距离区间跨越阈值时视为未知。",8,cy-70,370)
+     end
+    else
+     local labels=condition.kind=="moving" and {"移动中","站定"} or condition.kind=="cdmBuff" and {"存在","不存在"}
+      or (condition.kind=="cdmCooldown" or condition.kind=="cooldown") and {"冷却中","可用"} or condition.kind=="range" and {"范围内","范围外"} or {"可用","不可用"}
+     self:CreateSegmentedControl(card,{{true,labels[1]},{false,labels[2]}},8,cy-36,190,function() return condition.value end,function(v) condition.value=v end)
+     if condition.kind=="cdmCooldown" or condition.kind=="cdmBuff" then
+      input("spellID",270,102); self:CreateHintText(card,"ID",230,cy-42,35)
+      self:CreateHintText(card,"ID空白=当前技能；帧缺失为未知；增益存在指帧活动。",8,cy-70,370)
+     end
+    end
+   end
+   y=y-height-12
+  end
+  if #(row.strategies or {})==0 then self:CreateHintText(form,"点击 [+] 添加策略；没有策略时按基础可用性判断。",0,y,390); y=y-55 end
+ end
+ self:Paint(form,"SetHeight",math.max(120,-y))
+ self.strategyFormControls={}; for i=first+1,#self.controls do self.strategyFormControls[self.controls[i]]=true end
+end
+function U:CreateStrategyPanel()
+ local panel=self:Frame("Frame",self.settings,"BackdropTemplate","TEF_StrategySettings"); self.strategyPanel=panel
+ self:Paint(panel,"SetPoint","TOPLEFT",self.settings,"TOPRIGHT",8,0); self:Paint(panel,"SetSize",430,720)
+ self:Paint(panel,"SetBackdrop",{bgFile="Interface\\Buttons\\WHITE8X8",edgeFile="Interface\\Buttons\\WHITE8X8",edgeSize=2})
+ self:Paint(panel,"SetBackdropColor",.025,.035,.055,.98); self:Paint(panel,"SetBackdropBorderColor",.25,.45,.60,1)
+ self.strategyTitle=self:Text(panel,15,-18,335,"GameFontNormal")
+ self:CreateActionButton(panel,"关闭",365,-12,52,function() self:Paint(panel,"Hide") end)
+ self:CreateHintText(panel,"使用条件全部满足；任一跳过策略满足则跳过。未知不授权使用。",15,-51,395)
+ self:CreateActionButton(panel,"+",365,-84,50,function() self:ChangeCustomStrategy(function(r)
+  if #r.strategies>=8 then self:CustomMessage("每个技能最多8条策略。"); return end
+  r.strategies[#r.strategies+1]={mode="use",conditions={{kind="usable",value=true}}}
+ end) end)
+ self:CreateHintText(panel,"每条策略内的条件共同满足（AND）",15,-91,335)
+ self.strategyScroll=self:Frame("ScrollFrame",panel,"UIPanelScrollFrameTemplate")
+ self:Paint(self.strategyScroll,"SetPoint","TOPLEFT",panel,"TOPLEFT",15,-126); self:Paint(self.strategyScroll,"SetSize",385,530)
+ self:CreateActionButton(panel,"保存",15,-675,190,function()
+  if not self:CommitCustomNumbers() then return end
+  local ok,reason=C:Save(self.engine,self.customDraft,self.customLoadedScene,self.customClass)
+  if ok and self.engine.db.enabledPlans.apl[self.customLoadedScene] then ok,reason=T.Profiles:UsePlan(self.engine,"apl",self.customLoadedScene) end
+  self:CustomMessage(ok and "已保存并停止派发；关闭设置后主动开启。" or (reason or "保存失败"))
+ end)
+ self:CreateActionButton(panel,"清空",220,-675,190,function() self.strategyInputs={}; self:ChangeCustomStrategy(function(r)
+  r.strategies={}; r.moving="any"; r.activity="any"; r.distanceOp="any"; r.distanceValue=nil
+  r.cdmKind="none"; r.cdmSpellID=nil; r.enemyMin=nil; r.enemyMax=nil
+ end); self:CustomMessage("已清空当前技能条件草稿；保存后生效。") end)
+ local menu=self:Frame("Frame",panel,"BackdropTemplate"); self.strategyKindMenu=menu
+ self:Paint(menu,"SetSize",195,#strategyKinds*30+8); self:Paint(menu,"SetFrameStrata","DIALOG")
+ self:Paint(menu,"SetBackdrop",{bgFile="Interface\\Buttons\\WHITE8X8",edgeFile="Interface\\Buttons\\WHITE8X8",edgeSize=1})
+ self:Paint(menu,"SetBackdropColor",.03,.05,.08,1)
+ for i,kind in ipairs(strategyKinds) do local selectedKind=kind
+  self:CreateActionButton(menu,strategyNames[kind],4,-4-(i-1)*30,187,function() self:ChangeCustomStrategy(function()
+   local c=self.strategyKindTarget; if not c then return end
+   for k in pairs(c) do c[k]=nil end
+   c.kind=selectedKind
+   if selectedKind=="distance" then c.max=20 elseif selectedKind=="enemies" then c.min=1 else c.value=selectedKind~="cdmCooldown" and selectedKind~="cooldown" end
+  end); self:Paint(menu,"Hide") end)
+ end
+ self:Paint(menu,"Hide"); self:Paint(panel,"Hide")
 end
