@@ -46,6 +46,7 @@ function C:Changed(state,reason)
     self.notifying=false
 end
 function C:EngineCall(method)
+    if method=="Reset" and self.e.maintenanceActive then TEF.Maintenance:Restore(self.e,"MAINTENANCE_RESET") end
     self.internal=true
     local ok=pcall(self.e[method],self.e)
     self.internal=false
@@ -66,6 +67,7 @@ function C:ReplaceRecommendation(rows)
     return result
 end
 function C:Initialize(e)
+    self.maintenanceManual=false
     self.e=e; self.intent=false; self.worldSeen=false; self.state="paused"
     self.reason=nil; self.cycle=0; self.requestSerial=0
     e.db.dispatch=self.Clean(e.db.dispatch)
@@ -74,10 +76,14 @@ end
 function C:Invalidated(e)
     -- Explicit edits/reset and the retained developer Engine API stop intent.
     if e==self.e and not self.internal then
+        self.maintenanceManual=false
+        if e.maintenanceActive then TEF.Maintenance:Restore(e,"MAINTENANCE_INVALIDATED") end
         self.intent=false; self:Changed("paused","RUNTIME_CONFIGURATION_INVALIDATED")
     end
 end
 function C:Stop(reason,state)
+    self.maintenanceManual=false
+    if self.e.maintenanceActive then TEF.Maintenance:Restore(self.e,"MAINTENANCE_STOPPED") end
     local wasEnabled=self.intent
     self.intent=false
     if wasEnabled then self:PlayIntentSound(false) end
@@ -101,10 +107,12 @@ function C:Suspend(reason,state)
 end
 function C:SetIntent(enabled,reason)
     if enabled~=true then self:Stop(reason); return true end
+    self.maintenanceManual=reason~="RUNTIME_AUTO_WORLD"
     if self.intent then return true,"RUNTIME_ALREADY_ENABLED" end
+    self.e.maintenanceDone={}; self.e.maintenanceSnapshot=nil
     if self.e.identitySaturated then self:Fault("RUNTIME_IDENTITY_CAPACITY_RELOAD_REQUIRED"); return false end
     if self.e.clientValidated==false then self:Fault("RUNTIME_CLIENT_UNVERIFIED"); return false end
-    if not TEF.Recommendation:Configured(self.e) then self:Stop("RUNTIME_PROFILE_UNCONFIGURED"); return false end
+    if not TEF.Recommendation:Configured(self.e) and not TEF.Maintenance:Enabled(self.e) then self:Stop("RUNTIME_PROFILE_UNCONFIGURED"); return false end
     if self.e.completed and not self:EngineCall("Reset") then return false end
     self.intent=true
     if self.e.db.dispatch.signal and not TEF.Transport.enabled then
@@ -158,9 +166,11 @@ function C:World()
     local first=not self.worldSeen; self.worldSeen=true
     self.e:ClearUsage()
     self:Stop("RUNTIME_WORLD_INVALIDATED")
-    if first and self.e.db.dispatch.autoStart then self:SetIntent(true) end
+    if first and self.e.db.dispatch.autoStart then self:SetIntent(true,"RUNTIME_AUTO_WORLD") end
 end
 function C:TryConfirmAttackEnabled()
+    local policy=TEF.Dispatch:ManualPolicy(self.e,self.e.steps and self.e.steps[self.e.index])
+    if policy~=true then return false end
     local e=self.e; local step=e.steps and e.steps[e.index]
     if not self.intent or not step or step.spellID~=6603 or TEF.Recommendation:Source(e)~="manual"
         or (e.attackActivationStreak or 0)>=#e.steps then return false end
@@ -188,17 +198,27 @@ function C:Reconcile()
     self.e:ObserveUsageCombat()
     if not self.intent then return end
     local e=self.e
+    TEF.Maintenance:Refresh(e)
     if e.identitySaturated then self:Fault("RUNTIME_IDENTITY_CAPACITY_RELOAD_REQUIRED"); return end
     if TEF.APL:IsActive(e) and not TEF.UI.settingsOpen then TEF.APL:Refresh(e) end
     local generation,index,serial=e.generation,e.index,e.receiptSerial or 0
     local function current() return self.intent and self.e==e and TEF.engine==e and generation==e.generation and index==e.index and serial==(e.receiptSerial or 0) end
-    if e.completed then self:Stop("RUNTIME_COMPLETED","completed"); return end
+    if e.completed then
+        if TEF.Maintenance:Enabled(e) and (self.maintenanceManual or TEF.APL.State.Boolean("InCombatLockdown")==true) then self:Suspend("MAINTENANCE_IDLE","standby")
+        else self:Stop("RUNTIME_COMPLETED","completed") end
+        return
+    end
     if not e.db.dispatch.permission or not e.db.dispatch.signal then self:Stop("RUNTIME_GATE_OFF"); return end
-    if not TEF.Recommendation:Configured(e) then self:Suspend("RUNTIME_PROFILE_UNCONFIGURED"); return end
+    if not TEF.Recommendation:Configured(e) then
+        if TEF.Maintenance:Enabled(e) and self.maintenanceManual then self:Suspend("MAINTENANCE_IDLE","standby")
+        else self:Suspend("RUNTIME_PROFILE_UNCONFIGURED") end
+        return
+    end
     local ok,raw=S.Call("InCombatLockdown"); local combat
     if ok then combat=S.Public(raw,"boolean") end
     if not current() then return end
-    if e.db.dispatch.mode=="stop" and combat==false then self:Stop("RUNTIME_OUT_OF_COMBAT_STOP"); return end
+    local maintenanceOutside=combat==false and self.maintenanceManual and TEF.Maintenance:Enabled(e)
+    if e.db.dispatch.mode=="stop" and combat==false and not maintenanceOutside then self:Stop("RUNTIME_OUT_OF_COMBAT_STOP"); return end
     if TEF.UI.settingsOpen then self:Suspend("RUNTIME_SETTINGS_STANDBY","standby"); return end
     if combat==nil then self:Suspend("RUNTIME_COMBAT_UNKNOWN"); return end
     if e:HasUsagePolicy() then
@@ -209,7 +229,8 @@ function C:Reconcile()
         if not current() then return end
         if not allowed then self:Suspend(reason); return end
     end
-    if e.db.dispatch.mode=="auto" and combat==false then
+    if maintenanceOutside and not e.maintenanceActive then self:Suspend("MAINTENANCE_IDLE","standby"); return end
+    if e.db.dispatch.mode=="auto" and combat==false and not TEF.Maintenance:OutsideAllowed(e) then
         if TEF.Recommendation:Source(e)=="manual" then
             -- 待命保留固定序列的精确回执监听，输入仍由派发门禁控制。
             -- 不反复恢复或暂停，避免清除手动起手跨进战斗的身份。
@@ -221,6 +242,48 @@ function C:Reconcile()
             self:Changed("standby","RUNTIME_AUTO_STANDBY")
         else self:Suspend("RUNTIME_AUTO_STANDBY","standby") end
         return
+    end
+    if TEF.Recommendation:Source(e)=="manual" then
+        local step=e.steps and e.steps[e.index]
+        if step and (step.enabled==false or (step.strategies and #step.strategies>0) or (step.targetMode and step.targetMode~="auto")) and not TEF.Dispatch:InputIdle() then
+            if e:RecommendationLocked() then TEF.Dispatch:YieldCast("CONTINUOUS_TEXT_FOCUS_OR_UNKNOWN"); self:Changed("blocked","CONTINUOUS_TEXT_FOCUS_OR_UNKNOWN")
+            else self:Suspend("CONTINUOUS_TEXT_FOCUS_OR_UNKNOWN") end
+            return
+        end
+        local allowed,reason=TEF.Dispatch:ManualPolicy(e,step)
+        if not current() then return end
+        if allowed~=true and e:RecommendationLocked() then
+            TEF.Dispatch:YieldCast("SEQUENCE_POLICY_WAIT_RECEIPT"); self:Changed("blocked","SEQUENCE_POLICY_WAIT_RECEIPT"); return
+        end
+        if allowed~=true then
+            if allowed==nil then self:Suspend(reason or "SEQUENCE_POLICY_UNKNOWN"); return end
+            TEF.Dispatch:Cancel(reason or "SEQUENCE_POLICY_UNMATCHED")
+            self.internal=true; local ok,skipped=pcall(e.SkipUnavailable,e,"STRATEGY_STEP_SKIPPED"); self.internal=false
+            if not ok then self:Fault("SEQUENCE_POLICY_SKIP_FAILED")
+            elseif not skipped then
+                local now=TEF.APL.State.Time()
+                local sample=self.policyRecovery
+                local recover=now and (not sample or sample.engine~=e or now<sample.at or now-sample.at>=.20)
+                if recover then
+                    self.policyRecovery={engine=e,at=now}
+                    for candidate,other in ipairs(e.steps) do
+                        local eligible=TEF.Dispatch:ManualPolicy(e,other,true)
+                        if not current() then return end
+                        if eligible==true then
+                            self.internal=true; local ok=pcall(e.Invalidate,e,"SEQUENCE_POLICY_RECOVERED"); self.internal=false
+                            if not ok then self:Fault("SEQUENCE_POLICY_RECOVERY_FAILED"); return end
+                            e.index=candidate; e.stepCasts=0; e.policySkipStreak=0
+                            self:Changed("blocked","SEQUENCE_POLICY_RECOVERED"); return
+                        end
+                    end
+                end
+                self:Suspend("SEQUENCE_POLICY_ALL_BLOCKED")
+            elseif e.completed then
+                if TEF.Maintenance:Enabled(e) and (self.maintenanceManual or combat==true) then self:Suspend("MAINTENANCE_IDLE","standby") else self:Stop("RUNTIME_COMPLETED","completed") end
+            else self:Changed("blocked","STRATEGY_STEP_SKIPPED") end
+            return
+        end
+        if allowed==true then e.policySkipStreak=0 end
     end
     if self:TryConfirmAttackEnabled() then return end
     if not current() then return end
@@ -296,7 +359,7 @@ end
 function C:IsDispatchIntentEnabled() return self.intent end
 function C:View()
     local v=self:GetViewState()
-    return v.label .. " | " .. (v.source=="apl" and "自定义 APL" or v.profileKey) .. " | " .. (v.source=="apl" and "自定义APL" or "人工序列")
+    return v.label .. " | " .. (v.source=="apl" and "优先级推荐" or v.profileKey) .. " | " .. (v.source=="apl" and "优先级推荐" or "列表循环")
 end
 -- Internal compatibility, no additional public toggle or execution loop.
 C.Tick=C.Reconcile

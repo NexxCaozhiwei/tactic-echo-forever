@@ -24,6 +24,12 @@ local function fixture(repeats)
     now=12.29
 end
 local function tick() T.Runtime:Reconcile(); T.Dispatch:TickContinuous() end
+test("queue_next_disabled_policy_never_publishes_and_current_receipt_survives",function()
+    fixture(); now=12.31; T.engine.steps[2].enabled=false
+    tick(); eq(T.Dispatch.castQueue,nil); eq(T.Dispatch:Packet(),nil); eq(T.engine.receiptSerial or 0,0)
+    assert(T.Dispatch:HasCurrentInitiation())
+    T.engine.steps[2].enabled=true; tick(); assert(T.Dispatch.castQueue); assert(T.Dispatch:Packet())
+end)
 test("old_channel_stop_cannot_consume_next_channel_request",function()
     fixture()
     UnitCastingInfo=function() return nil end

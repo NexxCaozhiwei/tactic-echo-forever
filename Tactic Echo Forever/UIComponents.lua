@@ -2,6 +2,53 @@ local _,TEF=...
 local U,S=TEF.UI,TEF.Safety
 -- Independent TEUI-style components. Presentation holds no input authority.
 U.controls={}
+U.controlHeight=28
+U.controlFontSize=12
+function U:ApplyControlFont(control,isButton)
+    local target=control
+    if isButton then local ok,font=self:Invoke(control,"GetFontString"); if not ok or not font then return end; target=font end
+    local ok,path,_,flags=self:Invoke(GameFontHighlightSmall,"GetFont")
+    path=ok and S.Public(path,"string") or S.Public(STANDARD_TEXT_FONT,"string")
+    flags=S.Public(flags,"string") or ""
+    if path then self:Paint(target,"SetFont",path,self.controlFontSize,flags) end
+end
+function U:CreatePlanRename(parent,source,x,y,getter)
+    self.planRenameBoxes=self.planRenameBoxes or {}
+    local group=self:Frame("Frame",parent); self:Paint(group,"SetPoint","TOPLEFT",parent,"TOPLEFT",x,y); self:Paint(group,"SetSize",550,28)
+    parent=group; x=0; y=0
+    self:CreateHintText(parent,"方案名称",x,y-7,75)
+    local box=self:SequenceInput(parent,x+80,y,270); self:Paint(box,"SetMaxLetters",64)
+    self.planRenameBoxes[source]={box=box,getter=getter,frame=group}
+    local function save()
+        local ok,raw=self:Invoke(box,"GetText")
+        local valid=ok and TEF.Profiles:SetPlanName(self.engine,source,getter(),raw)
+        local text=valid and "方案名称已保存；空白恢复默认名称。" or "名称无效：最多64字节，不允许控制符或竖线。"
+        if source=="manual" then self:SequenceMessage(text) else self:CustomMessage(text) end
+        self:Paint(box,"ClearFocus"); self:RefreshPlanFeedback()
+    end
+    self:CreateActionButton(parent,"保存名称",x+365,y,120,save)
+    self:Paint(box,"SetScript","OnEnterPressed",function() self:Guard(save) end)
+end
+function U:RefreshPlanFeedback()
+    local e=self.engine; if not e then return end
+    local active=TEF.Recommendation:BaseSource(e)
+    for _,source in ipairs({"manual","apl"}) do
+        local key=source=="manual" and self.editScene or self.customScene
+        local controls=source=="manual" and self.manualPlanControls or self.customPlanControls
+        for slot,button in pairs(controls or {}) do
+            local using=active==source and e.scene==slot and e.db.enabledPlans[source][slot]
+            local text=TEF.Profiles:PlanName(slot,e,source)
+            local letters={}; for letter in text:gmatch("[\1-\127\194-\244][\128-\191]*") do letters[#letters+1]=letter end
+            if #letters>9 then local short={}; for i=1,9 do short[i]=letters[i] end; text=table.concat(short) .. "…" end
+            self:Paint(button,"SetText",(using and "|cff80ffcc" or "") .. text .. (using and " · 当前|r" or ""))
+        end
+        local using=active==source and e.scene==key and e.db.enabledPlans[source][key]==true
+        local button=source=="manual" and self.manualUseButton or self.customUseButton
+        if button then button.tefControlSelected=using; self:Paint(button,"SetText",using and "正在使用" or "使用本方案"); self:SetControlEnabled(button,key and e.db.enabledPlans[source][key]==true) end
+        local entry=self.planRenameBoxes and self.planRenameBoxes[source]
+        if entry and (entry.loaded~=key or entry.engine~=e) then entry.loaded=key; entry.engine=e; self:Paint(entry.box,"SetText",TEF.Profiles:PlanName(key,e,source)) end
+    end
+end
 function U:Guard(callback,...)
     local ok=pcall(callback,...)
     if not ok then
@@ -13,11 +60,12 @@ end
 function U:CreateActionButton(parent,label,x,y,width,callback)
     local b=self:Frame("Button",parent,"BackdropTemplate")
     b.tefControlEnabled=true
-    self:Paint(b,"SetSize",width or 120,28); self:Paint(b,"SetPoint","TOPLEFT",parent,"TOPLEFT",x,y)
+    self:Paint(b,"SetSize",width or 120,self.controlHeight); self:Paint(b,"SetPoint","TOPLEFT",parent,"TOPLEFT",x,y)
     self:Paint(b,"SetBackdrop",{bgFile="Interface\\Buttons\\WHITE8X8",edgeFile="Interface\\Buttons\\WHITE8X8",edgeSize=1})
     self:Paint(b,"SetBackdropColor",.07,.10,.15,1); self:Paint(b,"SetBackdropBorderColor",.21,.29,.39,1)
     self:Paint(b,"SetNormalFontObject",GameFontHighlightSmall)
     self:Paint(b,"SetText",label)
+    self:ApplyControlFont(b,true)
     self:Paint(b,"SetScript","OnEnter",function() if b.tefControlEnabled then self:Call(b,"SetBackdropColor",.12,.20,.28,1) end end)
     self:Paint(b,"SetScript","OnLeave",function() self:SetControlEnabled(b,b.tefControlEnabled) end)
     self:Paint(b,"SetScript","OnClick",function() if b.tefControlEnabled then self:Guard(callback); self:Refresh() end end)
@@ -62,7 +110,7 @@ function U:CreateDivider(parent,x,y,width)
     self:Paint(t,"SetColorTexture",.16,.22,.30,1); return t
 end
 function U:CreateToggleRow(parent,label,x,y,width,getter,setter)
-    self:Paint(self:Text(parent,x,y-6,width-95),"SetText",label)
+    local text=self:Text(parent,x,y-6,width-95); self:Paint(text,"SetText",label)
     local b=self:CreateActionButton(parent,"",x+width-85,y,85,function() setter(not getter()) end)
     local function sync()
         local enabled=getter()==true
@@ -70,7 +118,7 @@ function U:CreateToggleRow(parent,label,x,y,width,getter,setter)
         self:Paint(b,"SetText",enabled and "开启" or "关闭")
         self:SetControlEnabled(b,b.tefControlEnabled)
     end
-    self.controls[#self.controls+1]=sync; sync(); return b
+    self.controls[#self.controls+1]=sync; sync(); return b,text
 end
 function U:CreateSegmentedControl(parent,choices,x,y,width,getter,setter)
     local out={}; local cell=(width-(#choices-1)*6)/#choices
@@ -136,7 +184,8 @@ function U:CreateStatusBadge(parent,x,y,width)
 end
 function U:CreateHotkeyRow(parent,x,y,width)
     local box=self:Frame("EditBox",parent,"InputBoxTemplate","TEF_HotkeyEditor")
-    self:Paint(box,"SetSize",165,26); self:Paint(box,"SetPoint","TOPLEFT",parent,"TOPLEFT",x+5,y)
+    self:Paint(box,"SetSize",165,self.controlHeight); self:Paint(box,"SetPoint","TOPLEFT",parent,"TOPLEFT",x+5,y)
+    self:ApplyControlFont(box)
     self:Paint(box,"SetAutoFocus",false); self:Paint(box,"SetMaxLetters",40)
     self:Paint(box,"EnableKeyboard",true)
     self:Paint(box,"SetText",self.engine.db.dispatch.hotkey)

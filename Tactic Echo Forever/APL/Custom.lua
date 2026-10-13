@@ -151,6 +151,7 @@ function C.CleanProfiles(raw)
  return out
 end
 function C:Rows(e,scene)
+ if e.maintenanceActive and not scene then return T.Maintenance:Rows(e) end
  local p=e.db.apl.custom[e.classToken or ""]
  return p and p[scene or e.scene] or {}
 end
@@ -269,8 +270,9 @@ function C:CheckStrategies(state,row,index)
  if useUnknown or skipUnknown then return nil,"UNKNOWN:custom:strategy" end
  return true,"CUSTOM_STRATEGIES_TRUE"
 end
-function C:Sample(e,state)
- local rows=self:Rows(e); local countNeeded=false; local probes={}
+function C:Sample(e,state,provided)
+ if T.Maintenance then T.Maintenance:Context(e,state) end
+ local rows=provided or self:Rows(e); local countNeeded=false; local probes={}
  for i,row in ipairs(rows) do
   if row.enabled and row.experimentalEnemies and (row.enemyMin or row.enemyMax) then countNeeded=true end
   local action
@@ -288,6 +290,7 @@ function C:Sample(e,state)
  self:SampleStrategies(state,rows)
 end
 function C:Check(state,row,index)
+ if state.maintenanceOwned and state.maintenanceOwned[row.spellID] then return false,"MAINTENANCE_OWNS_SPELL","MAINTENANCE" end
  if row.invalid then return false,row.invalid,"BLOCKED" end
  if not row.enabled then return false,"CUSTOM_DISABLED","DISABLED" end
  local action=state.actions["custom_" .. index] or {}; local unknown
@@ -325,7 +328,7 @@ function C:Check(state,row,index)
 end
 function C:Evaluate(state,config,class)
  local trace,candidate={},nil
- local rows=config.custom[class] and config.custom[class][state.scene] or {}
+ local rows=state.maintenanceRows or (config.custom[class] and config.custom[class][state.scene]) or {}
  for i,row in ipairs(rows) do
   local allowed,reason,status=self:Check(state,row,i)
   trace[#trace+1]={rule="custom:" .. i,result=status or (allowed==nil and "UNKNOWN" or allowed and "TRUE" or "FALSE"),reason=reason}

@@ -27,6 +27,7 @@ SequenceUsage.lua
 HudStyles.lua
 Profiles.lua
 Recommendation.lua
+Maintenance.lua
 Research.lua
 UI.lua
 UIComponents.lua

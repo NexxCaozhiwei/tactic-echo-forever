@@ -91,6 +91,11 @@ function D:IsSelfAction(id)
     if TEF.APL and TEF.APL:IsActive(e) and c and c.spellID==id then
         return c.target=="self" or c.target=="ground" or (TEF.APL.Abilities[c.action] and TEF.APL.Abilities[c.action].target=="self") or false
     end
+    local policy=self.manualPolicySnapshot
+    if TEF.Recommendation:Source(e)=="manual" and policy and policy.engine==e and policy.step.spellID==id and policy.state.generation==e.generation then
+        local action=policy.state.actions.custom_1
+        return action and (action.target=="self" or action.target=="ground") or false
+    end
     -- 自身目标分类必须由公开元数据确认；不从缺少敌方范围推断。
     local ok,info=S.Call("C_Spell.GetSpellInfo",id)
     local min,minReason,max,maxReason
@@ -112,7 +117,35 @@ function D:IsSelfAction(id)
     local harmful=S.Resolve("C_Spell.IsSpellHarmful") and "C_Spell.IsSpellHarmful" or "IsHarmfulSpell"
     return publicBoolean(helpful,id)==true and publicBoolean(harmful,id)==false
 end
-function D:ContinuousEvidence(id)
+function D:ManualPolicy(e,step,live)
+    if TEF.Recommendation:Source(e)~="manual" then return true end
+    if TEF.Maintenance:Owns(e,step and step.spellID) then return false,"MAINTENANCE_OWNS_SPELL" end
+    if not step then return nil,"SEQUENCE_POLICY_STEP_UNKNOWN" end
+    if step.enabled==false then return false,"SEQUENCE_POLICY_DISABLED" end
+    if not step.strategies or #step.strategies==0 then
+        if not step.targetMode or step.targetMode=="auto" then return true end
+    end
+    local now=TEF.APL.State.Time(); local revision=TEF.APL.State.revision or 0
+    local cached=self.manualPolicySnapshot
+    if not live and cached and cached.engine==e and cached.step==step and cached.state.generation==e.generation and cached.state.receiptSerial==(e.receiptSerial or 0)
+        and cached.state.revision==revision and now and cached.state.sampledAt and now>=cached.state.sampledAt and now-cached.state.sampledAt<.05 then
+        return cached.allowed,cached.reason
+    end
+    local row={spellID=step.spellID,enabled=true,moving="any",activity="any",distanceOp="any",cdmKind="none",strategies=step.strategies,targetMode=step.targetMode}
+    local state={generation=e.generation,receiptSerial=e.receiptSerial or 0,revision=revision,sampledAt=now,scene=e.scene,actions={},moving=TEF.APL.State.Boolean("IsPlayerMoving")}
+    local index=e.index
+    TEF.APL.Custom:Sample(e,state,{row})
+    if state.generation~=e.generation or state.receiptSerial~=(e.receiptSerial or 0) or index~=e.index or revision~=(TEF.APL.State.revision or 0) then return nil,"SEQUENCE_POLICY_STALE" end
+    local allowed,reason=TEF.APL.Custom:Check(state,row,1)
+    self.manualPolicySnapshot={engine=e,step=step,state=state,allowed=allowed,reason=reason}
+    return allowed,reason
+end
+function D:ContinuousEvidence(id,policyStep)
+    local e=TEF.engine
+    if TEF.Recommendation:Source(e)=="manual" then
+        local step=policyStep or (self.castQueue and e.steps[self.castQueue.nextIndex]) or (e.steps and e.steps[e.index])
+        if step and step.spellID==id then local allowed,reason=self:ManualPolicy(e,step); if allowed~=true then return false,reason end end
+    end
     if TEF.APL and TEF.APL:IsActive(TEF.engine) then
         local allowed,reason=TEF.APL:Allowed(TEF.engine,id)
         if not allowed then return false,reason end
@@ -120,10 +153,11 @@ function D:ContinuousEvidence(id)
     if not self:InputIdle() then return false,"CONTINUOUS_TEXT_FOCUS_OR_UNKNOWN" end
     local selfAction=self:IsSelfAction(id)
     local candidate=TEF.engine.aplCandidate
+    if TEF.Recommendation:Source(e)=="manual" and self.manualPolicySnapshot and self.manualPolicySnapshot.engine==e and self.manualPolicySnapshot.state.generation==e.generation and self.manualPolicySnapshot.step.spellID==id then candidate=self.manualPolicySnapshot.state.actions.custom_1 end
     if candidate and candidate.spellID==id and candidate.target=="ground" then
         if publicBoolean("SpellIsTargeting")~=false then return false,"GROUND_TARGETING_OR_UNKNOWN" end
     end
-    local friendly=TEF.APL:IsActive(TEF.engine) and candidate and candidate.spellID==id and candidate.target=="friendly"
+    local friendly=candidate and candidate.spellID==id and candidate.target=="friendly"
     local friendlyUnit
     if friendly then
         local reason; friendlyUnit,reason=TEF.APL.State.FriendlyUnit()
@@ -287,7 +321,9 @@ function D:TryCastQueue()
     if self.castQueueAttempt==self.initiation.guid then return false end
     local generation,index,serial,initiation=e.generation,e.index,e.receiptSerial or 0,self.initiation
     if step.skipUnavailable and TEF.Recommendation:Source(e)=="manual" and self:Unavailable(step.spellID)~=false then return false end
-    local allowed=self:ContinuousEvidence(step.spellID)
+    local policyAllowed=self:ManualPolicy(e,step,true)
+    if policyAllowed~=true then return false end
+    local allowed=self:ContinuousEvidence(step.spellID,step)
     if not allowed or generation~=e.generation or index~=e.index or serial~=(e.receiptSerial or 0)
         or self.initiation~=initiation or not self.continuous then return false end
     local q={generation=generation,index=index,receiptSerial=serial,
@@ -518,6 +554,8 @@ function D:Request(fromContinuous,queue)
     elseif queue and (queue~=self.castQueue or self:CastQueueWindow()~=queue.nextIndex) then blocked="CAST_QUEUE_WINDOW_CLOSED"
     elseif not queue and not self:TransportCastAllowed(fromContinuous==true) then blocked="TEK_CAST_PRESENT_OR_UNKNOWN" end
     if blocked then e:Log("transport",blocked); return false,blocked end
+    local policyAllowed,policyReason=self:ManualPolicy(e,queue and e.steps[queue.nextIndex] or step,true)
+    if policyAllowed~=true then return false,policyReason end
     local eligible,usageReason,usageContext=e:UsageEligibility(queue and queue.nextIndex or e.index)
     if eligible~=true then return false,usageReason end
     if TEF.APL and TEF.APL:IsActive(e) then
@@ -580,6 +618,9 @@ end
 function D:Packet()
     local p,e=self.pending,TEF.engine
     if not p then return nil end
+    local policyStep=e.steps and e.steps[p.castQueue and p.castQueue.nextIndex or e.index]
+    local policyAllowed,policyReason=self:ManualPolicy(e,policyStep,true)
+    if policyAllowed~=true then self:Cancel(policyReason or "SEQUENCE_POLICY_UNKNOWN"); return nil end
     if not self.enabled or not e.running or e.completed or e.generation~=p.generation or e.index~=p.index
         or p.receiptSerial~=(e.receiptSerial or 0) or TEF.UI.settingsOpen then self:Cancel("TEK_REQUEST_STALE"); return nil end
     local eligible,usageReason,usageContext=e:UsageEligibility(p.castQueue and p.castQueue.nextIndex or e.index)
@@ -609,9 +650,9 @@ function D:Packet()
     if ok then combat=S.Public(rawCombat,"boolean") end
     if combat==nil then self:Cancel("TEK_COMBAT_UNKNOWN"); return nil end
     if TEF.Runtime and TEF.Runtime.e==e and TEF.Runtime.intent
-        and e.db.dispatch.mode=="auto" and combat~=true then self:Cancel("RUNTIME_AUTO_STANDBY"); return nil end
+        and e.db.dispatch.mode=="auto" and combat~=true and not TEF.Maintenance:OutsideAllowed(e) then self:Cancel("RUNTIME_AUTO_STANDBY"); return nil end
     if p.castQueue and combat~=true then self:Cancel("CAST_QUEUE_COMBAT_REQUIRED"); return nil end
-    if TEF.APL and TEF.APL:IsActive(e) and combat~=true then self:Cancel("APL_DISPATCH_COMBAT_REQUIRED"); return nil end
+    if TEF.APL and TEF.APL:IsActive(e) and combat~=true and not TEF.Maintenance:OutsideAllowed(e) then self:Cancel("APL_DISPATCH_COMBAT_REQUIRED"); return nil end
     if self.pending~=p or not self.enabled or not e.running or e.completed
         or e.generation~=p.generation or e.index~=p.index or p.receiptSerial~=(e.receiptSerial or 0) or TEF.UI.settingsOpen then return nil end
     local stillEligible,_,freshContext=e:UsageEligibility(p.castQueue and p.castQueue.nextIndex or e.index)

@@ -366,7 +366,7 @@ test("hud_candidates_aaa_abb_abc_and_static_no_target",function()
  T.HUD.engine=e; e.db.hud.preview=true
  T.HUD:Refresh(); eq(T.HUD.cards[1].displayStep.spellID,143); eq(T.HUD.cards[2].displayStep.spellID,205); eq(T.HUD.cards[3].displayStep.spellID,2136)
  eq(e.generation,generation); eq(e.index,index); eq(T.Runtime.intent,intent)
- UnitExists=function() return F.secret end; eq(#T.Recommendation:HUDSteps(e),0)
+ UnitExists=function() return F.secret end; ids(143,205,2136)
  UnitExists=exists
 end)
 test("manual_hud_preview_filters_without_advancing_sequence",function()
@@ -387,6 +387,182 @@ test("ground_cursor_gate_and_target_mode_validation",function()
  A.Allowed=allowed; SpellIsTargeting=old
  assert(C.CleanRows({{spellID=143,targetMode="bad"}})[1].invalid)
  assert(C.CleanRows({{spellID=143,targetMode=F.secret}})[1].invalid)
+end)
+test("plan_names_source_independence_reload_and_current_feedback",function()
+ local e=F.runtime()
+ assert(T.Profiles:SetPlanName(e,"manual","single","练级循环")); assert(T.Profiles:SetPlanName(e,"apl","single","单体优先"))
+ eq(T.Profiles:PlanName("single",e,"manual"),"练级循环"); eq(T.Profiles:PlanName("single",e,"apl"),"单体优先")
+ eq(T.Profiles:SetPlanName(e,"manual","single","|cffbad"),false); eq(T.Profiles:SetPlanName(e,"manual","single",F.secret),false)
+ local copy=T.Engine.New(T.Config,e.db); eq(T.Profiles:PlanName("single",copy,"manual"),"练级循环")
+ assert(T.Profiles:UsePlan(e,"manual","single")); T.UI:ShowPage("profiles"); T.UI:RefreshPlanFeedback()
+ eq(T.UI.manualUseButton.text,"正在使用"); assert(T.UI.manualPlanControls.single.text:find("当前"))
+ assert(T.Profiles:SetPlanEnabled(e,"manual","multi",true)); assert(T.Profiles:UsePlan(e,"manual","multi"))
+ T.UI:RefreshPlanFeedback(); eq(T.UI.manualUseButton.text,"使用本方案"); assert(T.UI.manualPlanControls.multi.text:find("当前"))
+ assert(T.Profiles:SetPlanName(e,"manual","single","")); eq(T.Profiles:PlanName("single",e,"manual"),"方案一")
+end)
+test("manual_policy_skip_unknown_and_exact_receipt_protection",function()
+ local e=F.runtime(); assert(T.Recommendation:SetSource(e,"manual","single"))
+ local rows={{spellID=143,name="火球术",matchIDs={143},repeatCount=2,strategies={{mode="use",conditions={{kind="moving",value=true}}}}},
+  {spellID=205,name="寒冰箭",matchIDs={205}}}
+ assert(T.Profiles:Save(e,"single",rows)); IsPlayerMoving=function() return false end
+ T.Runtime:SetIntent(true); eq(e.index,2); eq(e.receiptSerial or 0,0); eq(e.stepCasts,0)
+ T.Runtime:Stop(); assert(T.Profiles:Save(e,"single",rows)); IsPlayerMoving=function() return F.secret end
+ T.Runtime:SetIntent(true); eq(e.index,1); eq(T.Runtime.state,"blocked")
+ IsPlayerMoving=function() return true end; A:Invalidate(); T.Runtime:Reconcile(); eq(T.Runtime.state,"running")
+ T.Dispatch:TickContinuous(); assert(T.Dispatch:Packet())
+ F.receipt("UNIT_SPELLCAST_SENT",143,"manual-policy-one")
+ IsPlayerMoving=function() return false end; A:Invalidate(); T.Runtime:Reconcile(); eq(e.index,1); eq(e.running,true)
+ F.receipt("UNIT_SPELLCAST_SUCCEEDED",143,"manual-policy-one"); eq(e.receiptSerial,1); eq(e.stepCasts,1)
+ T.Runtime:Reconcile(); eq(e.index,2); eq(e.receiptSerial,1)
+ local copy=T.Engine.New(T.Config,e.db); eq(copy.db.profiles.single[1].strategies[1].conditions[1].kind,"moving")
+end)
+test("manual_editor_policy_save_drag_and_plan_switch_preserve",function()
+ local e=F.runtime(); assert(T.Recommendation:SetSource(e,"manual","single"))
+ assert(T.Profiles:Save(e,"single",{{spellID=143,name="火球术",matchIDs={143}},{spellID=205,name="寒冰箭",matchIDs={205}}}))
+ T.UI.editScene="single"; T.UI:ShowPage("profiles"); T.UI:OpenSequencePolicy(1)
+ T.UI:ChangeCustomStrategy(function(r) r.strategies={{mode="use",conditions={{kind="distance",min=20,max=30}}}} end)
+ local rows=T.UI:DraftRows(); eq(rows[1].strategies[1].conditions[1].max,30)
+ local original=MouseIsOver; MouseIsOver=function(frame) return frame==T.UI.sequenceRows[2].frame end
+ T.UI.sequenceRows[1].frame.scripts.OnDragStart(); T.UI.sequenceRows[1].frame.scripts.OnDragStop()
+ rows=T.UI:DraftRows(); eq(rows[2].spellID,143); eq(rows[2].strategies[1].conditions[1].min,20); MouseIsOver=original
+ assert(T.Profiles:Save(e,"single",rows)); T.UI:ShowPage("customapl"); T.UI:ShowPage("profiles")
+ rows=T.UI:DraftRows(); eq(rows[2].strategies[1].conditions[1].max,30)
+ T.UI:OpenSequencePolicy(2); eq(T.UI.strategyPanel.shown,true); eq(T.UI:CustomRow().spellID,143)
+end)
+test("manual_all_policy_blocked_recovery_finds_earlier_eligible_step",function()
+ local e=F.runtime(); assert(T.Recommendation:SetSource(e,"manual","single"))
+ local rows={{spellID=143,name="火球术",matchIDs={143},strategies={{mode="use",conditions={{kind="moving",value=true}}}}},
+  {spellID=205,name="寒冰箭",matchIDs={205},enabled=false}}
+ assert(T.Profiles:Save(e,"single",rows)); e.db.loop=true; IsPlayerMoving=function() return false end
+ T.Runtime:SetIntent(true); for i=1,5 do T.Runtime:Reconcile() end
+ eq(T.Runtime.intent,true); eq(T.Runtime.state,"blocked"); eq(e.receiptSerial or 0,0); eq(T.Dispatch.pending,nil)
+ IsPlayerMoving=function() return true end; GetTime=function() return 10.3 end; A:Invalidate()
+ T.Runtime:Reconcile(); T.Runtime:Reconcile(); eq(e.index,1); eq(T.Runtime.state,"running")
+end)
+test("manual_policy_window_save_button_and_reload",function()
+ local e=F.runtime(); assert(T.Recommendation:SetSource(e,"manual","single"))
+ assert(T.Profiles:Save(e,"single",{{spellID=143,name="火球术",matchIDs={143}}}))
+ T.UI.editScene="single"; T.UI:ShowPage("profiles"); T.UI:OpenSequencePolicy(1)
+ T.UI:ChangeCustomStrategy(function(r) r.strategies={{mode="skip",conditions={{kind="moving",value=true}}}} end)
+ T.UI.strategySaveButton.scripts.OnClick()
+ local copy=T.Engine.New(T.Config,e.db); eq(copy.db.profiles.single[1].strategies[1].mode,"skip")
+ assert(T.Profiles:Select(copy,"single")); eq(copy.steps[1].strategies[1].mode,"skip")
+ eq(T.Runtime.intent,false)
+end)
+test("manual_invalid_policy_range_does_not_silently_drop_conditions",function()
+ local e=F.runtime(); assert(T.Recommendation:SetSource(e,"manual","single"))
+ assert(T.Profiles:Save(e,"single",{{spellID=143,name="火球术",matchIDs={143}}}))
+ T.UI.editScene="single"; T.UI:ShowPage("profiles"); T.UI:OpenSequencePolicy(1)
+ T.UI:ChangeCustomStrategy(function(r) r.strategies={{mode="use",conditions={{kind="distance",min=20,max=30}}}} end)
+ local low
+ for _,entry in ipairs(T.UI.strategyInputs) do if entry.field=="min" then low=entry.box; low.text="40" end end
+ eq(T.UI:CommitCustomNumbers(),false); eq(T.UI:DraftRows(),nil)
+ T.UI.strategySaveButton.scripts.OnClick(); eq(e.db.profiles.single[1].strategies,nil)
+ low.text="25"; eq(T.UI:CommitCustomNumbers(),true); T.UI.strategySaveButton.scripts.OnClick()
+ eq(e.db.profiles.single[1].strategies[1].conditions[1].min,25)
+end)
+test("third_priority_plan_source_and_name_survive_reload",function()
+ local e=F.runtime(); assert(C:Save(e,{row(143)},"third","MAGE"))
+ assert(T.Profiles:SetPlanEnabled(e,"apl","third",true)); assert(T.Profiles:SetPlanName(e,"apl","third","第三优先策略"))
+ assert(T.Profiles:UsePlan(e,"apl","third"))
+ local copy=T.Engine.New(T.Config,e.db); assert(T.Profiles:Select(copy,"third"))
+ eq(T.Recommendation:Source(copy),"apl"); eq(T.Profiles:PlanName("third",copy,"apl"),"第三优先策略")
+end)
+test("dead_hostile_target_hud_falls_back_without_dispatch",function()
+ local e=F.runtime(); assert(C:Save(e,{row(143),row(205),row(2136)},"single","MAGE"))
+ local exists,attack,dead=UnitExists,UnitCanAttack,UnitIsDeadOrGhost
+ UnitExists=function() return true end; UnitCanAttack=function() return true end; UnitIsDeadOrGhost=function() return true end
+ e.aplCandidate=nil; e.aplSnapshot=nil; e.aplPreviewSnapshot=nil
+ local v=T.Recommendation:HUDSteps(e); eq(v[1].spellID,143); eq(v[2].spellID,205); eq(v[3].spellID,2136)
+ T.Runtime:SetIntent(true); T.Dispatch:TickContinuous(); eq(T.Dispatch:Packet(),nil)
+ UnitIsDeadOrGhost=function() return F.secret end; e.aplCandidate=nil; e.aplSnapshot=nil; e.aplPreviewSnapshot=nil
+ eq(T.Recommendation:HUDSteps(e)[1].spellID,143)
+ UnitExists,UnitCanAttack,UnitIsDeadOrGhost=exists,attack,dead
+end)
+test("standby_no_eligible_rule_shows_default_order_read_only",function()
+ local e=F.runtime(); local rows={row(143),row(205),row(2136)}
+ for _,r in ipairs(rows) do r.moving="yes" end
+ assert(C:Save(e,rows,"single","MAGE")); IsPlayerMoving=function() return false end
+ T.Runtime:SetIntent(true); eq(e.aplCandidate,nil)
+ local serial,index,generation=e.receiptSerial or 0,e.index,e.generation
+ local v=T.Recommendation:HUDSteps(e); eq(v[1].spellID,143); eq(v[2].spellID,205); eq(v[3].spellID,2136)
+ T.Dispatch:TickContinuous(); eq(T.Dispatch:Packet(),nil); eq(e.receiptSerial or 0,serial); eq(e.index,index); eq(e.generation,generation)
+end)
+test("maintenance_outside_manual_only_preserves_list_progress_and_receipts",function()
+ local e=F.runtime(); assert(T.Recommendation:SetSource(e,"manual","single"))
+ assert(T.Profiles:Save(e,"single",{{spellID=143,name="火球术",matchIDs={143}},{spellID=205,name="寒冰箭",matchIDs={205},repeatCount=3}}))
+ local info,known,action,binding,button2=C_Spell.GetSpellInfo,C_SpellBook.IsSpellKnown,GetActionInfo,GetBindingKey,ActionButton2
+ C_Spell.GetSpellInfo=function(id) return {name=id==168 and "霜甲术" or id==205 and "寒冰箭" or "火球术"} end
+ C_SpellBook.IsSpellKnown=function() return true end
+ GetActionInfo=function(slot) if slot==1 then return "spell",168 elseif slot==2 then return "spell",205 end end
+ local button1=ActionButton1; ActionButton1={action=1,GetAttribute=function(self) return self.action end}
+ ActionButton2={action=2,GetAttribute=function(self) return self.action end}
+ GetBindingKey=function(command) if command=="ACTIONBUTTON1" then return "1" elseif command=="ACTIONBUTTON2" then return "2" end end
+ assert(T.Maintenance:Save(e,{{spellID=168,strategies={{mode="use",conditions={{kind="moving",value=false}}}}}}))
+ T.Maintenance:SetEnabled(e,true); local base=e.steps; e.index=2; e.stepCasts=1
+ InCombatLockdown=function() return false end; IsPlayerMoving=function() return false end
+ T.Runtime:World(); eq(T.Runtime.maintenanceManual,false); eq(e.maintenanceActive,nil); eq(T.Dispatch:Packet(),nil)
+ T.Runtime:Stop(); T.Dispatch:ClearBindingCache(); T.Runtime:SetIntent(true)
+ eq(e.maintenanceActive,true); eq(e.aplCandidate.spellID,168); T.Dispatch:TickContinuous(); assert(T.Dispatch:Packet(), tostring(T.Runtime.state)..":"..tostring(T.Runtime.reason))
+ F.receipt("UNIT_SPELLCAST_SENT",168,"maint-armor"); F.receipt("UNIT_SPELLCAST_SUCCEEDED",168,"maint-armor")
+ eq(e.receiptSerial,1); T.Runtime:Reconcile(); eq(e.maintenanceActive,nil); eq(e.steps,base); eq(e.index,2); eq(e.stepCasts,1)
+ eq(T.Runtime.intent,true); eq(T.Dispatch:Packet(),nil)
+ IsPlayerMoving=function() return true end; A:Invalidate(); T.Runtime:Reconcile()
+ IsPlayerMoving=function() return false end; A:Invalidate(); T.Runtime:Reconcile(); eq(e.maintenanceActive,true)
+ T.Runtime:Stop(); eq(e.maintenanceActive,nil); eq(T.Runtime.maintenanceManual,false); eq(e.index,2); eq(e.stepCasts,1)
+ C_Spell.GetSpellInfo,C_SpellBook.IsSpellKnown,GetActionInfo,GetBindingKey,ActionButton2=info,known,action,binding,button2; ActionButton1=button1
+end)
+test("maintenance_ui_singleton_buff_only_and_saved_separately",function()
+ local e=F.runtime(); local info=C_Spell.GetSpellInfo
+ C_Spell.GetSpellInfo=function(id) return {name=id==168 and "霜甲术" or "火球术"} end
+ T.UI:ShowPage("maintenance"); assert(T.UI.navigation.maintenance)
+ eq(T.UI:AddCustomSpell(143),false); eq(T.UI:AddCustomSpell(168),true)
+ eq(T.UI.customDraft[1].strategies[1].conditions[1].kind,"cdmBuff")
+ T.UI.customSave.scripts.OnClick(); eq(T.Maintenance:Rows(e)[1].spellID,168); eq(#C:Rows(e,"single"),0)
+ T.UI:ShowPage("customapl"); eq(#T.UI.customDraft,0); T.UI:ShowPage("maintenance"); eq(T.UI.customDraft[1].spellID,168)
+ local copy=T.Engine.New(T.Config,e.db); eq(T.Maintenance:Rows(copy)[1].spellID,168)
+ C_Spell.GetSpellInfo=info
+end)
+test("maintenance_unknown_conditions_and_damage_never_dispatch",function()
+ local e=F.runtime(); local info=C_Spell.GetSpellInfo
+ C_Spell.GetSpellInfo=function(id) return {name=id==168 and "霜甲术" or "火球术"} end
+ eq(T.Maintenance:Save(e,{{spellID=143}}),false)
+ assert(T.Maintenance:Save(e,{{spellID=168,strategies={{mode="use",conditions={{kind="cdmBuff",value=false,spellID=168}}}}}}))
+ T.Maintenance:SetEnabled(e,true); InCombatLockdown=function() return false end
+ T.Runtime:SetIntent(true); eq(e.maintenanceActive,nil); T.Dispatch:TickContinuous(); eq(T.Dispatch:Packet(),nil)
+ C_Spell.GetSpellInfo=info
+end)
+test("maintenance_can_start_without_battle_rows_and_defers_locked_cast",function()
+ local e=F.runtime(); local info,known=C_Spell.GetSpellInfo,C_SpellBook.IsSpellKnown
+ C_SpellBook.IsSpellKnown=function() return true end
+ C_Spell.GetSpellInfo=function(id) return {name=id==168 and "霜甲术" or "火球术"} end
+ assert(T.Recommendation:SetSource(e,"manual","single")); assert(T.Profiles:Save(e,"single",{}))
+ assert(T.Maintenance:Save(e,{{spellID=168}})); T.Maintenance:SetEnabled(e,true)
+ InCombatLockdown=function() return false end
+ local base=e.steps
+ assert(T.Runtime:SetIntent(true)); eq(e.maintenanceActive,true)
+ T.Runtime:Stop(); eq(e.maintenanceActive,nil); eq(e.steps,base)
+ assert(T.Profiles:Save(e,"single",{{spellID=143,name="火球术",matchIDs={143}}}))
+ InCombatLockdown=function() return true end
+ local locked=e.RecommendationLocked; e.RecommendationLocked=function() return true end
+ T.Runtime:SetIntent(true); eq(e.maintenanceActive,nil); eq(e.steps[1].spellID,143)
+ e.RecommendationLocked=locked; T.Runtime:Reconcile(); eq(e.maintenanceActive,true)
+ T.Runtime:Stop(); C_Spell.GetSpellInfo,C_SpellBook.IsSpellKnown=info,known
+end)
+test("maintenance_migrates_buff_once_and_filters_battle_duplicates",function()
+ local e=F.runtime(); local info=C_Spell.GetSpellInfo
+ assert(T.Recommendation:SetSource(e,"manual","single"))
+ C_Spell.GetSpellInfo=function(id) return {name=id==168 and "霜甲术" or "火球术"} end
+ local buff={spellID=168,enabled=true,repeatCount=1,matchIDs={168}}
+ e.db.classProfiles["MAGE:base"].single={buff}; e.db.apl.custom.MAGE={single={{spellID=168,enabled=true}}}
+ T.Maintenance:Initialize(e,{})
+ eq(#T.Maintenance:Rows(e),1); eq(T.Maintenance:Enabled(e),true)
+ eq(T.Maintenance:Rows(e)[1].strategies[1].conditions[1].kind,"cdmBuff")
+ eq(T.Dispatch:ManualPolicy(e,buff),false)
+ local s=state({row(168)}); T.Maintenance:Context(e,s); eq(C:Check(s,row(168),1),false)
+ T.Maintenance:Initialize(e,{maintenance={MAGE={enabled=false,rows={}}}})
+ eq(#T.Maintenance:Rows(e),0); eq(T.Maintenance:Enabled(e),false)
+ C_Spell.GetSpellInfo=info
 end)
 n=n+assert(loadfile((arg and arg[1] or ".") .. "/tests/public_conditions.lua"))("TEF",T,F)
 TEF_CUSTOM_APL_TEST_COUNT=n

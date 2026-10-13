@@ -12,7 +12,7 @@ end
 local detector=issecretvalue
 local function load(name) assert(loadfile(root .. "/" .. name))("Tactic Echo Forever",T) end
 load("Config.lua"); load("Safety.lua"); load("ActionSources.lua"); load("APL/Packs/Mage/Abilities.lua"); load("APL/Packs/Mage/Talents.lua"); load("APL/TalentState.lua"); load("APL/Registry.lua"); load("APL/PublicConditions.lua"); load("APL/Custom.lua"); load("APL/RankResolver.lua"); load("APL/Packs/Mage/BuildSelector.lua"); load("APL/State.lua"); load("APL/Conditions.lua"); load("APL/Trace.lua"); load("APL/Packs/Mage/Mage60.lua"); load("APL/Packs/Mage/Rules.lua"); load("APL/Engine.lua"); load("Sequence.lua"); load("SequenceUsage.lua")
-load("HudStyles.lua"); load("Profiles.lua"); load("Recommendation.lua"); load("Research.lua")
+load("HudStyles.lua"); load("Profiles.lua"); load("Recommendation.lua"); load("Maintenance.lua"); load("Research.lua")
 local standard=T.StandardConfig or T.Config
 local count=0
 local function test(name,fn)
@@ -1255,7 +1255,7 @@ test("hidden_auxiliary_pages_and_manual_loop_parent",function()
     eq(T.UI.testReset.parent,T.UI.pages.profiles)
     eq(T.UI.loopModeControls.normal.parent,T.UI.pages.profiles)
     eq(T.UI.sourceSelect.manual.parent,T.UI.pages.overview)
-    eq(T.UI.pageTitles.profiles,"人工序列")
+    eq(T.UI.pageTitles.profiles,"列表循环")
     eq(T.UI.editorScroll.shown,false); eq(T.UI.sequenceScroll.shown,true)
 end)
 test("hud_fallback_never_scans_metadata_bindings_or_spell_apis",function()

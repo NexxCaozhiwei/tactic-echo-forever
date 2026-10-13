@@ -26,7 +26,11 @@ local blockReasons={
     CONTINUOUS_BINDING_CHANGED={"输入", "技能按键已变化，等待重新确认"},
     RUNTIME_PROFILE_UNCONFIGURED={"配置", "当前推荐配置不可用"},
     RUNTIME_COMBAT_UNKNOWN={"模式", "无法确认战斗状态"},
-    APL_NO_CANDIDATE={"APL", "当前没有符合条件的自定义 APL 技能"},
+    APL_NO_CANDIDATE={"APL", "当前没有符合条件的优先级推荐 技能"},
+    STRATEGY_STEP_SKIPPED={"策略", "已跳过条件不满足的列表步骤"},
+    SEQUENCE_POLICY_WAIT_RECEIPT={"回执", "条件已变化，保留已起手施法的精确回执"},
+    SEQUENCE_POLICY_ALL_BLOCKED={"策略", "列表条件均未满足，等待条件变化"},
+    SEQUENCE_POLICY_RECOVERED={"策略", "列表已有符合条件的技能，正在恢复"},
 }
 function H:BlockCategory(reason)
     local code=S.Public(reason,"string")

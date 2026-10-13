@@ -136,8 +136,9 @@ function T.Clean(raw)
  return out
 end
 function T:View(e)
+ if e.maintenanceActive then return "增益维护 | " .. (e.aplCandidate and e.aplCandidate.rule or "等待符合条件的增益") end
  local t=e.aplTrace; if not t then return "法师 APL · 等待启动采样" end
- if e.db.apl.template=="custom" then return "自定义 APL | " .. (t.rule or t.reason) .. "\n从上往下选择首条满足规则；详见自定义APL页。" end
+ if e.db.apl.template=="custom" then return "优先级推荐 | " .. (t.rule or t.reason) .. "\n从上往下选择首条满足规则；详见优先级推荐页。" end
  local b=t.build or {}
  return "法师 APL（" .. e.db.apl.template .. "） | " .. (t.rule or t.reason) .. "\n天赋：" .. (b.ARCANE or "?") .. "/" .. (b.FIRE or "?") .. "/" .. (b.FROST or "?") .. "（仅诊断）"
 end

@@ -1,7 +1,7 @@
 local _,T=...
 local U,S,C=T.UI,T.Safety,T.APL.Custom
-function U:CustomMessage(text) self:Paint(self.customMessage,"SetText",text) end
-function U:CustomRow() return self.customDraft and self.customDraft[self.customSelected or 1] end
+function U:CustomMessage(text) if self.strategySource=="manual" then self:SequenceMessage(text) else self:Paint(self.customMessage,"SetText",text) end end
+function U:CustomRow() if self.strategySource=="manual" then return self.sequencePolicyRow end; return self.customDraft and self.customDraft[self.customSelected or 1] end
 function U:CommitCustomNumbers()
  local pending={}
  for _,entry in ipairs(self.strategyInputs or {}) do
@@ -16,19 +16,23 @@ function U:CommitCustomNumbers()
   pending[#pending+1]={condition=entry.condition,field=entry.field,value=n}
  end
  for _,entry in ipairs(pending) do entry.condition[entry.field]=entry.value end
+ if self:StoreSequencePolicy()==false then self:CustomMessage("策略条件无效：请检查范围上下限或清空条件后重建。"); return false end
  return true
 end
 function U:RefreshCustomAPL()
+ if self.strategySource=="manual" then self:RefreshStrategyForm(); return end
  local e=self.engine
+ local maintenance=self.page=="maintenance"
  if self.customEngine~=e then self.customScene=e.db.selectedPlans.apl end
- local scene=self.customScene or "single"
+ local scene=maintenance and "maintenance" or self.customScene or "single"
  if not self.customDraft or self.customEngine~=e or self.customClass~=e.classToken or self.customLoadedScene~=scene then
   self.customEngine=e
   self.customClass,self.customLoadedScene=e.classToken,scene
-  self.customDraft=C.CleanRows(C:Rows(e,scene)); self.customSelected=1; self.customFormIndex=nil; self.strategyInputs={}; self:Paint(self.strategyPanel,"Hide")
+  self.customMaintenanceMode=maintenance
+  self.customDraft=C.CleanRows(maintenance and T.Maintenance:Rows(e) or C:Rows(e,scene)); self.customSelected=1; self.customFormIndex=nil; self.strategyInputs={}; self:Paint(self.strategyPanel,"Hide")
   for _,row in ipairs(self.customDraft) do C:UpgradeStrategies(row) end
  end
- self:Paint(self.readouts.customapl,"SetText",(e.classToken or "职业未知") .. " · 编辑" .. T.Profiles:PlanName(scene) .. " · " .. #self.customDraft .. "/16条")
+ self:Paint(self.readouts.customapl,"SetText",(e.classToken or "职业未知") .. " · 编辑" .. T.Profiles:PlanName(scene,e,"apl") .. " · 当前使用：" .. T.Profiles:PlanName(e.scene,e,T.Recommendation:Source(e)) .. " · " .. #self.customDraft .. "/16条")
  for i,w in ipairs(self.customWidgets) do
   local row=self.customDraft[i]; self:Paint(w.frame,row and "Show" or "Hide")
   if row then
@@ -40,13 +44,20 @@ function U:RefreshCustomAPL()
  end
  self:Paint(self.customChild,"SetHeight",math.max(108,#self.customDraft*36))
  self:RefreshStrategyForm()
+ if maintenance then self:Paint(self.readouts.customapl,"SetText",(e.classToken or "职业未知") .. " · 增益维护 · " .. #self.customDraft .. "/16个增益法术") end
+ for _,button in pairs(self.customPlanControls or {}) do self:Paint(button,maintenance and "Hide" or "Show") end
+ self:Paint(self.planRenameBoxes.apl.frame,maintenance and "Hide" or "Show"); self:Paint(self.customUseButton,maintenance and "Hide" or "Show")
+ self:Paint(self.maintenanceHint,maintenance and "Show" or "Hide")
+ self:Paint(self.customEnableLabel,"SetText",maintenance and "启用增益维护" or "启用本方案")
 end
 function U:AddCustomSpell(id)
  if not self.customDraft then self:RefreshCustomAPL() end
  id=S.ID(id); if not id then self:CustomMessage("请输入公开合法技能ID。"); return false end
+ if self.page=="maintenance" and not T.Maintenance:BuffSpell(id) then self:CustomMessage("仅支持可确认的增益法术；治疗、伤害、造物和位移不能加入。"); return false end
  if not self:CommitCustomNumbers() then return false end
  if #self.customDraft>=16 then self:CustomMessage("最多16条规则。"); return false end
  self.customDraft[#self.customDraft+1]={spellID=id,enabled=true,moving="any",activity="any",distanceOp="any",cdmKind="none",experimentalEnemies=false,strategies={}}
+ if self.page=="maintenance" then self.customDraft[#self.customDraft].strategies={{mode="use",conditions={{kind="cdmBuff",value=false,spellID=id}}}} end
  self.customSelected=#self.customDraft; self.customFormIndex=nil; self:RefreshCustomAPL(); self:CustomMessage("已加入草稿；保存后生效。自动无法识别目标类型时，请编辑施放类型。"); return true
 end
 function U:ReceiveCustomSpell()
@@ -61,21 +72,24 @@ function U:CreateCustomAPLEditor(parent)
  self:Paint(parent,"SetScript","OnReceiveDrag",function() self:Guard(function() self:ReceiveCustomSpell() end) end)
  local function action(text,x,y,w,fn) return self:CreateActionButton(parent,text,x,y,w,fn) end
  self.customScene=self.customScene or "single"
- self:CreateSegmentedControl(parent,{{"single","方案一"},{"multi","方案二"},{"third","方案三"}},0,-30,550,
+ self.customPlanControls=self:CreateSegmentedControl(parent,{{"single","方案一"},{"multi","方案二"},{"third","方案三"}},0,-30,550,
   function() return self.customScene end,function(key) if self:CommitCustomNumbers() then self.customScene=key; self:RefreshCustomAPL() end end)
- self:CreateToggleRow(parent,"启用本方案",0,-76,250,
-  function() return self.engine.db.enabledPlans.apl[self.customScene] end,
-  function(value) T.Profiles:SetPlanEnabled(self.engine,"apl",self.customScene,value) end)
- action("使用本方案",280,-76,120,function()
+ self:CreatePlanRename(parent,"apl",0,-76,function() return self.customScene end)
+ self.customEnableButton,self.customEnableLabel=self:CreateToggleRow(parent,"启用本方案",0,-116,250,
+  function() return self.page=="maintenance" and T.Maintenance:Enabled(self.engine) or (self.page~="maintenance" and self.engine.db.enabledPlans.apl[self.customScene]) end,
+  function(value) if self.page=="maintenance" then T.Maintenance:SetEnabled(self.engine,value) else T.Profiles:SetPlanEnabled(self.engine,"apl",self.customScene,value) end end)
+ self.maintenanceHint=self:CreateHintText(parent,"优先于战斗来源；脱战需要手动开启派发。新技能默认要求CDM增益未活动，请核对目录ID；未知不补增益。",0,-32,550)
+ self:Paint(self.maintenanceHint,"Hide")
+ self.customUseButton=action("使用本方案",280,-116,120,function()
   local ok,reason=T.Profiles:UsePlan(self.engine,"apl",self.customScene)
   self:CustomMessage(ok and "已选择并停止派发；关闭设置后开启。" or "请先启用本方案。")
  end)
- self.customID=self:SequenceInput(parent,160,-110,90)
- action("ID新增",265,-110,80,function()
+ self.customID=self:SequenceInput(parent,160,-150,90)
+ action("ID新增",265,-150,80,function()
   local ok,raw=self:Invoke(self.customID,"GetText"); local text=ok and S.Public(raw,"string")
   self:AddCustomSpell(text and text:match("^%d+$") and tonumber(text))
  end)
- local drop=action("拖入技能",0,-110,140,function() self:ReceiveCustomSpell() end)
+ local drop=action("拖入技能",0,-150,140,function() self:ReceiveCustomSpell() end)
  self.customDrop=drop
  self:Paint(drop,"RegisterForDrag","LeftButton")
  self:Paint(drop,"RegisterForClicks","LeftButtonUp")
@@ -85,19 +99,20 @@ function U:CreateCustomAPLEditor(parent)
    self:ReceiveCustomSpell()
   end)
  end)
- self.customSave=action("保存配置",435,-76,140,function()
+ self.customSave=action("保存配置",435,-116,140,function()
   if not self:CommitCustomNumbers() then return end
+  if self.page=="maintenance" then local ok,reason=T.Maintenance:Save(self.engine,self.customDraft); self:CustomMessage(ok and "增益维护已保存并停止派发；关闭设置后手动开启。" or reason); return end
   local ok,reason=C:Save(self.engine,self.customDraft,self.customLoadedScene,self.customClass)
   if ok and self.engine.db.enabledPlans.apl[self.customLoadedScene] then ok,reason=T.Profiles:UsePlan(self.engine,"apl",self.customLoadedScene) end
   self:CustomMessage(ok and "已保存并停止派发；关闭设置后主动开启。" or (reason or "保存失败"))
  end)
- self:CreateSectionCard(parent,"技能列表 · 拖动条目或用上下箭头排序",0,-150,575,450)
- for _,edge in ipairs({{0,-150,575,2},{0,-598,575,2},{0,-150,2,450},{573,-150,2,450}}) do
+ self:CreateSectionCard(parent,"技能列表 · 拖动条目或用上下箭头排序",0,-190,575,450)
+ for _,edge in ipairs({{0,-190,575,2},{0,-638,575,2},{0,-190,2,450},{573,-190,2,450}}) do
   local ok,line=self:Invoke(parent,"CreateTexture",nil,"BORDER")
   if ok then self:Paint(line,"SetPoint","TOPLEFT",parent,"TOPLEFT",edge[1],edge[2]); self:Paint(line,"SetSize",edge[3],edge[4]); self:Paint(line,"SetColorTexture",.25,.45,.60,1) end
  end
  local scroll=self:Frame("ScrollFrame",parent,"UIPanelScrollFrameTemplate")
- self:Paint(scroll,"SetPoint","TOPLEFT",parent,"TOPLEFT",10,-187); self:Paint(scroll,"SetSize",540,390)
+ self:Paint(scroll,"SetPoint","TOPLEFT",parent,"TOPLEFT",10,-227); self:Paint(scroll,"SetSize",540,390)
  local child=self:Frame("Frame",scroll); self.customChild=child; self:Paint(child,"SetSize",530,108); self:Paint(scroll,"SetScrollChild",child)
  self.customWidgets={}
  for i=1,16 do
@@ -119,16 +134,17 @@ function U:CreateCustomAPLEditor(parent)
     if ok and S.Public(raw,"boolean")==true and self.customDraft[target] then self:ReorderCustomRule(source,target); break end
    end
   end) end)
-  local name=self:Text(frame,6,-7,324,"GameFontHighlightSmall")
-  self:CreateActionButton(frame,"编辑",330,-2,48,function() if self:CommitCustomNumbers() then self.customSelected=index; self.customFormIndex=nil; self:RefreshCustomAPL(); self:Paint(self.strategyPanel,"Show") end end)
-  self:CreateActionButton(frame,"↑",383,-2,38,function() self:MoveCustomRule(index,-1) end)
-  self:CreateActionButton(frame,"↓",425,-2,38,function() self:MoveCustomRule(index,1) end)
-  self:CreateActionButton(frame,"删",467,-2,48,function()
+  local name=self:Text(frame,6,-7,278,"GameFontHighlightSmall")
+  self:Paint(name,"SetWordWrap",false)
+  self:CreateActionButton(frame,"编辑策略",290,-2,80,function() if self:CommitCustomNumbers() then self.strategySource=self.page=="maintenance" and "maintenance" or "apl"; self.customSelected=index; self.customFormIndex=nil; self:RefreshCustomAPL(); self:Paint(self.strategyPanel,"Show") end end)
+  self:CreateActionButton(frame,"↑",376,-2,38,function() self:MoveCustomRule(index,-1) end)
+  self:CreateActionButton(frame,"↓",420,-2,38,function() self:MoveCustomRule(index,1) end)
+  self:CreateActionButton(frame,"删",464,-2,52,function()
    if self:CommitCustomNumbers() then table.remove(self.customDraft,index); self.customSelected=math.min(index,math.max(1,#self.customDraft)); self.customFormIndex=nil; self:RefreshCustomAPL() end
   end)
   self.customWidgets[i]={frame=frame,name=name}
  end
- self.customMessage=self:Text(parent,0,-612,570,"GameFontHighlightSmall")
+ self.customMessage=self:Text(parent,0,-652,570,"GameFontHighlightSmall")
  self:CreateStrategyPanel()
  self:CustomMessage("从上往下检查；使用条件全部满足，否则检查下一技能。")
 end
@@ -151,6 +167,7 @@ function U:ChangeCustomStrategy(callback)
  if not self:CommitCustomNumbers() then return end
  local row=self:CustomRow(); if not row then return end
  row.strategies=row.strategies or {}; callback(row)
+ self:StoreSequencePolicy()
  self.customFormIndex=nil; self:RefreshCustomAPL()
 end
 function U:RefreshStrategyForm()
@@ -248,13 +265,18 @@ function U:CreateStrategyPanel()
  self:CreateHintText(panel,"每条策略内的条件共同满足（AND）",15,-91,335)
  self.strategyScroll=self:Frame("ScrollFrame",panel,"UIPanelScrollFrameTemplate")
  self:Paint(self.strategyScroll,"SetPoint","TOPLEFT",panel,"TOPLEFT",15,-126); self:Paint(self.strategyScroll,"SetSize",385,530)
- self:CreateActionButton(panel,"保存",15,-675,190,function()
+ self.strategySaveButton=self:CreateActionButton(panel,"保存",15,-675,190,function()
   if not self:CommitCustomNumbers() then return end
+  if self.strategySource=="manual" then
+   local rows=self:DraftRows(); local ok,reason=T.Profiles:Save(self.engine,self.editScene,rows)
+   self:SequenceMessage(ok and "已保存列表循环策略并停止派发。" or (reason or "保存失败")); return
+  end
+  if self.page=="maintenance" then local ok,reason=T.Maintenance:Save(self.engine,self.customDraft); self:CustomMessage(ok and "增益维护策略已保存并停止派发。" or reason); return end
   local ok,reason=C:Save(self.engine,self.customDraft,self.customLoadedScene,self.customClass)
   if ok and self.engine.db.enabledPlans.apl[self.customLoadedScene] then ok,reason=T.Profiles:UsePlan(self.engine,"apl",self.customLoadedScene) end
   self:CustomMessage(ok and "已保存并停止派发；关闭设置后主动开启。" or (reason or "保存失败"))
  end)
- self:CreateActionButton(panel,"清空",220,-675,190,function() self.strategyInputs={}; self:ChangeCustomStrategy(function(r)
+ self:CreateActionButton(panel,"清空",220,-675,190,function() self.strategyInputs={}; local row=self:CustomRow(); if row then row.strategies={} end; self:ChangeCustomStrategy(function(r)
   r.strategies={}; r.moving="any"; r.activity="any"; r.distanceOp="any"; r.distanceValue=nil
   r.cdmKind="none"; r.cdmSpellID=nil; r.enemyMin=nil; r.enemyMax=nil
  end); self:CustomMessage("已清空当前技能条件草稿；保存后生效。") end)

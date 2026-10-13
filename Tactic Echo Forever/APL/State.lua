@@ -181,7 +181,7 @@ function P:Sample(e)
  local now=P.Time(); if not now then return nil,"APL_TIME_UNKNOWN" end
  local function fresh() return generation==e.generation and serial==(e.receiptSerial or 0) and revision==(self.revision or 0) end
  if not fresh() then return nil,"APL_STALE_SAMPLE" end
- if e.db.apl.template=="custom" then
+ if e.maintenanceActive or e.db.apl.template=="custom" then
   local state={generation=generation,receiptSerial=serial,revision=revision,sampledAt=now,
    combat={in_combat=P.Boolean("InCombatLockdown")},gcd={},actions={},talents={},buildSignature={},scene=e.scene,moving=P.Boolean("IsPlayerMoving")}
   A.Custom:Sample(e,state)

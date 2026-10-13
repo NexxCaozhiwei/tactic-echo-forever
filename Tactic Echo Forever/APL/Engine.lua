@@ -55,7 +55,7 @@ function A:RuleAllowed(state,rule,config)
 end
 function A:Evaluate(state,config,class)
  local pack=self.Packs[class]; local trace={}
- if config.template=="custom" then return self.Custom:Evaluate(state,config,class) end
+ if state.maintenance or config.template=="custom" then return self.Custom:Evaluate(state,config,class) end
  if not pack then return nil,"APL_CLASS_UNSUPPORTED",trace end
  local selection=self:SelectTemplate(state,config)
  local template=pack.templates[selection.template]
@@ -109,6 +109,7 @@ end
 function A:IsActive(e) return TEF.Recommendation:Source(e)=="apl" end
 function A:Invalidate(static) self.State:Invalidate(static) end
 function A:Refresh(e)
+ if e.maintenanceActive then return end
  if not self:IsActive(e) then return end
  -- A current public initiation owns its exact identity until success/failure.
  if e:RecommendationLocked() then
@@ -159,16 +160,19 @@ function A:Allowed(e,id)
  end
  -- A visible standby candidate never grants input authority, including
  -- explicit Request or manual runtime mode. Recheck public combat here.
- if self.State.Boolean("InCombatLockdown")~=true then return false,"APL_DISPATCH_COMBAT_REQUIRED" end
+ local combat=self.State.Boolean("InCombatLockdown")
+ if combat~=true and (combat~=false or not TEF.Maintenance:OutsideAllowed(e)) then return false,"APL_DISPATCH_COMBAT_REQUIRED" end
  -- Re-read the selected action immediately before transport. User-authorized:
  -- no GCD condition or 61304 query in APL selection/dispatch.
- if e.db.apl.template=="custom" then
+ if e.maintenanceActive or e.db.apl.template=="custom" then
   local row=self.Custom:Rows(e)[c.customIndex]
   if not row or row.spellID~=id then return false,"APL_RULE_UNKNOWN" end
   local action=self.Custom:Read(id,row.requireReady,row.targetMode)
   if row.activity~="any" then local ok,record=TEF.Safety.Call("C_Spell.GetSpellCooldown",id); if ok then action.active=TEF.Safety.Field(record,"isActive","boolean") end end
   local live={combat={in_combat=self.State.Boolean("InCombatLockdown")},actions={[c.action]=action},moving=self.State.Boolean("IsPlayerMoving")}
-  if live.combat.in_combat~=true then return false,"APL_DISPATCH_COMBAT_REQUIRED" end
+  if live.combat.in_combat~=true and (live.combat.in_combat~=false or not TEF.Maintenance:OutsideAllowed(e)) then return false,"APL_DISPATCH_COMBAT_REQUIRED" end
+  TEF.Maintenance:Context(e,live)
+  if e.maintenanceActive and not TEF.Maintenance:BuffSpell(id) then return false,"MAINTENANCE_BUFF_REQUIRED" end
   local isolated={}
   for i=1,c.customIndex do isolated[i]=i==c.customIndex and row or {enabled=false,cdmKind="none"} end
   self.PublicConditions:Sample(live,isolated)

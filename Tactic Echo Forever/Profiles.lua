@@ -51,11 +51,33 @@ function P:Clean(raw, limit)
             matches[j] = match
         end
         rows[i] = {name=name,spellID=id or 0,matchIDs=matches,unverified=pending or nil,repeatCount=repeats,usagePolicy=policy,skipUnavailable=id~=6603 and S.Field(row,"skipUnavailable","boolean")==true}
+        local strategies,error=TEF.APL.Custom.CleanStrategies(S.Field(row,"strategies","table"))
+        local _,strategyType=S.Field(row,"strategies","table")
+        if error or (strategyType~="PUBLIC" and strategyType~="NO_DATA") then return nil end
+        rows[i].strategies=strategies
+        local enabled,enabledType=S.Field(row,"enabled","boolean")
+        if enabledType~="PUBLIC" and enabledType~="NO_DATA" then return nil end
+        rows[i].enabled=enabled~=false
+        local mode,modeType=S.Field(row,"targetMode","string")
+        if modeType~="NO_DATA" then
+            if modeType~="PUBLIC" or not ({auto=true,self=true,friendly=true,enemy=true,ground=true})[mode] then return nil end
+            rows[i].targetMode=mode
+        end
     end
     return rows
 end
 
 function P:Initialize(e, old)
+    e.db.planNames={}
+    local names=S.Field(old,"planNames","table")
+    for class in pairs(classes) do
+        e.db.planNames[class]={manual={},apl={}}
+        local group=S.Field(names,class,"table")
+        for _,source in ipairs({"manual","apl"}) do
+            local list=S.Field(group,source,"table")
+            for _,slot in ipairs({"single","multi","third"}) do e.db.planNames[class][source][slot]=self:CleanPlanName(S.Field(list,slot,"string")) end
+        end
+    end
     local scene = S.Field(old,"scene","string")
     if scene ~= "multi" and scene ~= "third" then scene = "single" end
     e.db.classProfiles={}; e.db.sourceByProfile={}
@@ -71,7 +93,7 @@ function P:Initialize(e, old)
     local aplModes=S.Field(old,"aplByClass","table")
     for class in pairs(classes) do
         local mode=aplModes and S.Field(aplModes,class,"table")
-        if mode then e.db.aplByClass[class]={single=not retiredClassAPL and S.Field(mode,"single","boolean")==true,multi=not retiredClassAPL and S.Field(mode,"multi","boolean")==true} end
+        if mode then e.db.aplByClass[class]={single=not retiredClassAPL and S.Field(mode,"single","boolean")==true,multi=not retiredClassAPL and S.Field(mode,"multi","boolean")==true,third=not retiredClassAPL and S.Field(mode,"third","boolean")==true} end
     end
     local savedClasses=S.Field(old,"classProfiles","table")
     local sources=S.Field(old,"sourceByProfile","table")
@@ -168,6 +190,7 @@ function P:Initialize(e, old)
     if not selected then e.scene="single"; e.db.scene="single" end
     e.db.dispatch=TEF.Runtime and TEF.Runtime.Clean(S.Field(old,"dispatch","table")) or nil
     if not e.profileKey or e.classToken~="MAGE" then e.steps=TEF.Engine.Validate(e.db.profiles[scene]) end
+    TEF.Maintenance:Initialize(e,old)
     local hud = S.Field(old,"hud","table")
     local scale = hud and S.Field(hud,"scale","number")
     local locked = hud and S.Field(hud,"locked","boolean")
@@ -293,7 +316,28 @@ function P:ConfirmObserved(e)
 end
 
 -- 内部键保留旧配置兼容；界面只展示独立方案，不再表达目标数量。
-function P:PlanName(key)
+function P:CleanPlanName(raw)
+    local value=S.Public(raw,"string")
+    if not value then return nil end
+    value=value:match("^%s*(.-)%s*$")
+    if value=="" or #value>64 or value:find("[%c|]") then return nil end
+    return value
+end
+function P:SetPlanName(e,source,key,raw)
+    if not classes[e.classToken] or (source~="manual" and source~="apl") or not ({single=true,multi=true,third=true})[key] then return false end
+    local text=S.Public(raw,"string"); if not text then return false end
+    local name=self:CleanPlanName(text)
+    if not name and text:match("%S") then return false end
+    e.db.planNames[e.classToken]=e.db.planNames[e.classToken] or {manual={},apl={}}
+    e.db.planNames[e.classToken][source][key]=name
+    return true
+end
+function P:PlanName(key,e,source)
+    e=e or TEF.engine
+    source=source or (e and TEF.Recommendation:Source(e))
+    local group=e and e.db.planNames and e.db.planNames[e.classToken]
+    local name=group and group[source] and group[source][key]
+    if name then return name end
     return ({single="方案一",multi="方案二",third="方案三"})[key] or "未知方案"
 end
 function P:SetPlanEnabled(e,source,key,value)

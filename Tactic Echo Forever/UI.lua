@@ -31,8 +31,9 @@ function UI:Text(parent,x,y,width,template)
 end
 function UI:Button(parent,label,x,y,width,callback)
     local b=self:Frame("Button",parent,"UIPanelButtonTemplate")
-    self:Paint(b,"SetSize",width or 85,25); self:Paint(b,"SetPoint","TOPLEFT",parent,"TOPLEFT",x,y)
+    self:Paint(b,"SetSize",width or 85,self.controlHeight or 28); self:Paint(b,"SetPoint","TOPLEFT",parent,"TOPLEFT",x,y)
     self:Paint(b,"SetText",label)
+    if self.ApplyControlFont then self:ApplyControlFont(b,true) end
     self:Paint(b,"SetScript","OnClick",function()
         local ok=pcall(callback)
         if not ok then TEF.Runtime:Fault("UI_CALLBACK_FAILED"); self:Error() end
@@ -107,25 +108,38 @@ function UI:CloseSettings()
     self:Refresh()
 end
 function UI:ShowPage(key)
+    if self.sequenceEngine~=self.engine then
+        self.sequenceEngine=self.engine; self.sequenceDrafts={}; self.sequenceDraft=nil; self.drafts={}; self.loadedScene=nil; self.loadedProfile=nil
+        if self.strategySource=="manual" then self.sequencePolicyRow=nil; self.strategyInputs={} end
+    end
+    if self.customEngine~=self.engine then self.strategyInputs={} end
+    if not self:CommitCustomNumbers() then return end
     key=({looping="overview",labels="hud",apl="customapl"})[key] or key
     self.drafts=self.drafts or {}
     if self.page=="profiles" and self.loadedScene and self.editor then
+        self.sequenceDrafts=self.sequenceDrafts or {}
+        self.sequenceDrafts[(self.loadedProfile or "unknown") .. ":" .. self.loadedScene]=self:DraftRows()
         local ok,raw=self:Invoke(self.editor,"GetText")
         local draft=ok and S.Public(raw,"string")
         if draft and #draft<=4096 then self.drafts[(self.loadedProfile or "unknown") .. ":" .. self.loadedScene]=draft end
     end
     self.page=key
+    self.strategySource=key=="maintenance" and "maintenance" or key=="customapl" and "apl" or nil; self.sequencePolicyRow=nil; self.strategyInputs={}; self.customFormIndex=nil
     if key~="customapl" then self:Paint(self.strategyPanel,"Hide") end
     if self.pageTitles then self:Paint(self.pageHeading,"SetText",self.pageTitles[key] or "设置") end
     for name,nav in pairs(self.navigation or {}) do
         self:Paint(nav,"SetText",(name==key and "|cffffcf45" or "|cffb8c6dc") .. (self.pageTitles[name] or name) .. "|r")
     end
-    for name,panel in pairs(self.pageFrames or self.pages) do self:Paint(panel,name==key and "Show" or "Hide") end
+    local shown=(self.pageFrames or self.pages)[key]
+    for _,panel in pairs(self.pageFrames or self.pages) do self:Paint(panel,panel==shown and "Show" or "Hide") end
     if key=="profiles" then
         self.editScene=self.editScene or self.engine.scene
         self.loadedScene=self.editScene
         self.loadedProfile=self.engine.profileKey
         self:Paint(self.editor,"SetText",self.drafts[(self.loadedProfile or "unknown") .. ":" .. self.editScene] or TEF.Profiles:Text(self.engine,self.editScene))
+        local draftKey=(self.loadedProfile or "unknown") .. ":" .. self.editScene
+        self.sequenceDraft=(self.sequenceDrafts and self.sequenceDrafts[draftKey]) or TEF.Profiles:Clean(self.engine.db.profiles[self.editScene],32)
+        local got,value=self:Invoke(self.editor,"GetText"); self.sequenceDraftText=got and S.Public(value,"string")
     end
     self:RefreshPage()
     if key=="profiles" then self:RefreshSequenceEditor(true) end
@@ -133,20 +147,21 @@ end
 function UI:RefreshPage()
     local e=self.engine
     if self.RefreshControls then self:RefreshControls() end
+    self:RefreshPlanFeedback()
     if self.page=="overview" then
         if self.hotkeyMessage and not self.captureHotkey then self:Paint(self.hotkeyMessage,"SetText",TEF.Hotkeys:Status()) end
         local v=TEF.Runtime:GetViewState()
         self:Paint(self.overviewBadge,"SetText",v.label .. " · " .. (v.intent and "派发意图开启" or "派发意图关闭"))
-        self:Paint(self.readouts.overview,"SetText",(v.source=="apl" and ((e.classToken or "职业未知") .. " · 自定义APL") or e.profileKey or "职业未解析") .. " · " .. TEF.Profiles:PlanName(e.scene)
-            .. " · " .. (v.source=="apl" and "自定义 APL" or "人工序列") .. "\n" .. (v.source=="apl" and (e.aplTrace and e.aplTrace.reason or "等待启动采样") or ("步骤 " .. e.index .. "/" .. (e.steps and #e.steps or 0) .. " · 固定练习不保证ready")))
+        self:Paint(self.readouts.overview,"SetText",(v.source=="apl" and ((e.classToken or "职业未知") .. " · 优先级推荐") or e.profileKey or "职业未解析") .. " · " .. TEF.Profiles:PlanName(e.scene)
+            .. " · " .. (v.source=="apl" and "优先级推荐" or "列表循环") .. "\n" .. (v.source=="apl" and (e.aplTrace and e.aplTrace.reason or "等待启动采样") or ("步骤 " .. e.index .. "/" .. (e.steps and #e.steps or 0) .. " · 固定练习不保证ready")))
     elseif self.page=="profiles" then
         if self.loadedProfile~=e.profileKey then self:ShowPage("profiles"); return end
-        self:Paint(self.readouts.profiles,"SetText",(e.profileKey or "职业未解析") .. " · 编辑：" .. TEF.Profiles:PlanName(self.editScene)
+        self:Paint(self.readouts.profiles,"SetText",(e.profileKey or "职业未解析") .. " · 编辑：" .. TEF.Profiles:PlanName(self.editScene,e,"manual") .. " · 当前使用：" .. TEF.Profiles:PlanName(e.scene,e,TEF.Recommendation:Source(e))
             .. "\n每套最多16步，每步1–99次；保存后暂停并重置。"
             .. (e.db.profileMigrationConflicts[e.classToken] and "\n旧专精配置存在冲突：原配置保留，请明确编辑并保存职业配置。" or ""))
         self:RefreshSequenceEditor()
 
-    elseif self.page=="customapl" then
+    elseif self.page=="customapl" or self.page=="maintenance" then
         self:RefreshCustomAPL()
     elseif self.page=="scene" then
         self:Paint(self.readouts.scene,"SetText","切换重置并暂停；自动判定仅旁路观察。\n可见敌方≥3建议多目标，≤1单体，2保持。\n1秒内两次不同采样；未知撤回。计数不等于命中。\n以下是采样时结果，不代表当前状态。\n\n" .. TEF.Research:View())
@@ -182,14 +197,14 @@ function UI:CreateSettings()
     self:Paint(f,"SetScript","OnDragStart",function() if self:Combat()==false then self:Call(f,"StartMoving") end end)
     self:Paint(f,"SetScript","OnDragStop",function() self:Call(f,"StopMovingOrSizing") end)
     self:Paint(self:Text(f,22,-18,600,"GameFontNormalLarge"),"SetText","战术回响 · FOREVER")
-    self:Paint(self:Text(f,22,-43,600,"GameFontHighlightSmall"),"SetText","TEF " .. TEF.Version .. "  /  人工序列 · 自定义APL · TEK派发")
+    self:Paint(self:Text(f,22,-43,600,"GameFontHighlightSmall"),"SetText","TEF " .. TEF.Version .. "  /  列表循环 · 优先级推荐 · TEK派发")
     self:Button(f,"关闭",722,-16,75,function() self:CloseSettings() end)
     self:Paint(f,"SetScript","OnHide",function()
         if self.settingsOpen then self.settingsOpen=false; self.captureHotkey=false; TEF.Runtime:Reconcile("SETTINGS_CLOSED") end
     end)
     self.navigation={}; self.pageTitles={}; self.pageFrames={}
     self.pageHeading=self:Text(f,190,-78,595,"GameFontNormalLarge")
-    local tabs={{"overview","派发总览"},{"profiles","人工序列"},{"customapl","自定义APL"},{"scene","场景与验证"},{"hud","HUD外观"},{"tek","高级TEK"},{"diagnostics","诊断/测试"}}
+    local tabs={{"overview","派发总览"},{"profiles","列表循环"},{"customapl","优先级推荐"},{"maintenance","增益维护"},{"scene","场景与验证"},{"hud","HUD外观"},{"tek","高级TEK"},{"diagnostics","诊断/测试"}}
     local visibleIndex=0
     for i,tab in ipairs(tabs) do
         local key=tab[1]
@@ -214,16 +229,19 @@ function UI:CreateSettings()
         end
         self.readouts[key]=self:Text(panel,4,-4,580)
     end
+    self:Paint(self.pageFrames.maintenance,"Hide")
+    self.pageFrames.maintenance=self.pageFrames.customapl; self.pages.maintenance=self.pages.customapl; self.readouts.maintenance=self.readouts.customapl
     self:CreateCustomAPLEditor(self.pages.customapl)
     local function button(page,label,x,y,w,fn) return self:Button(self.pages[page],label,x,y,w,fn) end
     local function selectEditor(key) self.editScene=key; self:ShowPage("profiles") end
     self.editScene=e.db.selectedPlans.manual
-    self.manualPlanControls=self:CreateSegmentedControl(self.pages.profiles,{{"single","方案一"},{"multi","方案二"},{"third","方案三"}},4,-42,350,
+    self.manualPlanControls=self:CreateSegmentedControl(self.pages.profiles,{{"single","方案一"},{"multi","方案二"},{"third","方案三"}},4,-42,550,
         function() return self.editScene end,function(key) selectEditor(key) end)
-    self:CreateToggleRow(self.pages.profiles,"启用本方案",4,-80,250,
+    self:CreatePlanRename(self.pages.profiles,"manual",4,-80,function() return self.editScene end)
+    self:CreateToggleRow(self.pages.profiles,"启用本方案",4,-120,250,
         function() return e.db.enabledPlans.manual[self.editScene] end,
         function(value) TEF.Profiles:SetPlanEnabled(e,"manual",self.editScene,value) end)
-    button("profiles","使用本方案",270,-80,140,function()
+    self.manualUseButton=button("profiles","使用本方案",270,-120,140,function()
         local ok,reason=TEF.Profiles:UsePlan(e,"manual",self.editScene)
         self:SequenceMessage(ok and "已选择并停止派发；关闭设置后开启。" or "请先启用本方案。")
     end)
@@ -246,8 +264,9 @@ function UI:CreateSettings()
     self:Paint(editor,"SetScript","OnEscapePressed",function() self:Paint(editor,"ClearFocus") end)
     self:Paint(scroll,"SetScrollChild",editor)
     self:Paint(scroll,"Hide") -- 内部草稿序列化载体，不再提供高级文本界面。
-    self.editorMessage=self:Text(self.pages.profiles,4,-534,555)
-    button("profiles","保存配置",4,-497,120,function()
+    self.editorMessage=self:Text(self.pages.profiles,4,-574,555)
+    button("profiles","保存配置",4,-537,120,function()
+        if not self:CommitCustomNumbers() then return end
         local ok,raw=self:Invoke(editor,"GetText")
         local rows=ok and self:DraftRows()
         local saved,reason=false,"CONFIG_INVALID"
@@ -281,8 +300,8 @@ function UI:CreateSettings()
     self.testReset=button("profiles","重置并停止",12,-820,150,function() TEF.Runtime:Reset() end)
     self:CreateSequenceEditor(self.pages.profiles)
     self.sourceMessage=self:Text(self.pages.overview,14,-505,550,"GameFontHighlightSmall")
-    self.sourceSelect=self:CreateSegmentedControl(self.pages.overview,{{"manual","人工序列"},{"apl","自定义APL"}},12,-421,556,
-        function() return TEF.Recommendation:Source(e,e.scene) end,
+    self.sourceSelect=self:CreateSegmentedControl(self.pages.overview,{{"manual","列表循环"},{"apl","优先级推荐"}},12,-421,556,
+        function() return TEF.Recommendation:BaseSource(e,e.scene) end,
         function(value)
             if value=="apl" and e.db.apl.template~="custom" then TEF.APL:Configure(e,"template","custom") end
             local ok,reason=TEF.Profiles:UsePlan(e,value,e.db.selectedPlans[value])

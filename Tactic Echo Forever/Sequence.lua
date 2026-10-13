@@ -60,6 +60,17 @@ local function configuration(config)
         steps[i] = {name = name, spellID = id, matches = matches,repeatCount=repeats,usagePolicy=policy,skipUnavailable=S.Field(row,"skipUnavailable","boolean")==true}
         end
     end
+    for i,row in ipairs(config) do
+        local policies,error=TEF.APL.Custom.CleanStrategies(S.Field(row,"strategies","table"))
+        local _,classification=S.Field(row,"strategies","table")
+        if error or (classification~="NO_DATA" and classification~="PUBLIC") then return nil end
+        local enabled,enabledType=S.Field(row,"enabled","boolean")
+        if enabledType~="PUBLIC" and enabledType~="NO_DATA" then return nil end
+        steps[i].strategies=policies; steps[i].enabled=enabled~=false
+        local mode,modeType=S.Field(row,"targetMode","string")
+        if modeType~="NO_DATA" and (modeType~="PUBLIC" or not ({auto=true,self=true,friendly=true,enemy=true,ground=true})[mode]) then return nil end
+        steps[i].targetMode=mode
+    end
     return steps
 end
 Engine.Validate = configuration
@@ -175,6 +186,7 @@ function Engine:Start()
     self:ClearUsage()
     self:Invalidate("START")
     self.index, self.completed, self.stepCasts, self.skipStreak, self.attackActivationStreak = 1, false, 0, 0, 0
+    self.policySkipStreak=0
     self.running = self.steps ~= nil and not self.identitySaturated
 end
 function Engine:Pause()
@@ -228,19 +240,20 @@ function Engine:SetLoopMode(mode)
 end
 
 -- Explicit optional step omission is distinct from a successful cast.
-function Engine:SkipUnavailable()
+function Engine:SkipUnavailable(policyReason)
     local step=self.steps and self.steps[self.index]
-    if not step or not step.skipUnavailable or step.spellID==5019 or step.spellID==6603 or step.spellID==75 or step.unverified
+    local policy=policyReason=="STRATEGY_STEP_SKIPPED"
+    if not step or (not policy and (not step.skipUnavailable or step.spellID==5019 or step.spellID==6603 or step.spellID==75)) or step.unverified
         or TEF.Recommendation:Source(self)~="manual" or self:RecommendationLocked() then return false end
-    if (self.skipStreak or 0)>=#self.steps then return false end
+    if (policy and (self.policySkipStreak or 0) or (self.skipStreak or 0))>=#self.steps then return false end
     local previous=self.index
-    self:Invalidate("UNAVAILABLE_STEP_SKIPPED")
-    self.skipStreak=(self.skipStreak or 0)+1
+    self:Invalidate(policy and "STRATEGY_STEP_SKIPPED" or "UNAVAILABLE_STEP_SKIPPED")
+    if policy then self.policySkipStreak=(self.policySkipStreak or 0)+1 else self.skipStreak=(self.skipStreak or 0)+1 end
     self.stepCasts=0
     if self.index<#self.steps then self.index=self.index+1
     elseif self.db.loop then self.index=1
     else self.completed=true; self.running=false end
-    self:Log("observed","UNAVAILABLE_STEP_SKIPPED",step.spellID,previous,self.index)
+    self:Log("observed",policy and "STRATEGY_STEP_SKIPPED" or "UNAVAILABLE_STEP_SKIPPED",step.spellID,previous,self.index)
     return true
 end
 function Engine:ConfirmAttackEnabled(generation,index,serial)
@@ -256,7 +269,7 @@ function Engine:ConfirmAttackEnabled(generation,index,serial)
     self:MarkUsage(usageContext)
     self.receiptSerial=(self.receiptSerial or 0)+1
     self.attackActivationStreak=(self.attackActivationStreak or 0)+1
-    self.stepCasts=1; self.skipStreak=0
+    self.stepCasts=1; self.skipStreak=0; self.policySkipStreak=0
     local current,following=self.index,self.index+1
     if following>#self.steps then
         if self.db.loop then following=1 else following=current; self.completed=true; self.running=false end
@@ -334,12 +347,13 @@ function Engine:Handle(generation, event, unitRaw, guidRaw, spellRaw)
     if self.seenCount >= 4096 then
         self.running=false; self:Invalidate("IDENTITY_CAPACITY_PAUSED"); return
     end
-    self.skipStreak=0
+    self.skipStreak=0; self.policySkipStreak=0
     self.attackActivationStreak=0
     self.seen[guid], self.seenCount = true, self.seenCount+1
     self.receiptSerial=(self.receiptSerial or 0)+1
     self.associations[guid]=nil; self.associationCount=self.associationCount-1
     if TEF.APL and TEF.APL:IsActive(self) then
+        if self.maintenanceActive then TEF.Maintenance:Succeeded(self,spellID) end
         self.stepCasts=0
         log("match","APL_MATCH",spellID,self.index,self.index)
         TEF.APL:Invalidate()
