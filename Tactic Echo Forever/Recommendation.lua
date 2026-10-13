@@ -8,6 +8,8 @@ function R:Source(e,scene)
     return "manual"
 end
 function R:Configured(e)
+    local source=self:Source(e)
+    if e.db.selectedPlans and e.db.selectedPlans[source]==e.scene and e.db.enabledPlans[source][e.scene]~=true then return false end
     if self:Source(e)=="apl" then return TEF.APL.Packs[e.classToken]~=nil end
     return self:Current(e)~=nil
 end
@@ -32,7 +34,7 @@ function R:SetSource(e,source,scene)
     if not e.classToken then return false,"PROFILE_IDENTITY_UNKNOWN" end
     if source~="manual" and source~="apl" then return false,"RECOMMENDATION_SOURCE_INVALID" end
     scene=scene or e.scene
-    if scene~="single" and scene~="multi" then return false,"SCENE_INVALID" end
+    if scene~="single" and scene~="multi" and scene~="third" then return false,"SCENE_INVALID" end
     if source=="apl" and not TEF.APL.Packs[e.classToken] then return false,"APL_CLASS_UNSUPPORTED" end
     if source=="apl" then e.db.apl.template="custom" end
     if source~="apl" and not e.profileKey then return false,"PROFILE_IDENTITY_UNKNOWN" end

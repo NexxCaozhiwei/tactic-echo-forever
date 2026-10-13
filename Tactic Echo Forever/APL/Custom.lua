@@ -53,7 +53,7 @@ function C.CleanProfiles(raw)
  local out={}
  for _,class in ipairs(classes) do
   local p=S.Field(raw,class,"table")
-  if p then out[class]={single=C.CleanRows(S.Field(p,"single","table")),multi=C.CleanRows(S.Field(p,"multi","table"))} end
+  if p then out[class]={single=C.CleanRows(S.Field(p,"single","table")),multi=C.CleanRows(S.Field(p,"multi","table")),third=C.CleanRows(S.Field(p,"third","table"))} end
  end
  return out
 end
@@ -62,7 +62,7 @@ function C:Rows(e,scene)
  return p and p[scene or e.scene] or {}
 end
 function C:Save(e,rows,scene,class)
- if class~=e.classToken or class~="MAGE" or (scene~="single" and scene~="multi") then return false,"CUSTOM_PROFILE_UNKNOWN" end
+ if class~=e.classToken or class~="MAGE" or (scene~="single" and scene~="multi" and scene~="third") then return false,"CUSTOM_PROFILE_UNKNOWN" end
  local clean=C.CleanRows(rows)
  for _,r in ipairs(clean) do if r.invalid then return false,r.invalid end end
  e:Reset(); e.db.apl.custom[class]=e.db.apl.custom[class] or {}

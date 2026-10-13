@@ -97,7 +97,7 @@ function Engine.New(config, db)
                     clean.diagnostics[#clean.diagnostics+1] = {kind=kind,reason=reason,
                         session=session,generation=generation,current=current,next=following,spellID=S.ID(r.spellID),
                         event=observed[event] and event or nil,
-                        scene=S.Field(r,"scene","string")=="multi" and "multi" or "single",
+                        scene=({single=true,multi=true,third=true})[S.Field(r,"scene","string")] and S.Field(r,"scene","string") or "single",
                         version=S.Field(r,"version","string"),
                         cycle=S.Field(r,"cycle","number"),request=S.Field(r,"request","number"),
                         castCount=S.Field(r,"castCount","number"),requiredCasts=S.Field(r,"requiredCasts","number"),

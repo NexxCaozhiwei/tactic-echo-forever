@@ -208,7 +208,7 @@ function H:RefreshState()
     if TEF.APL:IsActive(e) then
         U:Paint(self.status,"SetText",displayLabel .. " | " .. TEF.APL.Trace:View(e))
     else
-        U:Paint(self.status,"SetText",displayLabel .. " | " .. (e.scene=="multi" and "多目标" or "单体") .. " | " .. e.index .. "/" .. (e.steps and #e.steps or 0) .. " · 次数 " .. (e.stepCasts or 0) .. "/" .. (step and step.repeatCount or 1))
+        U:Paint(self.status,"SetText",displayLabel .. " | " .. TEF.Profiles:PlanName(e.scene) .. " | " .. e.index .. "/" .. (e.steps and #e.steps or 0) .. " · 次数 " .. (e.stepCasts or 0) .. "/" .. (step and step.repeatCount or 1))
     end
 end
 function H:VisualTick()

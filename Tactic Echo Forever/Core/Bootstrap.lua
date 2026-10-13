@@ -1,5 +1,5 @@
 local addonName, TEF = ...
-local VERSION = "1.0.22"
+local VERSION = "1.0.23"
 local S = TEF.Safety
 local engine, frame
 
@@ -176,8 +176,9 @@ SlashCmdList.TEF=function(raw)
     elseif command=="reset" then TEF.Runtime:Reset()
     elseif command=="loop" then engine:SetLoop(not engine.db.loop)
     elseif command=="settings" then TEF.UI:OpenSettings()
-    elseif command=="single" then TEF.Profiles:Select(engine,"single")
-    elseif command=="multi" then TEF.Profiles:Select(engine,"multi")
+    elseif command=="plan1" or command=="single" then TEF.Profiles:UsePlan(engine,TEF.Recommendation:Source(engine),"single")
+    elseif command=="plan2" or command=="multi" then TEF.Profiles:UsePlan(engine,TEF.Recommendation:Source(engine),"multi")
+    elseif command=="plan3" then TEF.Profiles:UsePlan(engine,TEF.Recommendation:Source(engine),"third")
     elseif command=="sample" then TEF.Research:Sample(engine); printSafe(TEF.Research:View())
     elseif command=="confirm" then
         local ok,reason=TEF.Profiles:ConfirmObserved(engine)
@@ -197,6 +198,6 @@ SlashCmdList.TEF=function(raw)
             local r=engine.db.diagnostics[i]
             printSafe((r.event or "-") .. " " .. r.kind .. " " .. r.reason .. " " .. r.current .. "→" .. r.next .. " ID=" .. (r.spellID or 0))
         end
-    else printSafe("toggle 派发启停；auto/manual/combatstop 三模式；tekon/tekoff 许可；tektest 单步；tekstop 停止；start/pause/resume/reset/loop；single/multi；settings 自定义快捷键；protocol；test/hud/show/hide/diag。") end
+    else printSafe("toggle 派发启停；auto/manual/combatstop 三模式；tekon/tekoff 许可；tekstop 停止；start/pause/resume/reset/loop；plan1/plan2/plan3 选择已启用方案；settings 自定义快捷键；hud/show/hide。") end
     refresh()
 end

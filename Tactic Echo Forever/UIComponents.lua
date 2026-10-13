@@ -91,22 +91,44 @@ function U:CreateSelectRow(parent,label,choices,x,y,width,getter,setter)
     self:Paint(self:Text(parent,x,y,width),"SetText",label)
     return self:CreateSegmentedControl(parent,choices,x,y-25,width,getter,setter)
 end
-function U:CreateSliderRow(parent,label,x,y,width,min,max,step,getter,setter)
+function U:CreateSliderRow(parent,label,x,y,width,min,max,step,getter,setter,editable)
     local text=self:Text(parent,x,y,width)
     local slider=self:Frame("Slider",parent,"OptionsSliderTemplate")
     self:Paint(slider,"SetPoint","TOPLEFT",parent,"TOPLEFT",x+8,y-25); self:Paint(slider,"SetSize",width-16,18)
     self:Paint(slider,"SetMinMaxValues",min,max); self:Paint(slider,"SetValueStep",step); self:Paint(slider,"SetObeyStepOnDrag",true)
     local syncing=false
+    local input
+    if editable then
+        input=self:SequenceInput(parent,x+width-82,y+5,76)
+        self:Paint(text,"SetWidth",width-90)
+        local function submit()
+            local ok,raw=self:Invoke(input,"GetText")
+            local value=ok and S.Public(raw,"string")
+            local n=value and value:match("^%s*%d+%s*$") and tonumber(value)
+            if not n or n<min or n>max then
+                self:Paint(text,"SetText",label .. "：须为" .. min .. "–" .. max .. "的整数")
+                self:Paint(input,"SetText",tostring(getter()))
+                return
+            end
+            self:Guard(setter,n); self:Refresh()
+        end
+        self:Paint(input,"SetScript","OnEnterPressed",function() submit(); self:Paint(input,"ClearFocus") end)
+        self:Paint(input,"SetScript","OnEditFocusLost",submit)
+    end
     self:Paint(slider,"SetScript","OnValueChanged",function(_,raw)
         local v=S.Public(raw,"number")
         if syncing or not v or v<min or v>max then return end
         self:Guard(setter,math.floor(v/step+.5)*step); self:Refresh()
     end)
     self.controls[#self.controls+1]=function()
-        local value=getter(); self:Paint(text,"SetText",label .. "  " .. string.format(step<.1 and "%.2f" or "%.1f",value))
+        local value=getter(); self:Paint(text,"SetText",editable and (label .. "（" .. min .. "–" .. max .. "）") or (label .. "  " .. string.format(step<.1 and "%.2f" or "%.1f",value)))
+        if input then
+            local focused,raw=self:Invoke(input,"HasFocus")
+            if not focused or S.Public(raw,"boolean")~=true then self:Paint(input,"SetText",tostring(value)) end
+        end
         syncing=true; self:Paint(slider,"SetValue",value); syncing=false
     end
-    return slider
+    return slider,input
 end
 function U:CreateStatusBadge(parent,x,y,width)
     local text=self:Text(parent,x,y,width,"GameFontNormalLarge")

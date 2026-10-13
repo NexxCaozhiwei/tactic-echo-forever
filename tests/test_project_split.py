@@ -20,7 +20,7 @@ def test_standalone_structure_and_savedvariables():
     assert not (ROOT / ".gitmodules").exists()
     toc = (ROOT / "Tactic Echo Forever/Tactic Echo Forever.toc").read_text(encoding="utf-8")
     assert "## SavedVariables: TEF_DB" in toc
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "1.0.22"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "1.0.23"
     assert PROJECT_ID == "TEF" and "TEF" in APP_TITLE
 
 

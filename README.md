@@ -4,7 +4,7 @@
 
 **为魔兽世界无限版打造的技能序列、优先级推荐与输入联动工具。**
 
-![版本](https://img.shields.io/badge/版本-1.0.22-64d8cb?style=flat-square)
+![版本](https://img.shields.io/badge/版本-1.0.23-64d8cb?style=flat-square)
 ![客户端](https://img.shields.io/badge/客户端-Forever%20%2F%20Infinite-b9a5ff?style=flat-square)
 ![桌面端](https://img.shields.io/badge/桌面端-Windows-8ab4f8?style=flat-square)
 ![进度](https://img.shields.io/badge/进度-持续开发与实机验证-f4bf75?style=flat-square)
@@ -42,7 +42,7 @@
 
 ## 项目进度
 
-**当前版本：1.0.22。核心链路已实现，正在持续修复交互、完善显示并补充实机验收。**
+**当前版本：1.0.23。核心链路已实现，正在持续修复交互、完善显示并补充实机验收。**
 
 | 阶段 | 当前状态 |
 | :--- | :--- |
@@ -61,7 +61,7 @@
 
 最近一次本地检查（2026-10-13）通过 **292 项 Lua 模拟、235 项 pytest 测试及 17 项子测试**，并完成项目检查和 **46 个 Lua 文件的 Lua 5.1 语法检查**。这些结果说明离线回归通过，桌面输入和客户端行为仍以实机证据为准。
 
-[查看 1.0.22 基线](docs/baselines/tef/BASELINE_1.0.22.md) · [目标策略阻断排查](docs/FIELD_REPORT_2026-10-13_TEF_1021_S10.md) · [攻击6603阻断排查](docs/FIELD_REPORT_2026-10-13_TEF_1019_S7.md) · [圣骑士阻断排查](docs/FIELD_REPORT_2026-10-13_TEF_1018_S5.md) · [距离显示初步实测](docs/FIELD_REPORT_2026-10-12_TEF_1015_S19.md)
+[查看 1.0.23 基线](docs/baselines/tef/BASELINE_1.0.23.md) · [目标策略阻断排查](docs/FIELD_REPORT_2026-10-13_TEF_1021_S10.md) · [攻击6603阻断排查](docs/FIELD_REPORT_2026-10-13_TEF_1019_S7.md) · [圣骑士阻断排查](docs/FIELD_REPORT_2026-10-13_TEF_1018_S5.md) · [距离显示初步实测](docs/FIELD_REPORT_2026-10-12_TEF_1015_S19.md)
 
 ## 快速上手
 
@@ -126,7 +126,7 @@ TEF TEK 是独立桌面程序，放在工具目录运行即可。打开游戏并
 | 想了解什么 | 从这里开始 |
 | :--- | :--- |
 | 版本变化与修复 | [更新记录](CHANGELOG.md) |
-| 当前行为与验证范围 | [1.0.22 基线](docs/baselines/tef/BASELINE_1.0.22.md) |
+| 当前行为与验证范围 | [1.0.23 基线](docs/baselines/tef/BASELINE_1.0.23.md) |
 | 更多使用说明与历史证据 | [文档目录](docs/README.md) |
 | 桌面工具 | [TEF TEK 说明](tek/README.md) |
 | 项目来源与独立开发 | [项目拆分说明](docs/PROJECT_SPLIT.md) |
@@ -159,3 +159,9 @@ pwsh.exe -NoLogo -NoProfile -File scripts/build-tek-exe.ps1 -OutputDirectory dis
 项目从 Tactic Echo 的源提交 `3e57b9d1713ad3c9d821b416dc073452289c2691`（2026-10-12）独立发展；TEF TEK 不自动同步正式服 TE TEK。TEAP 命名空间为 `TEF`，使用现有 v3 线格式，一次只能启用一个插件信号源。
 
 </details>
+
+## 1.0.23设置界面
+
+派发总览选择人工序列或自定义APL；每种来源各有三套独立方案，同一时间只运行选中方案。首次默认启用方案一，其余默认停用；先启用再使用，重载保留已保存选择。旧单体/多目标配置分别保留为方案一/二，方案三为空。
+
+循环/重置位于人工序列页；场景与验证、诊断测试导航入口隐藏。取消变形术ID确认按钮和高级文本入口。HUD图标大小与间距同时支持滑块和整数输入，界面提示范围；越界或小数不应用。

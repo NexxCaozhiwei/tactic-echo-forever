@@ -212,7 +212,10 @@ test("editor_order_delete_draft_and_scene_keep_saved",function()
  local box=T.UI.customNumbers.enemyMin; box.text="2"
  T.UI:RefreshCustomAPL(); eq(box.text,"2") -- periodic UI refresh preserves unsaved text
  T.UI:CustomRow().experimentalEnemies=true
- T.UI.customSave.scripts.OnClick(); eq(C:Rows(e,"multi")[1].enemyMin,2); eq(e.scene,"multi"); eq(T.Runtime.intent,false)
+ T.UI.customSave.scripts.OnClick(); eq(C:Rows(e,"multi")[1].enemyMin,2); eq(e.scene,"single"); eq(T.Runtime.intent,false)
+ eq(T.Profiles:UsePlan(e,"apl","multi"),false)
+ assert(T.Profiles:SetPlanEnabled(e,"apl","multi",true)); assert(T.Profiles:UsePlan(e,"apl","multi"))
+ eq(e.scene,"multi")
  eq(C:Rows(e,"single")[1].spellID,143)
  box.text="41"; T.UI.customSave.scripts.OnClick(); eq(C:Rows(e,"multi")[1].enemyMin,2)
  GetCursorInfo,ClearCursor=cursor,clear

@@ -25,13 +25,15 @@ function U:CommitCustomNumbers()
  return true
 end
 function U:RefreshCustomAPL()
- local e=self.engine; local scene=self.customScene or e.scene
+ local e=self.engine
+ if self.customEngine~=e then self.customScene=e.db.selectedPlans.apl end
+ local scene=self.customScene or "single"
  if not self.customDraft or self.customEngine~=e or self.customClass~=e.classToken or self.customLoadedScene~=scene then
   self.customEngine=e
   self.customClass,self.customLoadedScene=e.classToken,scene
   self.customDraft=C.CleanRows(C:Rows(e,scene)); self.customSelected=1; self.customFormIndex=nil
  end
- self:Paint(self.readouts.customapl,"SetText",(e.classToken or "职业未知") .. " · 编辑" .. (scene=="multi" and "多目标" or "单体") .. " · " .. #self.customDraft .. "/16条（首版法师）")
+ self:Paint(self.readouts.customapl,"SetText",(e.classToken or "职业未知") .. " · 编辑" .. T.Profiles:PlanName(scene) .. " · " .. #self.customDraft .. "/16条（首版法师）")
  for i,w in ipairs(self.customWidgets) do
   local row=self.customDraft[i]; self:Paint(w.frame,row and "Show" or "Hide")
   if row then
@@ -83,14 +85,22 @@ function U:CreateCustomAPLEditor(parent)
  self:Paint(parent,"EnableMouse",true)
  self:Paint(parent,"SetScript","OnReceiveDrag",function() self:Guard(function() self:ReceiveCustomSpell() end) end)
  local function action(text,x,y,w,fn) return self:CreateActionButton(parent,text,x,y,w,fn) end
- action("单体",0,-30,60,function() self.customScene="single"; self:RefreshCustomAPL() end)
- action("多目标",65,-30,70,function() self.customScene="multi"; self:RefreshCustomAPL() end)
- self.customID=self:SequenceInput(parent,145,-30,90)
- action("ID新增",245,-30,80,function()
+ self.customScene=self.customScene or "single"
+ self:CreateSegmentedControl(parent,{{"single","方案一"},{"multi","方案二"},{"third","方案三"}},0,-30,280,
+  function() return self.customScene end,function(key) self.customScene=key; self:RefreshCustomAPL() end)
+ self:CreateToggleRow(parent,"启用本方案",0,-76,250,
+  function() return self.engine.db.enabledPlans.apl[self.customScene] end,
+  function(value) T.Profiles:SetPlanEnabled(self.engine,"apl",self.customScene,value) end)
+ action("使用本方案",280,-76,120,function()
+  local ok,reason=T.Profiles:UsePlan(self.engine,"apl",self.customScene)
+  self:CustomMessage(ok and "已选择并停止派发；关闭设置后开启。" or "请先启用本方案。")
+ end)
+ self.customID=self:SequenceInput(parent,300,-30,90)
+ action("ID新增",400,-30,80,function()
   local ok,raw=self:Invoke(self.customID,"GetText"); local text=ok and S.Public(raw,"string")
   self:AddCustomSpell(text and text:match("^%d+$") and tonumber(text))
  end)
- local drop=action("拖入技能",335,-30,90,function() self:ReceiveCustomSpell() end)
+ local drop=action("拖入技能",0,-110,140,function() self:ReceiveCustomSpell() end)
  self.customDrop=drop
  self:Paint(drop,"RegisterForDrag","LeftButton")
  self:Paint(drop,"RegisterForClicks","LeftButtonUp")
@@ -100,14 +110,14 @@ function U:CreateCustomAPLEditor(parent)
    self:ReceiveCustomSpell()
   end)
  end)
- self.customSave=action("保存并选APL",435,-30,140,function()
+ self.customSave=action("保存配置",435,-76,140,function()
   if not self:CommitCustomNumbers() then return end
   local ok,reason=C:Save(self.engine,self.customDraft,self.customLoadedScene,self.customClass)
-  if ok then ok,reason=T.Recommendation:SetSource(self.engine,"apl",self.customLoadedScene) end
+  if ok and self.engine.db.enabledPlans.apl[self.customLoadedScene] then ok,reason=T.Profiles:UsePlan(self.engine,"apl",self.customLoadedScene) end
   self:CustomMessage(ok and "已保存并停止派发；关闭设置后主动开启。" or (reason or "保存失败"))
  end)
  local scroll=self:Frame("ScrollFrame",parent,"UIPanelScrollFrameTemplate")
- self:Paint(scroll,"SetPoint","TOPLEFT",parent,"TOPLEFT",0,-65); self:Paint(scroll,"SetSize",550,154)
+ self:Paint(scroll,"SetPoint","TOPLEFT",parent,"TOPLEFT",0,-154); self:Paint(scroll,"SetSize",550,154)
  local child=self:Frame("Frame",scroll); self.customChild=child; self:Paint(child,"SetSize",530,108); self:Paint(scroll,"SetScrollChild",child)
  self.customWidgets={}
  for i=1,16 do
@@ -125,7 +135,7 @@ function U:CreateCustomAPLEditor(parent)
   self.customWidgets[i]={frame=frame,name=name}
  end
  local conditionScroll=self:Frame("ScrollFrame",parent,"UIPanelScrollFrameTemplate")
- self:Paint(conditionScroll,"SetPoint","TOPLEFT",parent,"TOPLEFT",0,-226); self:Paint(conditionScroll,"SetSize",550,280)
+ self:Paint(conditionScroll,"SetPoint","TOPLEFT",parent,"TOPLEFT",0,-315); self:Paint(conditionScroll,"SetSize",550,280)
  local settings=self:Frame("Frame",conditionScroll); self:Paint(settings,"SetSize",530,580); self:Paint(conditionScroll,"SetScrollChild",settings)
  self:CreateToggleRow(settings,"当前规则启用",0,0,530,function() local r=self:CustomRow(); return r and r.enabled==true end,function(v) local r=self:CustomRow(); if r then r.enabled=v end end)
  self:CreateSelectRow(settings,"移动条件",{{"any","不限"},{"yes","移动中"},{"no","站定"}},0,-36,530,
@@ -152,10 +162,10 @@ function U:CreateCustomAPLEditor(parent)
  self:Paint(self:Text(settings,0,-457,310,"GameFontHighlightSmall"),"SetText","CDM目录SpellID（空白=当前技能ID）")
  self:Paint(self:Text(settings,0,-495,530,"GameFontHighlightSmall"),"SetText","例如推荐205，CDM填116；推荐143，CDM填133。仅观察目录身份，不增加施法成功别名。距离：精确值优先，估测跨阈值时等待。")
  local stateScroll=self:Frame("ScrollFrame",parent,"UIPanelScrollFrameTemplate")
- self:Paint(stateScroll,"SetPoint","TOPLEFT",parent,"TOPLEFT",0,-514); self:Paint(stateScroll,"SetSize",550,44)
+ self:Paint(stateScroll,"SetPoint","TOPLEFT",parent,"TOPLEFT",0,-603); self:Paint(stateScroll,"SetSize",550,44)
  local stateChild=self:Frame("Frame",stateScroll); self:Paint(stateChild,"SetSize",530,240); self:Paint(stateScroll,"SetScrollChild",stateChild)
  self.customState=self:Text(stateChild,0,0,530,"GameFontHighlightSmall")
- self.customMessage=self:Text(parent,0,-566,580,"GameFontHighlightSmall")
+ self.customMessage=self:Text(parent,0,-655,580,"GameFontHighlightSmall")
  self:CustomMessage("已移除蓝量和冷却数值条件；旧条件迁移删除。血量及Duration仅后台探测。")
 end
 function U:MoveCustomRule(index,direction)

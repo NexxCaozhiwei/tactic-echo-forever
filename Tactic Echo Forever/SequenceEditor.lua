@@ -18,7 +18,7 @@ function U:AddSequenceSpell(rawID,index)
     local id=S.ID(rawID)
     if not id or id==7268 then self:SequenceMessage("未新增：精确技能ID无效或为引导子事件。"); return false end
     local rows=self:DraftRows()
-    if not rows then self:SequenceMessage("请先修正高级文本中的无效配置。"); return false end
+    if not rows then self:SequenceMessage("草稿无效，请重新编辑技能配置。"); return false end
     if #rows>=16 then self:SequenceMessage("未新增：每套最多16个技能步骤。"); return false end
     local view=S.Spell(id,"技能 " .. id)
     local row={spellID=id,name=view.reason=="PUBLIC" and view.name or ("技能 " .. id),matchIDs={id},repeatCount=1}
@@ -95,10 +95,10 @@ function U:RefreshSequenceEditor(force)
     if not force and text==self.sequenceRendered then return end
     self.sequenceRendered=text
     local rows=self:DraftRows()
-    if rows and #rows>16 then self.sequenceAdvanced=true; self:SequenceMessage("旧配置超过16步，已保留。请在高级文本中缩减后保存。") end
-    self:Paint(self.editorScroll,self.sequenceAdvanced and "Show" or "Hide")
-    self:Paint(self.sequenceScroll,self.sequenceAdvanced and "Hide" or "Show")
-    self:Paint(self.sequenceCount,"SetText",rows and (#rows .. "/16步 · 次数按独立成功事件计数") or "文本无效，请在高级文本中修正")
+    if rows and #rows>16 then self:SequenceMessage("旧配置超过16步，已保留；请逐行删除至16步以内再保存。") end
+    self:Paint(self.editorScroll,"Hide")
+    self:Paint(self.sequenceScroll,"Show")
+    self:Paint(self.sequenceCount,"SetText",rows and (#rows .. "/16步 · 次数按独立成功事件计数") or "草稿无效，请重新编辑")
     for i,widgets in ipairs(self.sequenceRows) do
         local row=rows and rows[i]
         self:Paint(widgets.frame,row and "Show" or "Hide")
@@ -119,22 +119,22 @@ end
 function U:CreateSequenceEditor(parent)
     self.sequenceAdvanced=false
     self:BindSequenceDrop(parent,nil,true)
-    self.dropZone=self:CreateActionButton(parent,"拖入技能（追加）",4,-80,195,function() self:ReceiveSequenceSpell() end)
+    self.dropZone=self:CreateActionButton(parent,"拖入技能（追加）",4,-124,195,function() self:ReceiveSequenceSpell() end)
     self:Paint(self.dropZone,"RegisterForDrag","LeftButton")
     self:Paint(self.dropZone,"RegisterForClicks","LeftButtonUp")
     self:BindSequenceDrop(self.dropZone)
-    self.spellIDInput=self:SequenceInput(parent,216,-80,90)
+    self.spellIDInput=self:SequenceInput(parent,216,-124,90)
     self:Paint(self.spellIDInput,"SetText","")
-    self:CreateActionButton(parent,"ID新增",317,-80,94,function()
+    self:CreateActionButton(parent,"ID新增",317,-124,94,function()
         local ok,raw=self:Invoke(self.spellIDInput,"GetText")
         local text=ok and S.Public(raw,"string")
         local id=text and text:match("^%s*(%d+)%s*$") and tonumber(text)
         if self:AddSequenceSpell(id) then self:Paint(self.spellIDInput,"SetText",""); self:Paint(self.spellIDInput,"ClearFocus") end
     end)
-    self.sequenceCount=self:Text(parent,4,-115,560,"GameFontHighlightSmall")
+    self.sequenceCount=self:Text(parent,4,-159,560,"GameFontHighlightSmall")
     local scroll=self:Frame("ScrollFrame",parent,"UIPanelScrollFrameTemplate")
     self.sequenceScroll=scroll
-    self:Paint(scroll,"SetPoint","TOPLEFT",parent,"TOPLEFT",4,-138); self:Paint(scroll,"SetSize",550,346)
+    self:Paint(scroll,"SetPoint","TOPLEFT",parent,"TOPLEFT",4,-182); self:Paint(scroll,"SetSize",550,300)
     local child=self:Frame("Frame",scroll); self.sequenceChild=child
     self:Paint(child,"SetSize",540,355); self:Paint(scroll,"SetScrollChild",child)
     self:BindSequenceDrop(scroll,nil,true); self:BindSequenceDrop(child,nil,true)
@@ -170,8 +170,4 @@ function U:CreateSequenceEditor(parent)
         for _,control in ipairs({widgets.up,widgets.down,widgets.delete,widgets.skip,widgets.usage}) do self:BindSequenceDrop(control,index) end
         self.sequenceRows[i]=widgets
     end
-    self:CreateActionButton(parent,"高级文本",371,-497,110,function()
-        self.sequenceAdvanced=not self.sequenceAdvanced; self:RefreshSequenceEditor(true)
-        self:SequenceMessage("每行 主ID:匹配ID/匹配ID*次数；例如205:205*3!skip!target；!target同一目标一次，!combat同一战斗一次；保存生效。")
-    end)
 end

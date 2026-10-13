@@ -57,7 +57,7 @@ end
 
 function P:Initialize(e, old)
     local scene = S.Field(old,"scene","string")
-    if scene ~= "multi" then scene = "single" end
+    if scene ~= "multi" and scene ~= "third" then scene = "single" end
     e.db.classProfiles={}; e.db.sourceByProfile={}
     e.db.profileMigrationConflicts={}
     local conflicts=S.Field(old,"profileMigrationConflicts","table")
@@ -85,7 +85,7 @@ function P:Initialize(e, old)
                     e.db.classProfiles[key]={}
                     local savedSource=sources and S.Field(sources,key,"table")
                     e.db.sourceByProfile[key]={}
-                    for _,sceneKey in ipairs({"single","multi"}) do
+                    for _,sceneKey in ipairs({"single","multi","third"}) do
                         -- Preserve old 17..32-row configuration for explicit editing;
                         -- Engine.Validate refuses to run it until reduced to 16.
                         e.db.classProfiles[key][sceneKey]=self:Clean(S.Field(rawProfile,sceneKey,"table"),32) or {}
@@ -124,7 +124,7 @@ function P:Initialize(e, old)
     if not e.db.classProfiles["MAGE:base"] then
         local saved=S.Field(old,"profiles","table")
         local mage={}
-        for _,key in ipairs({"single","multi"}) do
+        for _,key in ipairs({"single","multi","third"}) do
             mage[key]=self:Clean(saved and S.Field(saved,key,"table"),32) or self:Clean(TEF.ProfileDefaults[key])
         end
         e.db.classProfiles["MAGE:base"]=mage
@@ -134,7 +134,7 @@ function P:Initialize(e, old)
         if not e.db.classProfiles[e.profileKey] then
             e.db.classProfiles[e.profileKey]={single={},multi={}}
             if e.classToken=="MAGE" then
-                for _,key in ipairs({"single","multi"}) do
+                for _,key in ipairs({"single","multi","third"}) do
                     e.db.classProfiles[e.profileKey][key]=self:Clean(e.db.classProfiles["MAGE:base"][key]) or {}
                 end
             end
@@ -151,6 +151,21 @@ function P:Initialize(e, old)
     -- Explicit Engine.New(config) callers retain their own config. Bootstrap
     -- selects the saved profile separately; research never changes selection.
     e.db.schema = 4
+    e.db.selectedPlans={}; e.db.enabledPlans={}
+    local selected=S.Field(old,"selectedPlans","table")
+    local enabled=S.Field(old,"enabledPlans","table")
+    for _,source in ipairs({"manual","apl"}) do
+        local choice=S.Field(selected,source,"string")
+        e.db.selectedPlans[source]=(choice=="multi" or choice=="third") and choice or "single"
+        local flags=S.Field(enabled,source,"table")
+        e.db.enabledPlans[source]={}
+        for _,slot in ipairs({"single","multi","third"}) do
+            local value,why=S.Field(flags,slot,"boolean")
+            e.db.enabledPlans[source][slot]=value==true or (why=="NO_DATA" and slot=="single")
+        end
+    end
+    e.db.profiles.third=e.db.profiles.third or {}
+    if not selected then e.scene="single"; e.db.scene="single" end
     e.db.dispatch=TEF.Runtime and TEF.Runtime.Clean(S.Field(old,"dispatch","table")) or nil
     if not e.profileKey or e.classToken~="MAGE" then e.steps=TEF.Engine.Validate(e.db.profiles[scene]) end
     local hud = S.Field(old,"hud","table")
@@ -166,7 +181,7 @@ function P:Initialize(e, old)
 end
 
 function P:Select(e, key)
-    if key ~= "single" and key ~= "multi" then return false,"SCENE_INVALID" end
+    if key ~= "single" and key ~= "multi" and key ~= "third" then return false,"SCENE_INVALID" end
     local rows
     if TEF.Recommendation then rows=TEF.Recommendation:Rows(e,key) else rows=self:Clean(e.db.profiles[key]) end
     e:Reset() -- keeps success tombstones; old initiation can never take over.
@@ -180,7 +195,7 @@ function P:Select(e, key)
 end
 
 function P:Save(e, key, rows)
-    if key ~= "single" and key ~= "multi" then return false,"SCENE_INVALID" end
+    if key ~= "single" and key ~= "multi" and key ~= "third" then return false,"SCENE_INVALID" end
     if not e.profileKey then return false,"PROFILE_IDENTITY_UNKNOWN" end
     local clean = self:Clean(rows)
     if not clean then return false,"CONFIG_INVALID" end
@@ -275,4 +290,21 @@ function P:ConfirmObserved(e)
         end
     end
     return false,"NO_VERIFIED_NAME_SUCCESS"
+end
+
+-- 内部键保留旧配置兼容；界面只展示独立方案，不再表达目标数量。
+function P:PlanName(key)
+    return ({single="方案一",multi="方案二",third="方案三"})[key] or "未知方案"
+end
+function P:SetPlanEnabled(e,source,key,value)
+    if not e.db.enabledPlans[source] or not ({single=true,multi=true,third=true})[key] then return false end
+    e.db.enabledPlans[source][key]=value==true
+    if value~=true and TEF.Recommendation:Source(e)==source and e.scene==key then TEF.Runtime:Stop("PLAN_DISABLED") end
+    return true
+end
+function P:UsePlan(e,source,key)
+    if not e.db.enabledPlans[source] or e.db.enabledPlans[source][key]~=true then return false,"PLAN_DISABLED" end
+    local ok,reason=TEF.Recommendation:SetSource(e,source,key)
+    if ok then e.db.selectedPlans[source]=key end
+    return ok,reason
 end
