@@ -302,3 +302,66 @@ function P:Sample(e)
  if generation~=e.generation or serial~=(e.receiptSerial or 0) or revision~=(self.revision or 0) then return nil,"APL_STALE_SAMPLE" end
  return state
 end
+
+
+-- 资源探测只记录公开标量，不参与资格或输入。
+local function resourceNumber(path,...)
+ local ok,raw,why=S.Call(path,...); if not ok then return nil,why end
+ local value,reason=S.Public(raw,"number")
+ if value and (value<0 or value>1000000) then return nil,"UNKNOWN_NUMBER" end
+ return value,reason
+end
+function P.ProbePower(name)
+ local id,why=S.Field(S.Field(Enum,"PowerType","table"),name,"number")
+ if id==nil then return {reason=why or "UNKNOWN_POWER_TYPE",maxReason=why or "UNKNOWN_POWER_TYPE"} end
+ if id<0 or id>100 or id%1~=0 then return {reason="UNKNOWN_POWER_TYPE",maxReason="UNKNOWN_POWER_TYPE"} end
+ local value,reason=resourceNumber("UnitPower","player",id)
+ local maximum,maxReason=resourceNumber("UnitPowerMax","player",id)
+ return {powerType=id,value=value,reason=reason,maximum=maximum,maxReason=maxReason}
+end
+function P.CleanResourceProbe(raw)
+ local class=S.Field(raw,"class","string"); if class~="WARRIOR" and class~="ROGUE" then return nil end
+ local row={class=class,combat=S.Field(raw,"combat","boolean"),targetExists=S.Field(raw,"targetExists","boolean"),resources={}}
+ for _,field in ipairs({"session","time","cycle"}) do local n=S.Field(raw,field,"number"); if n and n>=0 and n<=1000000000000 then row[field]=n end end
+ local resources=S.Field(raw,"resources","table")
+ for _,key in ipairs({"rage","energy","comboPoints","targetComboPoints"}) do
+  local r=S.Field(resources,key,"table")
+  if r then
+   local out={}
+   for _,field in ipairs({"value","maximum","powerType"}) do local n=S.Field(r,field,"number"); if n and n>=0 and n<=1000000 then out[field]=n end end
+   for _,field in ipairs({"reason","maxReason"}) do local text=S.Field(r,field,"string"); if text and #text<=80 and text:match("^[A-Z_]+$") then out[field]=text end end
+   row.resources[key]=out
+  end
+ end
+ return row
+end
+function P.SampleResources(e)
+ if e.classToken~="WARRIOR" and e.classToken~="ROGUE" then return end
+ local now=P.Time(); if not now then return end
+ if e.resourceProbeAt and now>=e.resourceProbeAt and now-e.resourceProbeAt<.20 then return end
+ local generation,class=e.generation,e.classToken
+ local row={class=class,time=now,session=e.session,combat=P.Boolean("InCombatLockdown"),targetExists=P.Boolean("UnitExists","target"),resources={}}
+ if TEF.Runtime and TEF.Runtime.e==e then row.cycle=TEF.Runtime.cycle end
+ if class=="WARRIOR" then row.resources.rage=P.ProbePower("Rage")
+ else
+  row.resources.energy=P.ProbePower("Energy"); row.resources.comboPoints=P.ProbePower("ComboPoints")
+  local value,reason
+  if row.targetExists==true then value,reason=resourceNumber("GetComboPoints","player","target")
+  else reason=row.targetExists==false and "TARGET_ABSENT" or "TARGET_UNKNOWN" end
+  row.resources.targetComboPoints={value=value,reason=reason}
+ end
+ if generation~=e.generation or class~=e.classToken or e~=TEF.engine then return end
+ row=P.CleanResourceProbe(row); if not row then return end
+ e.resourceProbeAt=now
+ local parts={row.class,tostring(row.combat),tostring(row.targetExists)}
+ for _,key in ipairs({"rage","energy","comboPoints","targetComboPoints"}) do
+  local r=row.resources[key]; if r then for _,field in ipairs({"powerType","value","maximum","reason","maxReason"}) do parts[#parts+1]=tostring(r[field]) end end
+ end
+ local fingerprint=table.concat(parts,"|")
+ e.db.resourceProbeSummary={samples=(e.db.resourceProbeSummary and e.db.resourceProbeSummary.samples or 0)+1,latest=row}
+ if e.resourceProbeFingerprint==fingerprint then return end
+ e.resourceProbeFingerprint=fingerprint
+ local rows=e.db.resourceDiagnostics
+ if #rows>=256 then table.remove(rows,1); e.db.resourceEvicted=e.db.resourceEvicted+1 end
+ rows[#rows+1]=row
+end

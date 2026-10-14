@@ -120,6 +120,14 @@ function Engine.New(config, db)
     end
     local evicted = S.Public(db.evicted, "number")
     if evicted and evicted >= 0 and evicted % 1 == 0 then clean.evicted = evicted end
+    clean.resourceDiagnostics={}; clean.resourceEvicted=0
+    local resources=S.Field(db,"resourceDiagnostics","table")
+    local size=resources and #resources or 0
+    for i=math.max(1,size-255),size do
+        local row=TEF.APL.State.CleanResourceProbe(S.Field(resources,i,"table"))
+        if row then clean.resourceDiagnostics[#clean.resourceDiagnostics+1]=row end
+    end
+    local lost=S.Field(db,"resourceEvicted","number"); if lost and lost>=0 and lost%1==0 then clean.resourceEvicted=lost end
     clean.queueDiagnostics={}; clean.queueEvicted=0
     clean.rangeDiagnostics={}; clean.rangeEvicted=0
     local ranges=S.Field(db,"rangeDiagnostics","table")

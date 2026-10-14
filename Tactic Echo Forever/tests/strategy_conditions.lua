@@ -330,4 +330,83 @@ test("highest_rank_button_preserves_strategy_and_waits_for_save",function()
  T.UI.strategySaveButton.scripts.OnClick(); eq(C:Rows(e)[1].spellID,133)
  C_SpellBook,C_Spell.GetSpellInfo=book,info
 end)
+test("resource_probe_public_and_secret_independent_values",function()
+ local e=F.runtime(); local enum,power,maximum=Enum.PowerType,UnitPower,UnitPowerMax
+ Enum.PowerType={Rage=1,Energy=3,ComboPoints=4}
+ UnitPower=function(_,id) return id==1 and 35 or F.secret end; UnitPowerMax=function() return 100 end
+ local p=A.State.ProbePower("Rage"); eq(p.value,35); eq(p.maximum,100); eq(p.reason,"PUBLIC")
+ p=A.State.ProbePower("Energy"); eq(p.value,nil); eq(p.reason,"SECRET"); eq(p.maximum,100)
+ UnitPowerMax=function() return F.secret end; p=A.State.ProbePower("Rage"); eq(p.value,35); eq(p.maximum,nil); eq(p.maxReason,"SECRET")
+ Enum.PowerType,UnitPower,UnitPowerMax=enum,power,maximum
+end)
+test("resource_probe_paused_sampling_dedup_frequency_and_target_combo",function()
+ local e=F.runtime(); T.Runtime:Stop(); e.classToken="ROGUE"
+ local enum,power,maximum,combo,time,exists=Enum.PowerType,UnitPower,UnitPowerMax,GetComboPoints,GetTime,UnitExists
+ local now,energy=20,70; local calls=0
+ Enum.PowerType={Rage=1,Energy=3,ComboPoints=4}; GetTime=function() return now end; UnitExists=function() return true end
+ UnitPower=function(_,id) calls=calls+1; return id==3 and energy or 3 end; UnitPowerMax=function(_,id) return id==3 and 100 or 5 end
+ GetComboPoints=function() return 3 end
+ A.State.SampleResources(e); eq(#e.db.resourceDiagnostics,1); eq(e.db.resourceDiagnostics[1].resources.energy.value,70); eq(e.db.resourceDiagnostics[1].resources.targetComboPoints.value,3)
+ now=20.1; A.State.SampleResources(e); eq(calls,2)
+ now=20.3; A.State.SampleResources(e); eq(#e.db.resourceDiagnostics,1); eq(e.db.resourceProbeSummary.samples,2)
+ energy=20; now=20.6; A.State.SampleResources(e); eq(#e.db.resourceDiagnostics,2)
+ UnitExists=function() return F.secret end; now=20.9; A.State.SampleResources(e); eq(e.db.resourceProbeSummary.latest.resources.targetComboPoints.reason,"TARGET_UNKNOWN")
+ eq(T.Runtime.intent,false); eq(T.Dispatch:Packet(),nil)
+ Enum.PowerType,UnitPower,UnitPowerMax,GetComboPoints,GetTime,UnitExists=enum,power,maximum,combo,time,exists
+end)
+test("resource_probe_capacity_reload_sanitization_and_no_secret_persistence",function()
+ local e=F.runtime(); e.classToken="WARRIOR"
+ local enum,power,maximum,time=Enum.PowerType,UnitPower,UnitPowerMax,GetTime
+ local now,value=30,0; Enum.PowerType={Rage=1}; GetTime=function() return now end
+ UnitPower=function() return value end; UnitPowerMax=function() return 100 end
+ for i=1,260 do now=now+.25; value=i; A.State.SampleResources(e) end
+ eq(#e.db.resourceDiagnostics,256); eq(e.db.resourceEvicted,4)
+ local copy=T.Engine.New(T.Config,e.db); eq(#copy.db.resourceDiagnostics,256); eq(copy.db.resourceEvicted,4); eq(copy.db.resourceProbeSummary,nil)
+ local clean=A.State.CleanResourceProbe({class="WARRIOR",resources={rage={value=F.secret,reason="SECRET",maximum=100,maxReason="PUBLIC"}}})
+ eq(clean.resources.rage.value,nil); eq(clean.resources.rage.reason,"SECRET")
+ Enum.PowerType,UnitPower,UnitPowerMax,GetTime=enum,power,maximum,time
+end)
+test("resource_probe_api_failure_unknown_enum_and_reentry",function()
+ local e=F.runtime(); local enum,power,maximum,time=Enum.PowerType,UnitPower,UnitPowerMax,GetTime
+ Enum.PowerType={Rage=F.secret}; eq(A.State.ProbePower("Rage").reason,"SECRET")
+ Enum.PowerType={Rage=1}; UnitPower=function() error("PRIVATE_ERROR") end; UnitPowerMax=function() return nil end
+ local p=A.State.ProbePower("Rage"); eq(p.reason,"CALL_FAILED"); eq(p.maxReason,"NO_DATA")
+ e.classToken="WARRIOR"; GetTime=function() return 50 end; UnitPower=function() e:Reset(); return 0 end
+ A.State.SampleResources(e); eq(#e.db.resourceDiagnostics,0)
+ Enum.PowerType,UnitPower,UnitPowerMax,GetTime=enum,power,maximum,time
+end)
+test("combo_condition_bounds_class_gate_and_unknown",function()
+ local e=F.runtime(); local enum,power,maximum=Enum.PowerType,UnitPower,UnitPowerMax
+ Enum.PowerType={ComboPoints=4}; UnitPower=function() return 5 end; UnitPowerMax=function() return F.secret end
+ e.classToken="ROGUE"; local r=row(143,{{kind="comboPoints",min=5,max=5}}); eq(r.invalid,nil)
+ local s=snapshot(); C:SampleStrategies(s,{r},e); eq(C:CheckStrategies(s,r,1),true)
+ UnitPower=function() return 4 end; s=snapshot(); C:SampleStrategies(s,{r},e); eq(C:CheckStrategies(s,r,1),false)
+ UnitPower=function() return F.secret end; s=snapshot(); C:SampleStrategies(s,{r},e); eq(C:CheckStrategies(s,r,1),nil)
+ e.classToken="MAGE"; UnitPower=function() error("OTHER_CLASS_MUST_NOT_READ") end
+ s=snapshot(); C:SampleStrategies(s,{r},e); eq(C:CheckStrategies(s,r,1),nil)
+ r.strategies[1].mode="skip"; eq(C:CheckStrategies(s,r,1),nil)
+ eq(row(143,{{kind="comboPoints",min=11}}).invalid,"CUSTOM_STRATEGY_INVALID")
+ Enum.PowerType,UnitPower,UnitPowerMax=enum,power,maximum
+end)
+test("combo_condition_live_recheck_revokes_and_logs",function()
+ local e=F.runtime(); e.classToken="ROGUE"
+ local enum,power,maximum=Enum.PowerType,UnitPower,UnitPowerMax
+ local points=5; Enum.PowerType={ComboPoints=4}; UnitPower=function() return points end; UnitPowerMax=function() return 5 end
+ assert(C:Save(e,{row(143,{{kind="comboPoints",min=5}})},"single","ROGUE")); assert(T.Recommendation:SetSource(e,"apl","single"))
+ T.Runtime:SetIntent(true); T.Dispatch:TickContinuous(); assert(T.Dispatch:Packet())
+ points=1; eq(T.Dispatch:Packet(),nil)
+ local clean=A.Trace.Clean({reason="APL_CANDIDATE",actions={custom_1={spellID=143,conditionObservations={{kind="comboPoints",number=5,reason="PUBLIC",result=true}}}}})
+ eq(clean.actions.custom_1.conditionObservations[1].number,5)
+ Enum.PowerType,UnitPower,UnitPowerMax=enum,power,maximum
+end)
+test("combo_menu_only_rogue_and_editor_save_roundtrip",function()
+ local e=F.runtime(); e.classToken="ROGUE"; assert(C:Save(e,{row(143,{{kind="usable",value=true}})},"single","ROGUE"))
+ T.UI:ShowPage("customapl"); T.UI:RefreshStrategyKinds(); eq(T.UI.strategyKindButtons.comboPoints.shown,true)
+ T.UI.strategyKindTarget=T.UI.customDraft[1].strategies[1].conditions[1]
+ T.UI.strategyKindButtons.comboPoints.scripts.OnClick(); eq(T.UI.strategyKindTarget.kind,"comboPoints"); eq(T.UI.strategyKindTarget.min,5)
+ T.UI.strategySaveButton.scripts.OnClick(); eq(C:Rows(e)[1].strategies[1].conditions[1].kind,"comboPoints")
+ for _,class in ipairs({"MAGE","WARRIOR","PALADIN","DRUID","HUNTER","PRIEST","WARLOCK","SHAMAN","MONK","DEATHKNIGHT","DEMONHUNTER","EVOKER"}) do
+  e.classToken=class; T.UI:RefreshStrategyKinds(); eq(T.UI.strategyKindButtons.comboPoints.shown,false)
+ end
+end)
 return n

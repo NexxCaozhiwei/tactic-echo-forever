@@ -2049,6 +2049,18 @@ assert(loadfile(root .. "/tests/macro_sources.lua"))(T,{deliveryFixture=delivery
 assert(loadfile(root .. "/tests/self_actions.lua"))(T,{deliveryFixture=deliveryFixture,receipt=receipt,test=test,eq=eq,secret=secret})
 assert(loadfile(root .. "/tests/attack_activation.lua"))(T,{deliveryFixture=deliveryFixture,receipt=receipt,test=test,eq=eq,secret=secret})
 assert(loadfile(root .. "/tests/sequence_usage.lua"))(T,{deliveryFixture=deliveryFixture,receipt=receipt,test=test,eq=eq,secret=secret})
+test("bootstrap_build_updates_allowed_but_version_interface_unknown_blocked",function()
+ local old=GetBuildInfo
+ for _,case in ipairs({{"1.60.1","70338",16001,true},{"1.60.1","70374",16001,true},{"1.60.1","99999",16001,true},
+  {"1.60.2","70374",16001,false},{"1.60.1","70374",16002,false},{"1.60.1",secret,16001,false},{secret,"70374",16001,false},{"1.60.1","70374",secret,false}}) do
+  GetBuildInfo=function() return case[1],case[2],"date",case[3] end
+  load("Core/Bootstrap.lua"); local ef=allFrames.TEF_EventFrame
+  ef.scripts.OnEvent(ef,"ADDON_LOADED","Tactic Echo Forever")
+  eq(T.engine.clientValidated,case[4])
+  if case[4] then eq(T.engine.db.client.build,case[2]) end
+ end
+ GetBuildInfo=old
+end)
 realprint("TEF simulated tests: " .. count .. " passed\n")
 
 assert(loadfile(root .. "/tests/apl.lua"))("Tactic Echo Forever",T,{runtimeFixture=runtimeFixture,deliveryFixture=deliveryFixture,receipt=receipt})

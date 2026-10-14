@@ -1,5 +1,5 @@
 local addonName, TEF = ...
-local VERSION = "1.1.9"
+local VERSION = "1.1.12"
 local S = TEF.Safety
 local engine, frame
 
@@ -24,10 +24,10 @@ local function initialize()
         local safeInterface=S.ID(interface)
         if safeVersion and safeBuild and safeInterface then
             engine.db.client={version=safeVersion,build=safeBuild,interface=safeInterface}
-            engine.clientValidated=safeVersion=="1.60.1" and safeBuild=="70338" and safeInterface==16001
-            if safeVersion ~= "1.60.1" or safeBuild ~= "70338" or safeInterface ~= 16001 then
+            engine.clientValidated=safeVersion=="1.60.1" and safeInterface==16001
+            if safeVersion ~= "1.60.1" or safeInterface ~= 16001 then
                 engine:Log("error","CLIENT_CONTEXT_CHANGED")
-                printSafe("客户端与70338基线不同，请核对接口及事件；当前默认暂停。")
+                printSafe("客户端版本或接口不受支持，请核对接口及事件；当前默认暂停。")
             end
         else engine:Log("unknown","CLIENT_UNKNOWN") end
     else engine:Log("unknown","CLIENT_CALL_FAILED") end

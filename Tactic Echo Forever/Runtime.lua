@@ -202,6 +202,7 @@ end
 function C:Reconcile()
     if not self.e or self.e~=TEF.engine then return end
     self.cycle=self.cycle+1
+    TEF.APL.State.SampleResources(self.e)
     self.e:ObserveUsageCombat()
     if not self.intent then return end
     local e=self.e
