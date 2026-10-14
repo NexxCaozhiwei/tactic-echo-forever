@@ -11,7 +11,8 @@ issecretvalue=function(v)
 end
 local detector=issecretvalue
 local function load(name) assert(loadfile(root .. "/" .. name))("Tactic Echo Forever",T) end
-load("Config.lua"); load("Safety.lua"); load("ActionSources.lua"); load("APL/Packs/Mage/Abilities.lua"); load("APL/Packs/Mage/Talents.lua"); load("APL/TalentState.lua"); load("APL/Registry.lua"); load("APL/PublicConditions.lua"); load("APL/Custom.lua"); load("APL/RankResolver.lua"); load("APL/Packs/Mage/BuildSelector.lua"); load("APL/State.lua"); load("APL/Conditions.lua"); load("APL/Trace.lua"); load("APL/Packs/Mage/Mage60.lua"); load("APL/Packs/Mage/Rules.lua"); load("APL/Engine.lua"); load("Sequence.lua"); load("SequenceUsage.lua")
+load("Config.lua"); load("Safety.lua"); load("ActionSources.lua"); load("APL/Packs/Mage/Abilities.lua"); load("APL/Packs/Mage/Talents.lua"); load("APL/TalentState.lua"); load("APL/Registry.lua"); load("APL/PublicConditions.lua"); load("APL/Custom.lua"); load("APL/RankResolver.lua"); load("APL/Packs/Mage/BuildSelector.lua"); load("APL/State.lua"); load("APL/Conditions.lua"); load("APL/Trace.lua"); load("APL/Packs/Mage/Mage60.lua"); load("APL/Packs/Mage/Rules.lua"); load("APL/Engine.lua"); load("SkillGroups.lua")
+load("Sequence.lua"); load("SequenceUsage.lua")
 load("HudStyles.lua"); load("Profiles.lua"); load("Recommendation.lua"); load("Maintenance.lua"); load("Research.lua")
 local standard=T.StandardConfig or T.Config
 local count=0
@@ -446,7 +447,7 @@ GetCurrentKeyBoardFocus=function() return nil end
 UnitExists=function() return true end; UnitCanAttack=function() return true end
 UnitIsDeadOrGhost=function() return false end; IsPlayerMoving=function() return false end
 UnitCastingInfo=function() return nil end; UnitChannelInfo=function() return nil end
-load("UI.lua"); load("UIComponents.lua"); load("SequenceEditor.lua"); load("CustomAPLEditor.lua"); load("HUD.lua"); load("Dispatch.lua"); load("Presentation.lua"); load("Transport.lua"); load("Runtime.lua"); load("Hotkeys.lua"); load("Core/Bootstrap.lua")
+load("UI.lua"); load("UIComponents.lua"); load("SequenceEditor.lua"); load("CustomAPLEditor.lua"); load("SkillGroupEditor.lua"); load("HUD.lua"); load("Dispatch.lua"); load("Presentation.lua"); load("Transport.lua"); load("Runtime.lua"); load("Hotkeys.lua"); load("Core/Bootstrap.lua")
 local realprint=io.write
 test("toc_bootstrap_independent_namespace_sent_payload",function()
     local ef=allFrames.TEF_EventFrame

@@ -117,10 +117,12 @@ function D:IsSelfAction(id)
     local harmful=S.Resolve("C_Spell.IsSpellHarmful") and "C_Spell.IsSpellHarmful" or "IsHarmfulSpell"
     return publicBoolean(helpful,id)==true and publicBoolean(harmful,id)==false
 end
-function D:ManualPolicy(e,step,live)
+function D:ManualPolicy(e,step,live,groupEntry)
     if TEF.Recommendation:Source(e)~="manual" then return true end
-    if TEF.Maintenance:Owns(e,step and step.spellID) then return false,"MAINTENANCE_OWNS_SPELL" end
+    if step and not step.group and TEF.Maintenance:Owns(e,step.spellID) then return false,"MAINTENANCE_OWNS_SPELL" end
     if not step then return nil,"SEQUENCE_POLICY_STEP_UNKNOWN" end
+    if step.group and not groupEntry then return nil,"GROUP_WAIT_ENTRY" end
+    if step.group and #step.group.steps==0 then return false,"GROUP_EMPTY" end
     if step.enabled==false then return false,"SEQUENCE_POLICY_DISABLED" end
     if not step.strategies or #step.strategies==0 then
         if not step.targetMode or step.targetMode=="auto" then return true end
@@ -269,7 +271,7 @@ function D:CastQueueWindow()
     self.queueWindowReason="LIFECYCLE_OR_CURRENT_INITIATION"
     local e=TEF.engine
     if not e or not e.db.dispatch.castQueue or not self.continuous or not self:HasCurrentInitiation()
-        or TEF.APL:IsActive(e) or not e.running or e.completed or TEF.UI.settingsOpen
+        or TEF.APL:IsActive(e) or e.groupRun or not e.running or e.completed or TEF.UI.settingsOpen
         or publicBoolean("InCombatLockdown")~=true then return nil end
     local generation,index,serial=e.generation,e.index,e.receiptSerial or 0
     local initiation=self.initiation
@@ -304,7 +306,7 @@ function D:CastQueueWindow()
     if (e.stepCasts or 0)+1>=step.repeatCount then nextIndex=index+1 end
     -- Do not speculate across loop/completion, channel or Shoot boundaries.
     local nextStep=e.steps[nextIndex]
-    if not nextStep or nextStep.unverified or nextStep.spellID==5019 or nextStep.spellID==6603 or nextStep.spellID==75 or nextStep.spellID==5143 then return nil end
+    if not nextStep or nextStep.group or nextStep.unverified or nextStep.spellID==5019 or nextStep.spellID==6603 or nextStep.spellID==75 or nextStep.spellID==5143 then return nil end
     if e:UsageEligibility(nextIndex)~=true then return nil end
     if generation~=e.generation or index~=e.index or serial~=(e.receiptSerial or 0)
         or self.initiation~=initiation or not self.continuous or not self.enabled
@@ -522,7 +524,7 @@ end
 function D:OrdinaryContinuous()
     local e=TEF.engine; local r=TEF.Runtime
     local step=e and e.steps and e.steps[e.index]
-    return r and r.e==e and r.intent and e.db.dispatch.ordinaryContinuous==true
+    return r and r.e==e and r.intent and not e.groupRun and e.db.dispatch.ordinaryContinuous==true
         and step and step.spellID~=5019 and step.spellID~=6603 and step.spellID~=75 or false
 end
 function D:TransportCastAllowed(continuous)
@@ -649,6 +651,7 @@ function D:Packet()
     local combat
     if ok then combat=S.Public(rawCombat,"boolean") end
     if combat==nil then self:Cancel("TEK_COMBAT_UNKNOWN"); return nil end
+    if e.groupRun and not e.maintenanceActive and combat~=true then self:Cancel("GROUP_COMBAT_REQUIRED"); return nil end
     if TEF.Runtime and TEF.Runtime.e==e and TEF.Runtime.intent
         and e.db.dispatch.mode=="auto" and combat~=true and not TEF.Maintenance:OutsideAllowed(e) then self:Cancel("RUNTIME_AUTO_STANDBY"); return nil end
     if p.castQueue and combat~=true then self:Cancel("CAST_QUEUE_COMBAT_REQUIRED"); return nil end
@@ -676,6 +679,9 @@ function D:Event(event,unit,id,guidRaw)
     local unitValue=S.Public(unit,"string")
     local spellValue=S.ID(id)
     local guid=S.Identity(guidRaw)
+    if owned and TEF.SkillGroups:ObserveStart(e,event,unitValue,spellValue,guid) then
+        eventGeneration,eventIndex=e.generation,e.index
+    end
     if unitValue=="player" and event=="UNIT_SPELLCAST_CHANNEL_START" then
         self.channelInputLock=true
         self:Cancel("CHANNEL_ACTIVE_INPUT_LOCK")
@@ -698,7 +704,7 @@ function D:Event(event,unit,id,guidRaw)
         local step=e.steps[e.index]
         local nextIndex=(e.stepCasts or 0)+1<step.repeatCount and e.index or e.index+1
         local nextStep=e.steps[nextIndex]
-        if nextStep and nextStep.spellID==spellValue and spellValue==self.initiation.spellID then
+        if nextStep and not nextStep.group and nextStep.spellID==spellValue and spellValue==self.initiation.spellID then
             q={generation=e.generation,index=e.index,receiptSerial=e.receiptSerial or 0,
                 nextIndex=nextIndex,spellID=spellValue,originGUID=self.initiation.guid,
                 request=TEF.Runtime.requestSerial,implicitContinuous=true}

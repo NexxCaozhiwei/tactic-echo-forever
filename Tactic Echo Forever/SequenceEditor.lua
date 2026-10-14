@@ -17,6 +17,7 @@ function U:WriteDraft(rows)
     self:RefreshSequenceEditor(true)
 end
 function U:OpenSequencePolicy(index)
+    if not self:PrepareGroupPanelSwitch(false) then return end
     if not self:CommitCustomNumbers() then return end
     local rows=self:DraftRows(); if not rows or not rows[index] then return end
     self.strategySource="manual"; self.sequencePolicyIndex=index; self.sequencePolicyRow=rows[index]
@@ -131,11 +132,16 @@ function U:RefreshSequenceEditor(force)
         if row then
             local view=row.unverified and S.Spell(row.name,row.name) or S.Spell(row.spellID,row.name)
             self:Paint(widgets.icon,"SetTexture",view.icon)
-            self:Paint(widgets.name,"SetText",i .. ". " .. view.name .. " · ID " .. row.spellID .. (row.enabled==false and " · 已停用" or ""))
+            self:Paint(widgets.groupEdit,row.group and "Show" or "Hide")
+            self:Paint(widgets.name,"SetWidth",row.group and 170 or 278)
+            self:Paint(widgets.name,"SetText",i .. ". " .. (row.group and ("【" .. row.group.name .. "】") or (view.name .. " · ID " .. row.spellID)) .. (row.enabled==false and " · 已停用" or ""))
             self:Paint(widgets.count,"SetText",tostring(row.repeatCount or 1))
             self:Paint(widgets.skip,"SetText",row.skipUnavailable and "不可用跳过：开" or "不可用跳过：关")
             self:Paint(widgets.skip,row.spellID==6603 and "Hide" or "Show")
             self:Paint(widgets.usage,"SetText",({always="每轮使用",target="同一目标只用一次",combat="同一战斗只用一次"})[row.usagePolicy or "always"])
+            for _,control in ipairs({widgets.count,widgets.countLabel,widgets.skip,widgets.usage}) do self:Paint(control,row.group and "Hide" or "Show") end
+            self:Paint(widgets.groupInfo,row.group and "Show" or "Hide")
+            if row.group then self:Paint(widgets.groupInfo,"SetText",#row.group.steps .. "个组内技能 · 循环" .. row.group.rounds .. "轮 · 次数与跳过在组内设置") end
             self:SetControlEnabled(widgets.up,i>1); self:SetControlEnabled(widgets.down,i<#rows)
         end
     end
@@ -156,6 +162,7 @@ function U:CreateSequenceEditor(parent)
         local id=text and text:match("^%s*(%d+)%s*$") and tonumber(text)
         if self:AddSequenceSpell(id) then self:Paint(self.spellIDInput,"SetText",""); self:Paint(self.spellIDInput,"ClearFocus") end
     end)
+    self:CreateActionButton(parent,"新建技能组",418,-164,140,function() self:AddSkillGroup("manual") end)
     self.sequenceCount=self:Text(parent,4,-199,560,"GameFontHighlightSmall")
     self:CreateSectionCard(parent,"技能列表 · 拖动条目排序，或使用上下箭头",0,-217,580,312)
     local scroll=self:Frame("ScrollFrame",parent,"UIPanelScrollFrameTemplate")
@@ -186,7 +193,8 @@ function U:CreateSequenceEditor(parent)
         local widgets={frame=row,icon=icon,name=self:Text(row,6,-7,278,"GameFontHighlightSmall"),count=self:SequenceInput(row,70,-38,46)}
         self:Paint(widgets.name,"SetWordWrap",false)
         self:BindSequenceDrop(widgets.count,index)
-        self:Paint(self:Text(row,6,-44,60,"GameFontHighlightSmall"),"SetText","使用次数")
+        widgets.countLabel=self:Text(row,6,-44,60,"GameFontHighlightSmall"); self:Paint(widgets.countLabel,"SetText","使用次数")
+        widgets.groupInfo=self:Text(row,6,-44,505,"GameFontHighlightSmall")
         self:Paint(widgets.count,"SetScript","OnEnterPressed",function(box)
             self:Guard(function() local ok,raw=self:Invoke(box,"GetText"); if ok then self:EditSequenceRow(index,"count",raw) end end)
             self:Paint(box,"ClearFocus")
@@ -194,6 +202,7 @@ function U:CreateSequenceEditor(parent)
         self:Paint(widgets.count,"SetScript","OnEditFocusLost",function(box)
             self:Guard(function() local ok,raw=self:Invoke(box,"GetText"); if ok then self:EditSequenceRow(index,"count",raw) end end)
         end)
+        widgets.groupEdit=self:CreateActionButton(row,"技能组编辑",180,-2,104,function() self:OpenSkillGroup("manual",index) end)
         widgets.policy=self:CreateActionButton(row,"编辑策略",290,-2,80,function() self:OpenSequencePolicy(index) end)
         widgets.up=self:CreateActionButton(row,"↑",376,-2,38,function() self:EditSequenceRow(index,"move",-1) end)
         widgets.down=self:CreateActionButton(row,"↓",420,-2,38,function() self:EditSequenceRow(index,"move",1) end)

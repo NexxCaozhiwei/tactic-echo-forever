@@ -25,6 +25,9 @@ function Engine:Log(kind, reason, spellID, current, nextStep, event)
         scene = self.scene, version=TEF.Version,
         event = observed[event] and event or nil }
     self.lastReason = reason
+    if self.groupRun and not self.maintenanceActive then
+        local row=d[#d]; row.groupName=self.groupRun.group.name; row.groupRound=self.groupRun.round; row.groupIndex=self.index
+    end
     if TEF.Dispatch and TEF.Dispatch.TraceQueue and self==TEF.engine then
         TEF.Dispatch:TraceQueue(reason,event,spellID)
     end
@@ -66,6 +69,12 @@ local function configuration(config)
         if error or (classification~="NO_DATA" and classification~="PUBLIC") then return nil end
         local enabled,enabledType=S.Field(row,"enabled","boolean")
         if enabledType~="PUBLIC" and enabledType~="NO_DATA" then return nil end
+        local group,kind=S.Field(row,"group","table")
+        if kind~="NO_DATA" then
+            if kind~="PUBLIC" then return nil end
+            local clean=TEF.SkillGroups:Clean(group); if not clean then return nil end
+            steps[i].group=clean
+        end
         steps[i].strategies=policies; steps[i].enabled=enabled~=false
         local mode,modeType=S.Field(row,"targetMode","string")
         if modeType~="NO_DATA" and (modeType~="PUBLIC" or not ({auto=true,self=true,friendly=true,enemy=true,ground=true})[mode]) then return nil end
@@ -112,6 +121,7 @@ function Engine.New(config, db)
                         version=S.Field(r,"version","string"),
                         cycle=S.Field(r,"cycle","number"),request=S.Field(r,"request","number"),
                         castCount=S.Field(r,"castCount","number"),requiredCasts=S.Field(r,"requiredCasts","number"),
+                        groupName=TEF.SkillGroups:LogName(r),groupRound=TEF.SkillGroups:LogNumber(r,"groupRound",99),groupIndex=TEF.SkillGroups:LogNumber(r,"groupIndex",8),
                         research=TEF.Research and TEF.Research.CleanSummary(S.Field(r,"research","table")) or nil,
                         apl=TEF.APL and TEF.APL.Trace.Clean(S.Field(r,"apl","table")) or nil}
                 end
@@ -259,7 +269,7 @@ function Engine:SkipUnavailable(policyReason)
     if policy then self.policySkipStreak=(self.policySkipStreak or 0)+1 else self.skipStreak=(self.skipStreak or 0)+1 end
     self.stepCasts=0
     if self.index<#self.steps then self.index=self.index+1
-    elseif self.db.loop then self.index=1
+    elseif self.db.loop and not self.groupRun then self.index=1
     else self.completed=true; self.running=false end
     self:Log("observed",policy and "STRATEGY_STEP_SKIPPED" or "UNAVAILABLE_STEP_SKIPPED",step.spellID,previous,self.index)
     return true
@@ -280,7 +290,7 @@ function Engine:ConfirmAttackEnabled(generation,index,serial)
     self.stepCasts=1; self.skipStreak=0; self.policySkipStreak=0
     local current,following=self.index,self.index+1
     if following>#self.steps then
-        if self.db.loop then following=1 else following=current; self.completed=true; self.running=false end
+        if self.db.loop and not self.groupRun then following=1 else following=current; self.completed=true; self.running=false end
     end
     self:Log("observed","ATTACK_ENABLE_CONFIRMED",6603,current,following)
     self.index=following; self.shootHandoff=nil
@@ -302,6 +312,7 @@ function Engine:Handle(generation, event, unitRaw, guidRaw, spellRaw)
     if unit ~= "player" then return end
     if not spellID then log("unknown", "SPELL_" .. sr); return end
     if not guid then log("unknown", "IDENTITY_" .. gr, spellID); return end
+    if self.steps and self.steps[self.index] and self.steps[self.index].group then log("ignored","GROUP_NOT_ENTERED",spellID); return end
     if spellID==6603 or (self.steps and self.steps[self.index] and self.steps[self.index].spellID==6603) then
         log("observed","ATTACK_CAST_NOT_ACTIVATION",spellID); return
     end
@@ -378,9 +389,9 @@ function Engine:Handle(generation, event, unitRaw, guidRaw, spellRaw)
     self:MarkUsage(usageContext)
     local current, following = self.index, self.index+1
     if following > #self.steps then
-        if self.db.loop then following=1
+        if self.db.loop and not self.groupRun then following=1
         else following=current; self.completed=true; self.running=false end
-        log("completed", self.db.loop and "LOOP_COMPLETED" or "COMPLETED", spellID, current, following)
+        log("completed", self.db.loop and not self.groupRun and "LOOP_COMPLETED" or "COMPLETED", spellID, current, following)
     else log("match", "CURRENT_MATCH", spellID, current, following) end
     self.index=following
     if spellID==5019 and not self.completed and following~=current

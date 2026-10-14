@@ -12,7 +12,7 @@ function C:SupportsName(name,id)
  if ability and ability.target then return true end
  return nil
 end
-local fields={targetMode=true,strategies=true,spellID=true,enabled=true,moving=true,enemyMin=true,enemyMax=true,activity=true,experimentalEnemies=true,invalid=true,requireReady=true,
+local fields={group=true,targetMode=true,strategies=true,spellID=true,enabled=true,moving=true,enemyMin=true,enemyMax=true,activity=true,experimentalEnemies=true,invalid=true,requireReady=true,
  manaOp=true,manaValue=true,distanceOp=true,distanceValue=true,cdmKind=true,cdmState=true,cdmSpellID=true}
 local classes={"MAGE","WARRIOR","PALADIN","HUNTER","ROGUE","PRIEST","SHAMAN","WARLOCK","DRUID","DEATHKNIGHT","MONK","DEMONHUNTER","EVOKER"}
 function C:ClassSupported(class) for _,value in ipairs(classes) do if value==class then return true end end; return false end
@@ -137,6 +137,18 @@ function C.CleanRows(raw)
    row.cdmKind,row.cdmState=kind,state
    local id=S.Field(r,"cdmSpellID","number"); if id then row.cdmSpellID=S.ID(id); if not row.cdmSpellID then row.invalid="CUSTOM_CONDITION_INVALID" end end
    if S.Field(r,"invalid","string") then row.invalid=row.invalid or "CUSTOM_CONDITION_INVALID" end
+  end
+  local group,groupType=S.Field(r,"group","table")
+  if groupType~="NO_DATA" then
+   local clean,why=T.SkillGroups:Clean(group)
+   if groupType~="PUBLIC" or not clean then row.invalid=why or "GROUP_INVALID"
+   else
+    row.group=clean; local first=clean.steps[1]; row.spellID=first and first.spellID or 0
+    if first then
+     if row.invalid=="CUSTOM_ID_INVALID" then row.invalid=nil end
+     row.targetMode=first.targetMode
+    else row.invalid="GROUP_EMPTY" end
+   end
   end
   rows[#rows+1]=row
  end
@@ -399,13 +411,14 @@ function C:Sample(e,state,provided)
  end
 end
 function C:Check(state,row,index)
- if state.maintenanceOwned and state.maintenanceOwned[row.spellID] then return false,"MAINTENANCE_OWNS_SPELL","MAINTENANCE" end
+ if not row.group and state.maintenanceOwned and state.maintenanceOwned[row.spellID] then return false,"MAINTENANCE_OWNS_SPELL","MAINTENANCE" end
  if row.invalid then return false,row.invalid,"BLOCKED" end
  if not row.enabled then return false,"CUSTOM_DISABLED","DISABLED" end
  local action=state.actions["custom_" .. index] or {}; local unknown
  if action.reason=="CUSTOM_SPELL_UNSUPPORTED" then return false,action.reason,"BLOCKED" end
  if action.reason=="CUSTOM_PASSIVE_SPELL" then return false,action.reason,"BLOCKED" end
  if action.reason=="CUSTOM_TARGET_UNKNOWN" or action.reason=="CUSTOM_PASSIVE_UNKNOWN" or action.reason=="CUSTOM_METADATA_UNKNOWN" then return nil,"UNKNOWN:custom:" .. action.reason end
+ if row.group and not T.SkillGroups:Admission(state,row,index) then return false,"GROUP_CONSUMED" end
  local strategies,strategyReason=self:CheckStrategies(state,row,index)
  if strategies==false then return false,strategyReason end
  if strategies==nil then unknown=strategyReason end

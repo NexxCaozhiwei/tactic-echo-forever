@@ -108,6 +108,7 @@ function UI:CloseSettings()
     self:Refresh()
 end
 function UI:ShowPage(key)
+    if self.groupEditing then self:CloseSkillGroup() end
     if self.sequenceEngine~=self.engine then
         self.sequenceEngine=self.engine; self.sequenceDrafts={}; self.sequenceDraft=nil; self.drafts={}; self.loadedScene=nil; self.loadedProfile=nil
         if self.strategySource=="manual" then self.sequencePolicyRow=nil; self.strategyInputs={} end
@@ -232,6 +233,7 @@ function UI:CreateSettings()
     self:Paint(self.pageFrames.maintenance,"Hide")
     self.pageFrames.maintenance=self.pageFrames.customapl; self.pages.maintenance=self.pages.customapl; self.readouts.maintenance=self.readouts.customapl
     self:CreateCustomAPLEditor(self.pages.customapl)
+    self:CreateSkillGroupEditor()
     local function button(page,label,x,y,w,fn) return self:Button(self.pages[page],label,x,y,w,fn) end
     local function selectEditor(key) self.editScene=key; self:ShowPage("profiles") end
     self.editScene=e.db.selectedPlans.manual

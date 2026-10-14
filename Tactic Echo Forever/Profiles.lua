@@ -28,6 +28,16 @@ function P:Clean(raw, limit)
         local got, rawRow = pcall(function() return parent[i] end)
         local row = got and S.Public(rawRow, "table")
         if not row then return nil end
+        local group,groupType=S.Field(row,"group","table")
+        if groupType~="NO_DATA" then
+            if groupType~="PUBLIC" then return nil end
+            local clean=TEF.SkillGroups:Clean(group); if not clean then return nil end
+            local strategies,error=TEF.APL.Custom.CleanStrategies(S.Field(row,"strategies","table")); if error then return nil end
+            local _,strategyType=S.Field(row,"strategies","table")
+            local enabled,enabledType=S.Field(row,"enabled","boolean")
+            if (strategyType~="NO_DATA" and strategyType~="PUBLIC") or (enabledType~="NO_DATA" and enabledType~="PUBLIC") then return nil end
+            rows[i]=TEF.SkillGroups:Row(clean,strategies,enabled~=false)
+        else
         local rawID = S.Field(row,"spellID","number")
         local id = S.ID(rawID)
         local name = S.Field(row,"name","string")
@@ -62,6 +72,7 @@ function P:Clean(raw, limit)
         if modeType~="NO_DATA" then
             if modeType~="PUBLIC" or not ({auto=true,self=true,friendly=true,enemy=true,ground=true})[mode] then return nil end
             rows[i].targetMode=mode
+        end
         end
     end
     return rows

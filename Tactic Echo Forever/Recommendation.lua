@@ -9,6 +9,7 @@ function R:BaseSource(e,scene)
 end
 function R:Source(e,scene)
     if e.maintenanceActive and (not scene or scene==e.scene) then return "apl" end
+    if e.groupRun and not scene then return "manual" end
     return self:BaseSource(e,scene)
 end
 function R:Configured(e)

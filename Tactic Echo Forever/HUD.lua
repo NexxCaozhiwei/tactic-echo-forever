@@ -213,6 +213,8 @@ function H:RefreshState()
     for i,card in ipairs(self.cards) do U:Paint(card.state,"SetText",card.displayStep and (i==1 and (castLabel or displayLabel) or "随后") or "") end
     if TEF.APL:IsActive(e) then
         U:Paint(self.status,"SetText",displayLabel .. " | " .. TEF.APL.Trace:View(e))
+    elseif e.groupRun then
+        U:Paint(self.status,"SetText",displayLabel .. " | " .. e.groupRun.group.name .. " · " .. e.index .. "/" .. #e.steps .. " · 第" .. e.groupRun.round .. "/" .. e.groupRun.group.rounds .. "轮 · 次数 " .. (e.stepCasts or 0) .. "/" .. (step and step.repeatCount or 1))
     else
         U:Paint(self.status,"SetText",displayLabel .. " | " .. TEF.Profiles:PlanName(e.scene) .. " | " .. e.index .. "/" .. (e.steps and #e.steps or 0) .. " · 次数 " .. (e.stepCasts or 0) .. "/" .. (step and step.repeatCount or 1))
     end

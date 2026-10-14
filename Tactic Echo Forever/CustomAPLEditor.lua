@@ -1,7 +1,7 @@
 local _,T=...
 local U,S,C=T.UI,T.Safety,T.APL.Custom
 function U:CustomMessage(text) if self.strategySource=="manual" then self:SequenceMessage(text) else self:Paint(self.customMessage,"SetText",text) end end
-function U:CustomRow() if self.strategySource=="manual" then return self.sequencePolicyRow end; return self.customDraft and self.customDraft[self.customSelected or 1] end
+function U:CustomRow() if self.strategySource=="groupStep" then return self.groupDraft and self.groupDraft.steps[self.groupSelected or 1] end; if self.strategySource=="manual" then return self.sequencePolicyRow end; return self.customDraft and self.customDraft[self.customSelected or 1] end
 function U:CommitCustomNumbers()
  local pending={}
  for _,entry in ipairs(self.strategyInputs or {}) do
@@ -36,7 +36,8 @@ function U:RefreshCustomAPL()
  for i,w in ipairs(self.customWidgets) do
   local row=self.customDraft[i]; self:Paint(w.frame,row and "Show" or "Hide")
   if row then
-   local view=S.Spell(row.spellID,tostring(row.spellID or "未解析"))
+   self:Paint(w.groupEdit,row.group and "Show" or "Hide"); self:Paint(w.name,"SetWidth",row.group and 170 or 278)
+   local view=S.Spell(row.spellID,tostring(row.spellID or "未解析")); if row.group then view.name="【" .. row.group.name .. "】" end
    self:Paint(w.name,"SetText",(i==self.customSelected and "|cffffcf45" or "") .. i .. ". " .. view.name .. " · ID " .. (row.spellID or "?") .. (row.enabled and "" or " · 已停用") .. "|r")
    local sampled=self.engine.aplSnapshot and self.engine.aplSnapshot.actions["custom_" .. i]
    if sampled and sampled.spellID==row.spellID and sampled.reason=="CUSTOM_TARGET_UNKNOWN" then self:Paint(w.name,"SetText",i .. ". " .. view.name .. " |cffffcf45· 请选择施放类型|r") end
@@ -49,6 +50,7 @@ function U:RefreshCustomAPL()
  self:Paint(self.planRenameBoxes.apl.frame,maintenance and "Hide" or "Show"); self:Paint(self.customUseButton,maintenance and "Hide" or "Show")
  self:Paint(self.maintenanceHint,maintenance and "Show" or "Hide")
  self:Paint(self.customEnableLabel,"SetText",maintenance and "启用增益维护" or "启用本方案")
+ self:Paint(self.customNewGroup,maintenance and "Hide" or "Show")
 end
 function U:AddCustomSpell(id)
  if not self.customDraft then self:RefreshCustomAPL() end
@@ -102,6 +104,7 @@ function U:CreateCustomAPLEditor(parent)
    self:ReceiveCustomSpell()
   end)
  end)
+ self.customNewGroup=self:CreateActionButton(parent,"新建技能组",360,-150,140,function() self:AddSkillGroup("apl") end)
  self.customSave=action("保存配置",435,-116,140,function()
   if not self:CommitCustomNumbers() then return end
   if self.page=="maintenance" then local ok,reason=T.Maintenance:Save(self.engine,self.customDraft); self:CustomMessage(ok and "增益维护已保存并停止派发；关闭设置后手动开启。" or reason); return end
@@ -139,13 +142,14 @@ function U:CreateCustomAPLEditor(parent)
   end) end)
   local name=self:Text(frame,6,-7,278,"GameFontHighlightSmall")
   self:Paint(name,"SetWordWrap",false)
-  self:CreateActionButton(frame,"编辑策略",290,-2,80,function() if self:CommitCustomNumbers() then self.strategySource=self.page=="maintenance" and "maintenance" or "apl"; self.customSelected=index; self.customFormIndex=nil; self:RefreshCustomAPL(); self:Paint(self.strategyPanel,"Show") end end)
+  local groupEdit=self:CreateActionButton(frame,"技能组编辑",180,-2,104,function() self:OpenSkillGroup("apl",index) end)
+  local policy=self:CreateActionButton(frame,"编辑策略",290,-2,80,function() if self:PrepareGroupPanelSwitch(false) and self:CommitCustomNumbers() then self.strategySource=self.page=="maintenance" and "maintenance" or "apl"; self.customSelected=index; self.customFormIndex=nil; self:RefreshCustomAPL(); self:Paint(self.strategyPanel,"Show") end end)
   self:CreateActionButton(frame,"↑",376,-2,38,function() self:MoveCustomRule(index,-1) end)
   self:CreateActionButton(frame,"↓",420,-2,38,function() self:MoveCustomRule(index,1) end)
   self:CreateActionButton(frame,"删",464,-2,52,function()
    if self:CommitCustomNumbers() then table.remove(self.customDraft,index); self.customSelected=math.min(index,math.max(1,#self.customDraft)); self.customFormIndex=nil; self:RefreshCustomAPL() end
   end)
-  self.customWidgets[i]={frame=frame,name=name}
+  self.customWidgets[i]={frame=frame,name=name,groupEdit=groupEdit,policy=policy}
  end
  self.customMessage=self:Text(parent,0,-652,570,"GameFontHighlightSmall")
  self:CreateStrategyPanel()
@@ -204,6 +208,7 @@ function U:ReplaceStrategySpell(rawID)
   if not current or current.spellID~=row.spellID then self:CustomMessage("替换失败：当前草稿已变化，请重新打开策略。"); return false end
   current.spellID=id; current.name=view.name; current.matchIDs={id}
   self.sequencePolicyRow=current; self:WriteDraft(rows)
+ elseif self.strategySource=="groupStep" then row.spellID=id; local view=S.Spell(id,"技能 " .. id); row.name=view.name; row.matchIDs={id}; row.unverified=nil
  else row.spellID=id; row.invalid=nil end
  self.customFormIndex=nil; self:RefreshCustomAPL()
  self:CustomMessage("已更换草稿技能，保留策略及显式观察ID；点击保存后生效。"); return true
@@ -226,7 +231,7 @@ end
 function U:RefreshStrategyForm()
  if not self.strategyPanel then return end
  local row=self:CustomRow()
- self:Paint(self.strategyTitle,"SetText",row and ("策略条件设置 · " .. S.Spell(row.spellID,tostring(row.spellID)).name) or "策略条件设置 · 未选择技能")
+ self:Paint(self.strategyTitle,"SetText",row and ("策略条件设置 · " .. (row.group and row.group.name or S.Spell(row.spellID,tostring(row.spellID)).name)) or "策略条件设置 · 未选择技能")
  if self.customFormIndex==self.customSelected then return end
  self.customFormIndex=self.customSelected
  self:Paint(self.strategyKindMenu,"Hide")
@@ -241,6 +246,7 @@ function U:RefreshStrategyForm()
  self.strategyInputs={}; self.customNumbers={}
  local y=0
  if row then
+  if not row.group then
   self:CreateHintText(form,"更换当前技能（保留策略条件）",0,y,390); y=y-28
   self.strategySpellID=self:SequenceInput(form,0,y,110); self:Paint(self.strategySpellID,"SetText",tostring(row.spellID))
   self.strategyReplaceID=self:CreateActionButton(form,"ID替换",122,y,100,function()
@@ -251,10 +257,13 @@ function U:RefreshStrategyForm()
   self:Paint(self.strategyReplaceDrop,"SetScript","OnReceiveDrag",function() self:Guard(function() self:ReceiveStrategySpell() end) end)
   y=y-40
   self.strategyUpgrade=self:CreateActionButton(form,"替换为已学最高等级",0,y,390,function() self:UpgradeStrategySpell() end); y=y-40
+  end
   self:CreateToggleRow(form,"启用当前技能",0,y,390,function() return row.enabled end,function(v) row.enabled=v end); y=y-40
+  if not row.group then
   self:CreateSelectRow(form,"施放类型（自动无法确认时手动选择）",{{"auto","自动"},{"self","自身"},{"friendly","友方"},{"enemy","敌方"},{"ground","地面"}},0,y,390,
    function() return row.targetMode or "auto" end,function(v) row.targetMode=v end); y=y-68
   self:CreateHintText(form,"地面技能只发送现有按键，落点由玩家操作。",0,y,390); y=y-32
+  end
   if (row.moving and row.moving~="any") or (row.activity and row.activity~="any") or (row.distanceOp and row.distanceOp~="any") or (row.cdmKind and row.cdmKind~="none") or row.enemyMin or row.enemyMax then
    self:CreateHintText(form,"保留旧配置条件，与新策略共同判断；清空可移除旧条件。",0,y,390); y=y-40
   end
@@ -341,7 +350,7 @@ function U:CreateStrategyPanel()
  self:Paint(panel,"SetBackdrop",{bgFile="Interface\\Buttons\\WHITE8X8",edgeFile="Interface\\Buttons\\WHITE8X8",edgeSize=2})
  self:Paint(panel,"SetBackdropColor",.025,.035,.055,.98); self:Paint(panel,"SetBackdropBorderColor",.25,.45,.60,1)
  self.strategyTitle=self:Text(panel,15,-18,335,"GameFontNormal")
- self:CreateActionButton(panel,"关闭",365,-12,52,function() self:Paint(panel,"Hide") end)
+ self:CreateActionButton(panel,"关闭",365,-12,52,function() if self.strategySource=="groupStep" then if not self:CommitCustomNumbers() then return end; self.strategySource=nil; self.strategyInputs={}; self.customFormIndex=nil; self:RefreshSkillGroup(); self:Paint(self.groupPanel,"Show") end; self:Paint(panel,"Hide") end)
  self:CreateHintText(panel,"使用条件全部满足；任一跳过策略满足则跳过。未知不授权使用。",15,-51,395)
  self:CreateActionButton(panel,"+",365,-84,50,function() self:ChangeCustomStrategy(function(r)
   if #r.strategies>=8 then self:CustomMessage("每个技能最多8条策略。"); return end
@@ -352,6 +361,7 @@ function U:CreateStrategyPanel()
  self:Paint(self.strategyScroll,"SetPoint","TOPLEFT",panel,"TOPLEFT",15,-126); self:Paint(self.strategyScroll,"SetSize",385,530)
  self.strategySaveButton=self:CreateActionButton(panel,"保存",15,-675,190,function()
   if not self:CommitCustomNumbers() then return end
+  if self.strategySource=="groupStep" then self:SaveSkillGroup(); return end
   if self.strategySource=="manual" then
    local rows=self:DraftRows(); local ok,reason=T.Profiles:Save(self.engine,self.editScene,rows)
    self:SequenceMessage(ok and "已保存列表循环策略并停止派发。" or (reason or "保存失败")); return

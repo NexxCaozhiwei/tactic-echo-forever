@@ -46,6 +46,7 @@ function C:Changed(state,reason)
     self.notifying=false
 end
 function C:EngineCall(method)
+    if method=="Reset" and self.e.groupRun then TEF.SkillGroups:Restore(self.e,"GROUP_RESET") end
     if method=="Reset" and self.e.maintenanceActive then TEF.Maintenance:Restore(self.e,"MAINTENANCE_RESET") end
     self.internal=true
     local ok=pcall(self.e[method],self.e)
@@ -78,12 +79,16 @@ function C:Invalidated(e)
     if e==self.e and not self.internal then
         self.maintenanceManual=false
         if e.maintenanceActive then TEF.Maintenance:Restore(e,"MAINTENANCE_INVALIDATED") end
+        if e.groupRun then TEF.SkillGroups:Restore(e,"GROUP_INVALIDATED") end
+        e.groupConsumed={}
         self.intent=false; self:Changed("paused","RUNTIME_CONFIGURATION_INVALIDATED")
     end
 end
 function C:Stop(reason,state)
     self.maintenanceManual=false
     if self.e.maintenanceActive then TEF.Maintenance:Restore(self.e,"MAINTENANCE_STOPPED") end
+    if self.e.groupRun and reason~=nil and reason~="USER_TOGGLE_DISPATCH" and reason~="RUNTIME_MANUAL_PAUSE" then TEF.SkillGroups:Restore(self.e,"GROUP_STOPPED") end
+    self.e.groupConsumed={}
     local wasEnabled=self.intent
     self.intent=false
     if wasEnabled then self:PlayIntentSound(false) end
@@ -194,7 +199,8 @@ function C:TryConfirmAttackEnabled()
     self.internal=false
     if not ok then self:Fault("ATTACK_CONFIRM_FAILED"); return true end
     if confirmed then
-        if e.completed then self:Stop("RUNTIME_COMPLETED","completed")
+        if e.completed and e.groupRun then TEF.SkillGroups:Refresh(e); self:Changed("blocked","GROUP_STEP_FINISHED")
+        elseif e.completed then self:Stop("RUNTIME_COMPLETED","completed")
         else self:Changed("running","ATTACK_ENABLE_CONFIRMED") end
     end
     return confirmed
@@ -206,11 +212,17 @@ function C:Reconcile()
     self.e:ObserveUsageCombat()
     if not self.intent then return end
     local e=self.e
+    TEF.SkillGroups:Refresh(e)
     TEF.Maintenance:Refresh(e)
     if e.identitySaturated then self:Fault("RUNTIME_IDENTITY_CAPACITY_RELOAD_REQUIRED"); return end
     if TEF.APL:IsActive(e) and not TEF.UI.settingsOpen then TEF.APL:Refresh(e) end
+    TEF.SkillGroups:Refresh(e)
     local generation,index,serial=e.generation,e.index,e.receiptSerial or 0
     local function current() return self.intent and self.e==e and TEF.engine==e and generation==e.generation and index==e.index and serial==(e.receiptSerial or 0) end
+    if e.completed and e.groupRun then
+        -- 引导成功可发生在起始；等公开读条/引导消失再由组推进轮数。
+        TEF.Dispatch:YieldCast("GROUP_WAIT_STEP_FINISH"); self:Changed("blocked","GROUP_WAIT_STEP_FINISH"); return
+    end
     if e.completed then
         if TEF.Maintenance:Enabled(e) and (self.maintenanceManual or TEF.APL.State.Boolean("InCombatLockdown")==true) then self:Suspend("MAINTENANCE_IDLE","standby")
         else self:Stop("RUNTIME_COMPLETED","completed") end
@@ -226,9 +238,16 @@ function C:Reconcile()
     if ok then combat=S.Public(raw,"boolean") end
     if not current() then return end
     local maintenanceOutside=combat==false and self.maintenanceManual and TEF.Maintenance:Enabled(e)
-    if e.db.dispatch.mode=="stop" and combat==false and not maintenanceOutside then self:Stop("RUNTIME_OUT_OF_COMBAT_STOP"); return end
+    if e.db.dispatch.mode=="stop" and combat==false and not maintenanceOutside
+        and not (e.groupRun and TEF.Dispatch:HasCurrentInitiation()) then self:Stop("RUNTIME_OUT_OF_COMBAT_STOP"); return end
     if TEF.UI.settingsOpen then self:Suspend("RUNTIME_SETTINGS_STANDBY","standby"); return end
     if combat==nil then self:Suspend("RUNTIME_COMBAT_UNKNOWN"); return end
+    if e.groupRun and not e.maintenanceActive and combat~=true then
+        if TEF.Dispatch:HasCurrentInitiation() then
+            TEF.Dispatch:YieldCast("GROUP_COMBAT_REQUIRED"); self:Changed("standby","GROUP_COMBAT_REQUIRED")
+        else self:Suspend("GROUP_COMBAT_REQUIRED","standby") end
+        return
+    end
     if e:HasUsagePolicy() then
         self.internal=true
         local prepared,allowed,reason=pcall(e.PrepareUsage,e)
@@ -287,7 +306,8 @@ function C:Reconcile()
                 end
                 self:Suspend("SEQUENCE_POLICY_ALL_BLOCKED")
             elseif e.completed then
-                if TEF.Maintenance:Enabled(e) and (self.maintenanceManual or combat==true) then self:Suspend("MAINTENANCE_IDLE","standby") else self:Stop("RUNTIME_COMPLETED","completed") end
+                if e.groupRun then TEF.SkillGroups:Refresh(e); self:Changed("blocked","GROUP_STEP_SKIPPED")
+                elseif TEF.Maintenance:Enabled(e) and (self.maintenanceManual or combat==true) then self:Suspend("MAINTENANCE_IDLE","standby") else self:Stop("RUNTIME_COMPLETED","completed") end
             else self:Changed("blocked","STRATEGY_STEP_SKIPPED") end
             return
         end
@@ -341,6 +361,7 @@ function C:Reconcile()
                 self.internal=false
                 if not skippedOK then self:Fault("SKIP_ENGINE_FAILED")
                 elseif not skipped then self:Suspend("SKIP_ALL_UNAVAILABLE")
+                elseif e.completed and e.groupRun then TEF.SkillGroups:Refresh(e); self:Changed("blocked","GROUP_STEP_SKIPPED")
                 elseif e.completed then self:Stop("RUNTIME_COMPLETED","completed")
                 else self:Changed("blocked","UNAVAILABLE_STEP_SKIPPED") end
                 return
