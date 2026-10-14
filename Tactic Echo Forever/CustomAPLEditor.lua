@@ -260,7 +260,7 @@ function U:RefreshStrategyForm()
   end
   for si,strategy in ipairs(row.strategies or {}) do
    local index=si; local card=self:Frame("Frame",form,"BackdropTemplate")
-   local height=50+#strategy.conditions*98
+   local height=50+#strategy.conditions*120
    self:Paint(card,"SetPoint","TOPLEFT",form,"TOPLEFT",0,y); self:Paint(card,"SetSize",390,height)
    self:Paint(card,"SetBackdrop",{bgFile="Interface\\Buttons\\WHITE8X8",edgeFile="Interface\\Buttons\\WHITE8X8",edgeSize=1})
    self:Paint(card,"SetBackdropColor",.045,.075,.11,1); self:Paint(card,"SetBackdropBorderColor",.25,.45,.60,1)
@@ -271,7 +271,7 @@ function U:RefreshStrategyForm()
    end) end)
    self:CreateActionButton(card,"删除策略",279,-8,102,function() self:ChangeCustomStrategy(function(r) table.remove(r.strategies,index) end) end)
    for ci,condition in ipairs(strategy.conditions) do
-    local conditionIndex=ci; local cy=-46-(ci-1)*98
+    local conditionIndex=ci; local cy=-46-(ci-1)*120
     local typeButton=self:CreateActionButton(card,condition.kind=="comboPoints" and self.engine.classToken~="ROGUE" and "当前职业不支持此条件" or strategyNames[condition.kind] or "未知条件",8,cy,190,function() end)
     self:Paint(typeButton,"SetScript","OnClick",function() self:Guard(function()
      self:Paint(self.strategyKindMenu,"ClearAllPoints"); self:Paint(self.strategyKindMenu,"SetPoint","TOPLEFT",typeButton,"BOTTOMLEFT",0,-2)
@@ -296,11 +296,17 @@ function U:RefreshStrategyForm()
      else
      self:CreateHintText(card,condition.kind=="comboPoints" and "连击点：下限～上限（0～10整数）" or condition.kind=="distance" and "码数：下限～上限（含边界）" or condition.kind=="cdmStacks" and "公开层数：下限～上限" or "数量：下限～上限（可见姓名板）",8,cy-40,205)
      input("min",220,65); input("max",307,65)
-     if condition.kind=="cdmStacks" or condition.kind=="rangedEnemies" or condition.kind=="nearbyEnemies" then
+     if condition.kind=="rangedEnemies" or condition.kind=="nearbyEnemies" then
+      local choices={{5,"5码"},{10,"10码"},{20,"20码"},{25,"25码"},{30,"30码"},{35,"35码"},{40,"40码"}}
+      self:CreateSegmentedControl(card,choices,8,cy-66,370,function() return condition.radius end,
+       function(value) if self:CommitCustomNumbers() then condition.radius=value; self.customFormIndex=nil; self:RefreshStrategyForm() end end)
+      local supported=false; for _,choice in ipairs(choices) do if condition.radius==choice[1] then supported=true end end
+      self:CreateHintText(card,supported and "自身所选码数内；探针未知不视为满足。" or ("旧半径 " .. tostring(condition.radius) .. "码；请选择新档位，原条件暂保留。"),8,cy-100,370)
+     elseif condition.kind=="cdmStacks" then
       local box=self:SequenceInput(card,8,cy-66,105); local field=(condition.kind=="nearbyEnemies" or condition.kind=="rangedEnemies") and "radius" or "spellID"
       self:Paint(box,"SetText",condition[field] and tostring(condition[field]) or "")
       self.strategyInputs[#self.strategyInputs+1]={box=box,condition=condition,field=field}
-      self:CreateHintText(card,condition.kind=="nearbyEnemies" and "自身码数(0,40]；未知按数量上下界判断" or condition.kind=="cdmStacks" and "目录ID；Secret/隐藏/缺失均未知" or "范围技能ID；空白=本技能，非命中数",120,cy-70,250)
+      self:CreateHintText(card,"目录ID；Secret/隐藏/缺失均未知",120,cy-70,250)
      else self:CreateHintText(card,"单边可留空；距离区间跨越阈值时视为未知。",8,cy-70,370) end
      end
     elseif condition.kind=="lossOfControl" then

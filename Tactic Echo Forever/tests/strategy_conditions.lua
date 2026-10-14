@@ -105,7 +105,7 @@ test("six_condition_editor_fields_save_roundtrip",function()
  local conditions={{kind="combat",value=true},{kind="targetType",target="enemy"},{kind="learned",spellID=205,value=true},{kind="succeeded",spellID=143,value=false},{kind="cdmStacks",spellID=133,min=2,max=4},{kind="rangedEnemies",spellID=143,min=1,max=3}}
  assert(C:Save(e,{row(143,conditions)},"single","MAGE"))
  T.UI:ShowPage("customapl"); T.UI.customSelected=1; T.UI.customFormIndex=nil; T.UI:RefreshCustomAPL()
- eq(#T.UI.strategyInputs,8); eq(T.UI:CommitCustomNumbers(),true)
+ eq(#T.UI.strategyInputs,7); eq(T.UI:CommitCustomNumbers(),true)
  T.UI.strategySaveButton.scripts.OnClick()
  eq(#C:Rows(e)[1].strategies[1].conditions,6)
  local clean=T.APL.Trace.Clean({reason="APL_CANDIDATE",actions={custom_1={spellID=143,conditionObservations={{kind="cdmStacks",spellID=133,result=F.secret,number=F.secret,reason="SECRET"}}}}})
@@ -172,10 +172,11 @@ test("self_radius_editor_radius_and_unknown_live_gate",function()
  local e=F.runtime(); local r=row(143,{{kind="nearbyEnemies",radius=9.5,min=1,max=3}})
  assert(C:Save(e,{r},"single","MAGE"))
  T.UI:ShowPage("customapl"); T.UI.customSelected=1; T.UI.customFormIndex=nil; T.UI:RefreshCustomAPL()
- eq(#T.UI.strategyInputs,3); eq(T.UI:CommitCustomNumbers(),true)
- local found=false; for _,entry in ipairs(T.UI.strategyInputs) do if entry.field=="radius" then found=true; entry.box.text="8.5" end end
- assert(found); eq(T.UI:CommitCustomNumbers(),true); T.UI.strategySaveButton.scripts.OnClick()
- eq(C:Rows(e)[1].strategies[1].conditions[1].radius,8.5)
+ eq(#T.UI.strategyInputs,2); eq(T.UI:CommitCustomNumbers(),true)
+ -- 旧半径保留语义，编辑器不再允许任意输入半径。
+ for _,entry in ipairs(T.UI.strategyInputs) do assert(entry.field~="radius") end
+ T.UI.strategySaveButton.scripts.OnClick()
+ eq(C:Rows(e)[1].strategies[1].conditions[1].radius,9.5)
  T.Runtime:SetIntent(true); T.Dispatch:TickContinuous(); eq(T.Dispatch.pending,nil)
 end)
 
