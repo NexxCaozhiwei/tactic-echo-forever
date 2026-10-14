@@ -67,7 +67,105 @@ local function presence(path)
     if value then return {state="PUBLIC_TRUE",value=true} end
     return {state=classification}
 end
-function R:CountVisible()
+-- 兼容原生unitToken/GetUnit及旧结构；身份冲突不选任意来源。
+function R:NamePlateToken(raw)
+    local plate,why=S.Public(raw,"table"); if not plate then return nil,why end
+    local token,source; local fields={}; local failed
+    local function accept(value,reason,name)
+        fields[name]=reason
+        if reason=="NO_DATA" then return end
+        if reason~="PUBLIC" then failed=failed or reason; return end
+        if #value>32 or (value~="player" and not value:match("^nameplate%d+$")) then failed="TOKEN_FORMAT_INVALID"; return end
+        if token and token~=value then failed="TOKEN_SOURCE_CONFLICT"; return end
+        token,source=value,source or name
+    end
+    local value,reason=S.Field(plate,"namePlateUnitToken","string"); accept(value,reason,"legacy")
+    value,reason=S.Field(plate,"unitToken","string"); accept(value,reason,"native")
+    local frame,status=S.Field(plate,"UnitFrame","table")
+    if frame then value,reason=S.Field(frame,"unit","string"); accept(value,reason,"unitFrame")
+    elseif status~="NO_DATA" then failed=failed or status end
+    local getter,getReason=S.Field(plate,"GetUnit","function")
+    if getter then
+        local ok,rawValue=pcall(getter,plate)
+        if ok then value,reason=S.Public(rawValue,"string"); accept(value,reason,"method")
+        else failed="TOKEN_GETTER_FAILED" end
+    elseif getReason~="NO_DATA" then failed=failed or getReason end
+    if failed then return nil,failed,source,fields end
+    if not token then return nil,"TOKEN_MISSING",nil,fields end
+    if token~="player" and S.Resolve("C_NamePlate.GetNamePlateForUnit") then
+        local ok,mapped=S.Call("C_NamePlate.GetNamePlateForUnit",token)
+        local matched=ok and S.Public(mapped,"table")
+        if not matched then return nil,"TOKEN_MAPPING_UNKNOWN",source,fields end
+        if matched~=plate then return nil,"TOKEN_MAPPING_CONFLICT",source,fields end
+    end
+    return token,"PUBLIC",source,fields
+end
+function R:ProbeVisibleYards(radius)
+    radius=S.Public(radius,"number")
+    if not radius or radius<=0 or radius>40 then return {state="RADIUS_INVALID"} end
+    local out={state="PUBLIC_BOUNDS",radius=radius,lower=0,upper=0,unknown=0,details={}}
+    local ok,raw,reason=S.Call("C_NamePlate.GetNamePlates")
+    local list,classification
+    if ok then list,classification=S.Public(raw,"table") end
+    if not list then out.state=classification or reason or "NAMEPLATES_UNKNOWN"; return out end
+    local measured,size=pcall(function() return #list end)
+    if not measured or size>40 then out.state="UNKNOWN_CAPACITY"; return out end
+    local seen={}; TEF.APL.PublicConditions:PrepareRangeProbes()
+    for i=1,size do
+        local plate,plateReason=S.Field(list,i,"table")
+        local token,identity,source,fields=self:NamePlateToken(plate)
+        if not plate then identity=plateReason end
+        local detail={index=i,unit=token,identityReason=identity,source=source,fields=fields}
+        local uncertain=false
+        if not token then uncertain=true
+        elseif seen[token] then uncertain=true; detail.identityReason="TOKEN_DUPLICATE"
+        else
+            seen[token]=true
+            if token~="player" then
+                local method=S.Field(plate,"IsVisible","function")
+                local visible
+                if method then local got,value=pcall(method,plate); if got then visible,detail.visibleReason=S.Public(value,"boolean") else detail.visibleReason="CALL_FAILED" end
+                else detail.visibleReason="VISIBILITY_UNAVAILABLE" end
+                if visible==nil then uncertain=true
+                elseif visible then
+                    local exists=boolean("UnitExists",token)
+                    if exists.value==nil then uncertain=true; detail.rangeReason="UNIT_EXISTS_UNKNOWN"
+                    elseif exists.value then
+                        local enemy,dead=boolean("UnitCanAttack","player",token),boolean("UnitIsDeadOrGhost",token)
+                        if enemy.value==nil or dead.value==nil then uncertain=true; detail.rangeReason="UNIT_REACTION_OR_ALIVE_UNKNOWN"
+                        elseif enemy.value and not dead.value then
+                            local low,high,why=TEF.APL.PublicConditions:DistanceBracket(token,radius)
+                            detail.low,detail.high,detail.rangeReason=low,high,why
+                            if high and high<=radius then detail.inside=true; out.lower=out.lower+1; out.upper=out.upper+1
+                            elseif low and low>=radius and low>0 then detail.inside=false
+                            else uncertain=true end
+                        end
+                    end
+                end
+            end
+        end
+        if uncertain then out.unknown=out.unknown+1; out.upper=out.upper+1 end
+        out.details[#out.details+1]=detail
+    end
+    return out
+end
+function R.CountBoundsMatch(lower,upper,min,max)
+    local low=S.Public(lower,"number"); local high=S.Public(upper,"number")
+    local minimum,minReason=S.Public(min,"number"); local maximum,maxReason=S.Public(max,"number")
+    if not low or not high or low<0 or high>40 or low>high then return nil end
+    if (minReason~="NO_DATA" and not minimum) or (maxReason~="NO_DATA" and not maximum) then return nil end
+    lower,upper,min,max=low,high,minimum,maximum
+    if (min and upper<min) or (max and lower>max) then return false end
+    if (not min or lower>=min) and (not max or upper<=max) then return true end
+    return nil
+end
+function R:CountVisible(spellID)
+    if spellID then
+        if spellID==61304 or boolean("C_SpellBook.IsSpellKnown",spellID).value~=true then return {state="UNKNOWN_RANGE_SPELL"} end
+        local got,info=S.Call("C_Spell.GetSpellInfo",spellID)
+        local max=got and S.Field(info,"maxRange","number")
+        if max==0 then return {state="UNKNOWN_RANGE_SPELL",detailReason="SPELL_UNIT_RANGE_UNSUPPORTED"} end
+    end
     local ok,raw,reason=S.Call("C_NamePlate.GetNamePlates")
     if not ok then return {state=reason} end
     local list,classification=S.Public(raw,"table")
@@ -78,15 +176,21 @@ function R:CountVisible()
     for i=1,size do
         local read,plate=pcall(function() return list[i] end)
         if not read then return {state="FIELD_FAILED"} end
-        local token=S.Field(plate,"namePlateUnitToken","string")
-        if not token or not token:match("^nameplate%d+$") or seen[token] then return {state="UNKNOWN_IDENTITY"} end
+        local token,why,source,fields=self:NamePlateToken(plate)
+        if not token or seen[token] then return {state="UNKNOWN_IDENTITY",detailReason=seen[token] and "TOKEN_DUPLICATE" or why,source=source,fields=fields,index=i} end
         seen[token]=true
         local exists=boolean("UnitExists",token)
         if exists.value==nil then return {state="UNKNOWN_UNIT"} end
-        if exists.value then
+        if exists.value and token~="player" then
             local enemy,dead=boolean("UnitCanAttack","player",token),boolean("UnitIsDeadOrGhost",token)
             if enemy.value==nil or dead.value==nil then return {state="UNKNOWN_UNIT"} end
-            if enemy.value and not dead.value then count=count+1 end
+            if enemy.value and not dead.value then
+                if spellID then
+                    local range=boolean("C_Spell.IsSpellInRange",spellID,token)
+                    if range.value==nil then return {state="UNKNOWN_RANGE"} end
+                    if range.value then count=count+1 end
+                else count=count+1 end
+            end
         end
     end
     return {state="PUBLIC_VALUE",value=count}

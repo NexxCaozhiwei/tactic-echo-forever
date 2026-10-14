@@ -20,6 +20,13 @@ function T:Record(e,trace,reason,candidate,state)
     for _,field in ipairs({"known","usable","power_ok","in_range","ready","active"}) do parts[#parts+1]=tostring(a[field]) end
     parts[#parts+1]=tostring(a.cdmActive) .. ":" .. (a.cdmReason or "UNKNOWN")
     parts[#parts+1]=(a.cdmScanReason or "NONE") .. ":" .. tostring(a.cdmSkippedFrames)
+    for _,v in ipairs(a.conditionObservations or {}) do
+     parts[#parts+1]=v.kind .. ":" .. tostring(v.result) .. ":" .. tostring(v.number) .. ":" .. (v.reason or "UNKNOWN") .. ":" .. (v.text or "UNKNOWN")
+     for _,field in ipairs({"probeRadius","lower","upper","unknownCount","probeReason","probeResult","identitySource","identityIndex"}) do parts[#parts+1]=field .. "=" .. tostring(v[field]) end
+     for _,d in ipairs(v.details or {}) do
+      parts[#parts+1]=(d.identityReason or "UNKNOWN") .. ":" .. (d.source or "UNKNOWN") .. ":" .. (d.rangeReason or "UNKNOWN") .. ":" .. (d.visibleReason or "UNKNOWN") .. ":" .. tostring(d.inside)
+     end
+    end
     local p=a.cooldownProbe
     if p then
      for _,field in ipairs({"active","isZero","activeReason","objectReason","zeroReason","totalReason","remainingReason"}) do
@@ -53,6 +60,7 @@ function T:Record(e,trace,reason,candidate,state)
    for key,action in pairs(state.actions) do
     row.apl.actions[key]={spellID=action.spellID,known=action.known,usable=action.usable,power_ok=action.power_ok,in_range=action.in_range,ready=action.ready,active=action.active,cdmActive=action.cdmActive,cdmReason=action.cdmReason,cooldownReason=action.cooldownReason,cdmScanReason=action.cdmScanReason,cdmSkippedFrames=action.cdmSkippedFrames}
     row.apl.actions[key].cooldownProbe=action.cooldownProbe
+    row.apl.actions[key].conditionObservations=action.conditionObservations
    end
    for _,key in ipairs({"arcane_power","presence_of_mind","pyroblast","improved_scorch"}) do
     local t=state.talents[key]; if t then row.apl.talents[key]={status=t.status,known=t.known,rank=t.rank,maxRank=t.maxRank} end
@@ -117,6 +125,48 @@ function T.Clean(raw)
      local why=S.Field(probe,field,"string"); if why and #why<=80 and why:match("^[A-Z_]+$") then p[field]=why end
     end
     a.cooldownProbe=p
+   end
+   local observations=S.Field(r,"conditionObservations","table")
+   if observations then
+    a.conditionObservations={}
+    for i=1,16 do
+     local raw=S.Field(observations,i,"table"); if not raw then break end
+     local kind=S.Field(raw,"kind","string")
+     if kind and #kind<=24 and kind:match("^[A-Za-z]+$") then
+      local v={kind=kind,spellID=S.ID(S.Field(raw,"spellID","number")),result=S.Field(raw,"result","boolean")}
+      local number=S.Field(raw,"number","number"); if number and number>=0 and number<=255 then v.number=number end
+      local reason=S.Field(raw,"reason","string"); if reason and #reason<=80 and reason:match("^[A-Z_]+$") then v.reason=reason end
+      local text=S.Field(raw,"text","string"); if text=="enemy" or text=="friendly" or text=="self" or text=="none" then v.text=text end
+      for _,field in ipairs({"probeRadius","lower","upper","unknownCount","identityIndex"}) do
+       local number=S.Field(raw,field,"number"); if number and number>=0 and number<=40 then v[field]=number end
+      end
+      v.probeResult=S.Field(raw,"probeResult","boolean")
+      local probeReason=S.Field(raw,"probeReason","string"); if probeReason and #probeReason<=80 and probeReason:match("^[A-Z_]+$") then v.probeReason=probeReason end
+      local source=S.Field(raw,"identitySource","string"); if source=="legacy" or source=="native" or source=="unitFrame" or source=="method" then v.identitySource=source end
+      local function cleanFields(rawFields)
+       local out={}; local fields=S.Public(rawFields,"table"); if not fields then return out end
+       for _,field in ipairs({"legacy","native","unitFrame","method"}) do
+        local reason=S.Field(fields,field,"string"); if reason and #reason<=80 and reason:match("^[A-Z_]+$") then out[field]=reason end
+       end
+       return out
+      end
+      v.fields=cleanFields(S.Field(raw,"fields","table"))
+      local details=S.Field(raw,"details","table")
+      if details then
+       v.details={}
+       for j=1,8 do
+        local d=S.Field(details,j,"table"); if not d then break end
+        local row={inside=S.Field(d,"inside","boolean"),fields=cleanFields(S.Field(d,"fields","table"))}
+        for _,field in ipairs({"index","low","high"}) do local number=S.Field(d,field,"number"); if number and number>=0 and number<=40 then row[field]=number end end
+        for _,field in ipairs({"identityReason","rangeReason","visibleReason"}) do local reason=S.Field(d,field,"string"); if reason and #reason<=80 and reason:match("^[A-Z_]+$") then row[field]=reason end end
+        local source=S.Field(d,"source","string"); if source=="legacy" or source=="native" or source=="unitFrame" or source=="method" then row.source=source end
+        local unit=S.Field(d,"unit","string"); if unit and #unit<=32 and (unit=="player" or unit:match("^nameplate%d+$")) then row.unit=unit end
+        v.details[#v.details+1]=row
+       end
+      end
+      a.conditionObservations[#a.conditionObservations+1]=v
+     end
+    end
    end
    out.actions[key]=a
   end

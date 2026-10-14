@@ -176,7 +176,7 @@ function A:Allowed(e,id)
   local isolated={}
   for i=1,c.customIndex do isolated[i]=i==c.customIndex and row or {enabled=false,cdmKind="none"} end
   self.PublicConditions:Sample(live,isolated)
-  self.Custom:SampleStrategies(live,isolated)
+  self.Custom:SampleStrategies(live,isolated,e)
   if row.enemyMin or row.enemyMax then local v=TEF.Research:CountVisible(); if v.state=="PUBLIC_VALUE" then live.enemy_count=v.value end end
   local allowed=self.Custom:Check(live,row,c.customIndex)
   if allowed~=true then return false,"APL_LIVE_DEPENDENCY_BLOCKED" end

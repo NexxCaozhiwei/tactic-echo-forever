@@ -9,9 +9,9 @@ function U:CommitCustomNumbers()
   if not text then return false end
   text=text:match("^%s*(.-)%s*$")
   local n=text~="" and text:match("^%d+%.?%d*$") and tonumber(text) or nil
-  local limit=entry.field=="spellID" and 2147483647 or entry.condition.kind=="distance" and 2000 or 40
-  if text~="" and (not n or n>limit or (entry.condition.kind~="distance" and n%1~=0) or (entry.field=="spellID" and n<=0)) then
-   self:CustomMessage("数值无效：距离0～2000码、敌人数0～40整数、CDM填写合法技能ID。"); return false
+  local limit=entry.field=="spellID" and 2147483647 or entry.field=="radius" and 40 or entry.condition.kind=="distance" and 2000 or entry.condition.kind=="cdmStacks" and 255 or 40
+  if text~="" and (not n or n>limit or (entry.condition.kind~="distance" and entry.field~="radius" and n%1~=0) or ((entry.field=="spellID" or entry.field=="radius") and n<=0)) then
+   self:CustomMessage("数值无效：距离0～2000码、敌人数0～40整数、层数0～255整数，观察技能填写精确ID。"); return false
   end
   pending[#pending+1]={condition=entry.condition,field=entry.field,value=n}
  end
@@ -161,8 +161,8 @@ function U:ReorderCustomRule(index,other)
  local row=table.remove(self.customDraft,index); table.insert(self.customDraft,other,row)
  self.customSelected=other; self.customFormIndex=nil; self:RefreshCustomAPL()
 end
-local strategyKinds={"usable","range","distance","moving","enemies","cdmCooldown","cdmBuff","cooldown"}
-local strategyNames={usable="技能可用性",range="技能范围",distance="目标距离",moving="移动状态",enemies="可见敌人数",cdmCooldown="CDM冷却状态",cdmBuff="CDM增益状态",cooldown="技能是否CD"}
+local strategyKinds={"usable","range","distance","moving","enemies","cdmCooldown","cdmBuff","cooldown","combat","targetType","learned","succeeded","cdmStacks","nearbyEnemies"}
+local strategyNames={usable="技能可用性",range="技能范围",distance="目标距离",moving="移动状态",enemies="可见敌人数",cdmCooldown="CDM冷却状态",cdmBuff="CDM增益状态",cooldown="技能是否CD",combat="战斗状态",targetType="当前目标类型",learned="指定技能已学",succeeded="精确成功使用记录",cdmStacks="CDM增益层数",rangedEnemies="自身范围内可见敌人数",nearbyEnemies="自身范围内可见敌人数"}
 function U:ChangeCustomStrategy(callback)
  if not self:CommitCustomNumbers() then return end
  local row=self:CustomRow(); if not row then return end
@@ -222,24 +222,34 @@ function U:RefreshStrategyForm()
      self:Paint(box,"SetText",condition[field] and tostring(condition[field]) or "")
      self.strategyInputs[#self.strategyInputs+1]={box=box,condition=condition,field=field}
     end
-    if condition.kind=="distance" or condition.kind=="enemies" then
+    if condition.kind=="distance" or condition.kind=="enemies" or condition.kind=="cdmStacks" or condition.kind=="rangedEnemies" or condition.kind=="nearbyEnemies" then
      if condition.op then
       local ops={{"lt","<"},{"le","≤"},{"eq","="},{"ne","≠"},{"ge","≥"},{"gt",">"}}
       self:CreateSegmentedControl(card,ops,8,cy-36,250,function() return condition.op end,function(v) condition.op=v end)
       input("threshold",280,92)
       self:CreateHintText(card,"保留旧条件的比较方式；重新选择目标距离可改为区间。",8,cy-70,370)
      else
-     self:CreateHintText(card,condition.kind=="distance" and "码数：下限～上限（含边界）" or "数量：下限～上限（可见姓名板）",8,cy-40,205)
+     self:CreateHintText(card,condition.kind=="distance" and "码数：下限～上限（含边界）" or condition.kind=="cdmStacks" and "公开层数：下限～上限" or "数量：下限～上限（可见姓名板）",8,cy-40,205)
      input("min",220,65); input("max",307,65)
-     self:CreateHintText(card,"单边可留空；距离区间跨越阈值时视为未知。",8,cy-70,370)
+     if condition.kind=="cdmStacks" or condition.kind=="rangedEnemies" or condition.kind=="nearbyEnemies" then
+      local box=self:SequenceInput(card,8,cy-66,105); local field=(condition.kind=="nearbyEnemies" or condition.kind=="rangedEnemies") and "radius" or "spellID"
+      self:Paint(box,"SetText",condition[field] and tostring(condition[field]) or "")
+      self.strategyInputs[#self.strategyInputs+1]={box=box,condition=condition,field=field}
+      self:CreateHintText(card,condition.kind=="nearbyEnemies" and "自身码数(0,40]；未知按数量上下界判断" or condition.kind=="cdmStacks" and "目录ID；Secret/隐藏/缺失均未知" or "范围技能ID；空白=本技能，非命中数",120,cy-70,250)
+     else self:CreateHintText(card,"单边可留空；距离区间跨越阈值时视为未知。",8,cy-70,370) end
      end
+    elseif condition.kind=="targetType" then
+     self:CreateSegmentedControl(card,{{"enemy","敌对"},{"friendly","友方"},{"self","自己"},{"none","无目标"}},8,cy-36,370,
+      function() return condition.target end,function(v) condition.target=v end)
+     self:CreateHintText(card,"只检查当前目标，不选择或切换目标。",8,cy-70,370)
     else
-     local labels=condition.kind=="moving" and {"移动中","站定"} or condition.kind=="cdmBuff" and {"存在","不存在"}
+     local labels=condition.kind=="combat" and {"战斗中","脱战"} or condition.kind=="learned" and {"已学","未学"}
+      or condition.kind=="succeeded" and {"本轮已成功","本轮未成功"} or condition.kind=="moving" and {"移动中","站定"} or condition.kind=="cdmBuff" and {"存在","不存在"}
       or (condition.kind=="cdmCooldown" or condition.kind=="cooldown") and {"冷却中","可用"} or condition.kind=="range" and {"范围内","范围外"} or {"可用","不可用"}
      self:CreateSegmentedControl(card,{{true,labels[1]},{false,labels[2]}},8,cy-36,190,function() return condition.value end,function(v) condition.value=v end)
-     if condition.kind=="cdmCooldown" or condition.kind=="cdmBuff" then
+     if condition.kind=="cdmCooldown" or condition.kind=="cdmBuff" or condition.kind=="learned" or condition.kind=="succeeded" then
       input("spellID",270,102); self:CreateHintText(card,"ID",230,cy-42,35)
-      self:CreateHintText(card,"ID空白=当前技能；帧缺失为未知；增益存在指帧活动。",8,cy-70,370)
+      self:CreateHintText(card,condition.kind=="succeeded" and "ID空白=本技能；开始/重置/编辑清除，暂停保留。" or condition.kind=="learned" and "精确已学ID；空白=本技能，不按名称或最高等级推断。" or "ID空白=当前技能；帧缺失为未知；增益存在指帧活动。",8,cy-70,370)
      end
     end
    end
@@ -281,15 +291,18 @@ function U:CreateStrategyPanel()
   r.cdmKind="none"; r.cdmSpellID=nil; r.enemyMin=nil; r.enemyMax=nil
  end); self:CustomMessage("已清空当前技能条件草稿；保存后生效。") end)
  local menu=self:Frame("Frame",panel,"BackdropTemplate"); self.strategyKindMenu=menu
- self:Paint(menu,"SetSize",195,#strategyKinds*30+8); self:Paint(menu,"SetFrameStrata","DIALOG")
+ self:Paint(menu,"SetSize",220,248); self:Paint(menu,"SetFrameStrata","DIALOG"); self:Paint(menu,"SetClampedToScreen",true)
+ local scroll=self:Frame("ScrollFrame",menu,"UIPanelScrollFrameTemplate")
+ self:Paint(scroll,"SetPoint","TOPLEFT",menu,"TOPLEFT",4,-4); self:Paint(scroll,"SetSize",190,240)
+ local child=self:Frame("Frame",scroll); self:Paint(child,"SetSize",187,#strategyKinds*30); self:Paint(scroll,"SetScrollChild",child)
  self:Paint(menu,"SetBackdrop",{bgFile="Interface\\Buttons\\WHITE8X8",edgeFile="Interface\\Buttons\\WHITE8X8",edgeSize=1})
  self:Paint(menu,"SetBackdropColor",.03,.05,.08,1)
  for i,kind in ipairs(strategyKinds) do local selectedKind=kind
-  self:CreateActionButton(menu,strategyNames[kind],4,-4-(i-1)*30,187,function() self:ChangeCustomStrategy(function()
+  self:CreateActionButton(child,strategyNames[kind],0,-(i-1)*30,187,function() self:ChangeCustomStrategy(function()
    local c=self.strategyKindTarget; if not c then return end
    for k in pairs(c) do c[k]=nil end
    c.kind=selectedKind
-   if selectedKind=="distance" then c.max=20 elseif selectedKind=="enemies" then c.min=1 else c.value=selectedKind~="cdmCooldown" and selectedKind~="cooldown" end
+   if selectedKind=="distance" then c.max=20 elseif selectedKind=="nearbyEnemies" then c.min=1; c.radius=10 elseif selectedKind=="enemies" or selectedKind=="rangedEnemies" or selectedKind=="cdmStacks" then c.min=1 elseif selectedKind=="targetType" then c.target="enemy" else c.value=selectedKind~="cdmCooldown" and selectedKind~="cooldown" end
   end); self:Paint(menu,"Hide") end)
  end
  self:Paint(menu,"Hide"); self:Paint(panel,"Hide")

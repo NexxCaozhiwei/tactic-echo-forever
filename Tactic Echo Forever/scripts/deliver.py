@@ -80,7 +80,7 @@ def main():
         "default_enabled": True, "default_request_permission": True, "desktop_tek_ui_linked": True, "per_step_explicit_request": False, "continuous_default_enabled": False, "default_runtime_mode": "auto", "auto_start_preference": True, "runtime_in_game_verified": False, "continuous_requires_public_numeric_evidence": False}
     sources = sorted([ROOT / name for name in RUNTIME] +
                      list((ROOT / "docs").rglob("*.md")) + list((ROOT / "docs/references/wotlk").glob("*.json")) +
-                     [ROOT / "tests/run.lua", ROOT / "tests/run.py", ROOT / "tests/apl.lua", ROOT / "tests/foundation.lua", ROOT / "tests/custom_apl.lua", ROOT / "tests/public_conditions.lua", ROOT / "tests/cast_queue.lua", ROOT / "tests/skip_unavailable.lua", ROOT / "tests/test_acceptance_harness.py", ROOT / "scripts/deliver.py", ROOT / "scripts/import_apl_catalog.py", ROOT / "scripts/import_wotlk_apl.py", ROOT / "scripts/tek_acceptance.py"])
+                     [ROOT / "tests/run.lua", ROOT / "tests/run.py", ROOT / "tests/apl.lua", ROOT / "tests/foundation.lua", ROOT / "tests/custom_apl.lua", ROOT / "tests/public_conditions.lua", ROOT / "tests/strategy_conditions.lua", ROOT / "tests/cast_queue.lua", ROOT / "tests/skip_unavailable.lua", ROOT / "tests/test_acceptance_harness.py", ROOT / "scripts/deliver.py", ROOT / "scripts/import_apl_catalog.py", ROOT / "scripts/import_wotlk_apl.py", ROOT / "scripts/tek_acceptance.py"])
     sources += sorted((ROOT.parent / "docs/baselines/tef").glob("BASELINE_*.md"))
     archive = out / f"Tactic Echo Forever-{VERSION}.zip"
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:

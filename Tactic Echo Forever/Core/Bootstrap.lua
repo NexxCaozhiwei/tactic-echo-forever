@@ -1,5 +1,5 @@
 local addonName, TEF = ...
-local VERSION = "1.1.0"
+local VERSION = "1.1.3"
 local S = TEF.Safety
 local engine, frame
 

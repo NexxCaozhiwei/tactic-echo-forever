@@ -37,12 +37,21 @@ function P:PrepareRangeProbes()
         for i=2,#rung do S.Call("C_Item.RequestLoadItemDataByID",rung[i]) end
     end
 end
-function P:DistanceBracket()
-    if boolean("UnitExists","target")~=true then return nil,nil,"TARGET_MISSING_OR_UNKNOWN" end
-    if boolean("UnitIsUnit","target","player")~=false or boolean("UnitIsDeadOrGhost","target")~=false then
+function P:DistanceBracket(unit,radius)
+    local valid,why=S.Public(unit,"string")
+    if why=="NO_DATA" then valid="target" end
+    if not valid or (valid~="target" and not valid:match("^nameplate%d+$")) then return nil,nil,"UNIT_INVALID_OR_UNKNOWN" end
+    unit=valid
+    local checked,status=S.Public(radius,"number")
+    if status~="NO_DATA" then
+        if not checked or checked<=0 or checked>40 then return nil,nil,"RADIUS_INVALID" end
+    end
+    radius=checked
+    if boolean("UnitExists",unit)~=true then return nil,nil,"TARGET_MISSING_OR_UNKNOWN" end
+    if boolean("UnitIsUnit",unit,"player")~=false or boolean("UnitIsDeadOrGhost",unit)~=false then
         return nil,nil,"TARGET_INVALID_OR_UNKNOWN"
     end
-    local attack=boolean("UnitCanAttack","player","target")
+    local attack=boolean("UnitCanAttack","player",unit)
     if attack==nil then return nil,nil,"TARGET_REACTION_UNKNOWN" end
     if not attack then
         if boolean("InCombatLockdown")~=false then return nil,nil,"FRIENDLY_COMBAT_OR_UNKNOWN" end
@@ -53,9 +62,16 @@ function P:DistanceBracket()
     local path=S.Resolve("C_Item.IsItemInRange") and "C_Item.IsItemInRange" or "IsItemInRange"
     if not S.Resolve(path) then return nil,nil,"ITEM_RANGE_UNAVAILABLE" end
     local low,high,known=0,nil,false
-    for _,rung in ipairs(probes) do
+    local below,above
+    if radius then
+        for _,rung in ipairs(probes) do
+            if rung[1]<=radius then below=rung[1] end
+            if not above and rung[1]>=radius then above=rung[1] end
+        end
+    end
+    for _,rung in ipairs(probes) do if not radius or rung[1]==below or rung[1]==above then
         for i=2,#rung do
-            local ok,raw=S.Call(path,rung[i],"target")
+            local ok,raw=S.Call(path,rung[i],unit)
             if ok then
                 local v=S.Public(raw,"boolean")
                 if v==nil then
@@ -66,7 +82,7 @@ function P:DistanceBracket()
                 if v==false then low=math.max(low,rung[1]); known=true end
             end
         end
-    end
+    end end
     if high and low>=high then return nil,nil,"ITEM_RANGE_CONFLICT" end
     if high then return low,high,"ITEM_BRACKET_ESTIMATE" end
     if known then return low,nil,"ITEM_LOWER_BOUND_ESTIMATE" end
@@ -129,12 +145,31 @@ local categories={
  {kind="buff",value=2,viewer="BuffIconCooldownViewer"},
  {kind="buff",value=3,viewer="BuffBarCooldownViewer"}}
 local function key(kind,id) return kind .. ":" .. id end
+-- 只读匹配帧的公开光环数据，不读取显示文字，不以空白推断0层。
+local function stackValue(frame,id)
+ local shown=S.Field(frame,"IsVisible","function")
+ if not shown then return nil,"CDM_VISIBILITY_UNKNOWN" end
+ local ok,raw=pcall(shown,frame); local visible=ok and S.Public(raw,"boolean")
+ if visible~=true then return nil,"CDM_HIDDEN_OR_UNKNOWN" end
+ local get=S.Field(frame,"GetAuraDataCached","function")
+ if not get then return nil,"CDM_STACK_UNAVAILABLE" end
+ local got,data=pcall(get,frame)
+ if not got then return nil,"CDM_STACK_CALL_FAILED" end
+ local record,why=S.Public(data,"table"); if not record then return nil,why end
+ local spell=S.ID(S.Field(record,"spellId","number"))
+ if spell~=id then return nil,"CDM_STACK_ID_UNKNOWN" end
+ local value,status=S.Field(record,"applications","number")
+ if value==nil then return nil,status end
+ if value<0 or value>255 or value%1~=0 then return nil,"UNKNOWN_NUMBER" end
+ return value,"PUBLIC"
+end
 function P.CDM(rows)
- local requests,needed,out,skipped={},{},{},{}
+ local requests,needed,out,skipped,stackRequests={},{},{},{},{}
  for _,row in ipairs(rows) do
   if row.enabled and not row.invalid and row.cdmKind and row.cdmKind~="none" then
    local id=row.cdmSpellID or row.spellID; local k=key(row.cdmKind,id)
    requests[k]=id; needed[row.cdmKind]=true; out[k]={reason="CDM_FRAME_MISSING"}
+   if row.cdmStacks then stackRequests[k]=id end
   end
  end
  for _,cat in ipairs(categories) do if needed[cat.kind] then
@@ -187,11 +222,21 @@ function P.CDM(rows)
      if not id then skipped[cat.kind]=(skipped[cat.kind] or 0)+1 end
      local k=id and mappings[id]
      if k then
+      local stack,stackReason
+      if stackRequests[k] then stack,stackReason=stackValue(frame,stackRequests[k]) end
+      local previous=out[k]
       local active,classification=S.Field(frame,"isActive","boolean")
       local old=out[k]
       if active==nil then out[k]={reason=classification or "CDM_ACTIVE_UNKNOWN",uncertain=true}
       elseif old.uncertain or (old.value~=nil and old.value~=active) then out[k]={reason="CDM_CONFLICT",uncertain=true}
       else out[k]={value=active,reason="PUBLIC"} end
+      if stackRequests[k] then
+       local current=out[k]
+       if previous.stackUncertain or stack==nil or (previous.stacks~=nil and previous.stacks~=stack) then
+        current.stackUncertain=true; current.stackReason=previous.stackReason or (stack==nil and stackReason) or "CDM_STACK_CONFLICT"
+       elseif current.uncertain or current.value~=true then current.stackReason=current.reason or "CDM_STACK_INACTIVE"; current.stackUncertain=true
+       else current.stacks=stack; current.stackReason="PUBLIC" end
+      end
      end
     end
    end

@@ -351,6 +351,7 @@ function Engine:Handle(generation, event, unitRaw, guidRaw, spellRaw)
     self.attackActivationStreak=0
     self.seen[guid], self.seenCount = true, self.seenCount+1
     self.receiptSerial=(self.receiptSerial or 0)+1
+    self:MarkStrategySuccess(spellID)
     self.associations[guid]=nil; self.associationCount=self.associationCount-1
     if TEF.APL and TEF.APL:IsActive(self) then
         if self.maintenanceActive then TEF.Maintenance:Succeeded(self,spellID) end

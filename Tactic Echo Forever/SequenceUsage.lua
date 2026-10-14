@@ -3,6 +3,7 @@ local E,S=TEF.Engine,TEF.Safety
 
 function E:ClearUsage()
     self.usage=nil; self.usageProgress=nil; self.usageTarget=nil
+    self.strategySuccess=nil; self.strategySuccessCount=0; self.strategySuccessSaturated=nil
 end
 function E:UsageTargetChanged()
     self.usageTargetSerial=(self.usageTargetSerial or 0)+1
@@ -126,4 +127,17 @@ function E:PrepareUsage()
     if following then self.index=following
     else self.completed=true; self.running=false end
     return nil,"SEQUENCE_USAGE_SKIPPED"
+end
+
+-- 仅由现有精确成功回执路径写入；暂停及候选替换不清除。
+function E:MarkStrategySuccess(id)
+ self.strategySuccess=self.strategySuccess or {}
+ if self.strategySuccess[id] then return end
+ if (self.strategySuccessCount or 0)>=128 then self.strategySuccessSaturated=true; return end
+ self.strategySuccess[id]=true; self.strategySuccessCount=(self.strategySuccessCount or 0)+1
+end
+function E:StrategySucceeded(id)
+ if self.strategySuccess and self.strategySuccess[id] then return true end
+ if self.strategySuccessSaturated then return nil end
+ return false
 end

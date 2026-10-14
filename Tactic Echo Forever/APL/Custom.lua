@@ -16,7 +16,7 @@ local fields={targetMode=true,strategies=true,spellID=true,enabled=true,moving=t
  manaOp=true,manaValue=true,distanceOp=true,distanceValue=true,cdmKind=true,cdmState=true,cdmSpellID=true}
 local classes={"MAGE","WARRIOR","PALADIN","HUNTER","ROGUE","PRIEST","SHAMAN","WARLOCK","DRUID","DEATHKNIGHT","MONK","DEMONHUNTER","EVOKER"}
 function C:ClassSupported(class) for _,value in ipairs(classes) do if value==class then return true end end; return false end
-local conditionKinds={usable=true,range=true,distance=true,moving=true,enemies=true,cdmCooldown=true,cdmBuff=true,cooldown=true}
+local conditionKinds={usable=true,range=true,distance=true,moving=true,enemies=true,cdmCooldown=true,cdmBuff=true,cooldown=true,combat=true,targetType=true,learned=true,succeeded=true,cdmStacks=true,rangedEnemies=true,nearbyEnemies=true}
 local function onlyFields(record,allowed,limit)
  local count=0
  local ok=pcall(function() for raw in pairs(record) do
@@ -40,11 +40,11 @@ function C.CleanStrategies(raw)
   local strategy={mode=mode,conditions={}}
   for j=1,count do
    local v=S.Field(conditions,j,"table"); local kind=S.Field(v,"kind","string")
-   if not v or not onlyFields(v,{kind=true,value=true,min=true,max=true,spellID=true,op=true,threshold=true},7) then return nil,"CUSTOM_STRATEGY_INVALID" end
+   if not v or not onlyFields(v,{kind=true,value=true,min=true,max=true,spellID=true,op=true,threshold=true,target=true,radius=true},9) then return nil,"CUSTOM_STRATEGY_INVALID" end
    local value,classification=S.Field(v,"value","boolean")
    local c={kind=kind,value=value}
    if not conditionKinds[kind] then return nil,"CUSTOM_STRATEGY_INVALID" end
-   if kind=="distance" or kind=="enemies" then
+   if kind=="distance" or kind=="enemies" or kind=="rangedEnemies" or kind=="cdmStacks" or kind=="nearbyEnemies" then
     local op,status=S.Field(v,"op","string")
     if status~="NO_DATA" then
      local threshold=S.Field(v,"threshold","number")
@@ -53,15 +53,30 @@ function C.CleanStrategies(raw)
     end
     for _,field in ipairs({"min","max"}) do
      local n,status=S.Field(v,field,"number")
-     if status~="NO_DATA" and (not n or n<0 or n>(kind=="distance" and 2000 or 40) or (kind=="enemies" and n%1~=0)) then return nil,"CUSTOM_STRATEGY_INVALID" end
+     if status~="NO_DATA" and (not n or n<0 or n>(kind=="distance" and 2000 or kind=="cdmStacks" and 255 or 40) or (kind~="distance" and n%1~=0)) then return nil,"CUSTOM_STRATEGY_INVALID" end
      c[field]=n
     end
     if (not c.min and not c.max and not c.op) or (c.min and c.max and c.min>c.max) then return nil,"CUSTOM_STRATEGY_INVALID" end
     c.value=nil
+   elseif kind=="targetType" then
+    local target=S.Field(v,"target","string")
+    if target~="enemy" and target~="friendly" and target~="self" and target~="none" then return nil,"CUSTOM_STRATEGY_INVALID" end
+    c.target=target; c.value=nil
    elseif classification~="PUBLIC" then return nil,"CUSTOM_STRATEGY_INVALID" end
-   if kind=="cdmCooldown" or kind=="cdmBuff" then
+   if kind=="nearbyEnemies" then
+    local radius=S.Field(v,"radius","number")
+    if not radius or radius<=0 or radius>40 then return nil,"CUSTOM_STRATEGY_INVALID" end
+    c.radius=radius
+   end
+   if kind=="cdmCooldown" or kind=="cdmBuff" or kind=="cdmStacks" or kind=="learned" or kind=="succeeded" or kind=="rangedEnemies" then
     local id,status=S.Field(v,"spellID","number")
     if status~="NO_DATA" then c.spellID=S.ID(id); if not c.spellID then return nil,"CUSTOM_STRATEGY_INVALID" end end
+   end
+   if kind=="rangedEnemies" then
+    local radius,status=S.Field(v,"radius","number")
+    if status=="NO_DATA" then radius=10 end
+    if not radius or radius<=0 or radius>40 then return nil,"CUSTOM_STRATEGY_INVALID" end
+    c.kind="nearbyEnemies"; c.radius=radius; c.spellID=nil
    end
    strategy.conditions[#strategy.conditions+1]=c
   end
@@ -200,23 +215,56 @@ function C:Read(id,requireReady,targetMode)
  action.name=name; action.target=target
  return action
 end
-function C:SampleStrategies(state,rows)
+function C:SampleStrategies(state,rows,e)
  local requests={}; local countNeeded=false; local distanceNeeded=false
+ state.otherKnown={}; state.succeeded={}; state.nearbyEnemies={}
+ local radiusCount=0
+ local function probe(radius)
+  if state.nearbyEnemies[radius] then return end
+  if radiusCount>=4 then state.nearbyEnemies[radius]={state="PROBE_CAPACITY"}; return end
+  radiusCount=radiusCount+1; state.nearbyEnemies[radius]=T.Research:ProbeVisibleYards(radius)
+ end
+ local watched,knownMeasured={},{}; local budget=0
+ local function watch(id)
+  if watched[id] then return true end
+  if budget>=16 then return false end
+  watched[id]=true; budget=budget+1; return true
+ end
+ local targetNeeded=false
  for i,row in ipairs(rows) do if row.enabled and not row.invalid and row.strategies then
   local a=state.actions["custom_" .. i]
   for _,strategy in ipairs(row.strategies) do for _,condition in ipairs(strategy.conditions) do
+   local kind,id=condition.kind,condition.spellID or row.spellID
+   if kind=="nearbyEnemies" or kind=="rangedEnemies" then probe(condition.radius or 10) end
+   if kind=="targetType" then targetNeeded=true end
+   if kind=="learned" and not knownMeasured[id] and watch(id) then knownMeasured[id]=true; state.otherKnown[id]=A.State.Boolean("C_SpellBook.IsSpellKnown",id) end
+   if kind=="succeeded" then state.succeeded[id]=e:StrategySucceeded(id) end
    if condition.kind=="enemies" then countNeeded=true end
    if condition.kind=="distance" then distanceNeeded=true end
    if condition.kind=="cooldown" and a then
     local ok,record=S.Call("C_Spell.GetSpellCooldown",row.spellID)
     a.active=nil; if ok then a.active=S.Field(record,"isActive","boolean") end
    end
-   if condition.kind=="cdmCooldown" or condition.kind=="cdmBuff" then
-    requests[#requests+1]={enabled=true,cdmKind=condition.kind=="cdmBuff" and "buff" or "cooldown",cdmSpellID=condition.spellID or row.spellID}
+   if condition.kind=="cdmCooldown" or condition.kind=="cdmBuff" or condition.kind=="cdmStacks" then
+    requests[#requests+1]={enabled=true,cdmKind=condition.kind~="cdmCooldown" and "buff" or "cooldown",cdmSpellID=condition.spellID or row.spellID,cdmStacks=condition.kind=="cdmStacks"}
    end
   end end
   if a then a.strategyCDM={} end
  end end
+ if targetNeeded then
+  local exists=A.State.Boolean("UnitExists","target")
+  if exists==false then state.targetType="none"
+  elseif exists==true then
+   local selfTarget=A.State.Boolean("UnitIsUnit","target","player")
+   if selfTarget==true then state.targetType="self"
+   elseif selfTarget==false then
+    local enemy=A.State.Boolean("UnitCanAttack","player","target")
+    local friendly=A.State.Boolean("UnitCanAssist","player","target")
+    if enemy==true and friendly==false then state.targetType="enemy"
+    elseif friendly==true and enemy==false then state.targetType="friendly" end
+   end
+  end
+ end
  if countNeeded then local v=T.Research:CountVisible(); state.enemy_count=v.state=="PUBLIC_VALUE" and v.value or nil end
  if distanceNeeded then A.PublicConditions:SampleDistance(state) end
  local cdm=A.PublicConditions.CDM(requests)
@@ -230,6 +278,18 @@ function C:StrategyCondition(state,row,index,c)
  if c.kind=="usable" then
   if a.usable==false or a.power_ok==false then value=false
   elseif a.usable==true and a.power_ok==true then value=true end
+ elseif c.kind=="combat" then value=state.combat and state.combat.in_combat
+ elseif c.kind=="targetType" then if not state.targetType then return nil end; return state.targetType==c.target
+ elseif c.kind=="learned" then value=state.otherKnown and state.otherKnown[c.spellID or row.spellID]
+ elseif c.kind=="succeeded" then value=state.succeeded and state.succeeded[c.spellID or row.spellID]
+ elseif c.kind=="nearbyEnemies" or c.kind=="rangedEnemies" then
+  local record=state.nearbyEnemies and state.nearbyEnemies[c.radius or 10]
+  if not record or record.state~="PUBLIC_BOUNDS" then return nil end
+  return T.Research.CountBoundsMatch(record.lower,record.upper,c.min,c.max)
+ elseif c.kind=="cdmStacks" then
+  local record=a.strategyCDM and a.strategyCDM["buff:" .. (c.spellID or row.spellID)]
+  if not record or record.stacks==nil then return nil end
+  return (not c.min or record.stacks>=c.min) and (not c.max or record.stacks<=c.max)
  elseif c.kind=="range" then value=a.in_range
  elseif c.kind=="moving" then value=state.moving
  elseif c.kind=="cooldown" then value=a.active
@@ -271,6 +331,7 @@ function C:CheckStrategies(state,row,index)
  return true,"CUSTOM_STRATEGIES_TRUE"
 end
 function C:Sample(e,state,provided)
+ state.combat=state.combat or {in_combat=A.State.Boolean("InCombatLockdown")}
  if T.Maintenance then T.Maintenance:Context(e,state) end
  local rows=provided or self:Rows(e); local countNeeded=false; local probes={}
  for i,row in ipairs(rows) do
@@ -287,7 +348,36 @@ function C:Sample(e,state,provided)
  if countNeeded then local value=T.Research:CountVisible(); if value.state=="PUBLIC_VALUE" then state.enemy_count=value.value end end
  state.healthProbe=A.State.ProbeHealth()
  A.PublicConditions:Sample(state,rows)
- self:SampleStrategies(state,rows)
+ self:SampleStrategies(state,rows,e)
+ for i,row in ipairs(rows) do
+  local action=state.actions["custom_" .. i]
+  if action then
+   action.conditionObservations={}
+   for _,strategy in ipairs(row.strategies or {}) do for _,condition in ipairs(strategy.conditions) do
+    if #action.conditionObservations<16 then
+     local id=condition.spellID or row.spellID
+     local observation={kind=condition.kind,spellID=id,result=self:StrategyCondition(state,row,i,condition)}
+     if condition.kind=="targetType" then observation.text=state.targetType end
+     if condition.kind=="cdmStacks" then
+      local v=action.strategyCDM and action.strategyCDM["buff:" .. id]
+      observation.number=v and v.stacks; observation.reason=v and (v.stackReason or v.reason) or "CDM_FRAME_MISSING"
+
+     end
+     if condition.kind=="nearbyEnemies" or condition.kind=="rangedEnemies" then
+      local radius=condition.radius or 10
+      local v=state.nearbyEnemies[radius]
+      if v then
+       observation.probeRadius=radius; observation.lower=v.lower; observation.upper=v.upper; observation.unknownCount=v.unknown
+       observation.probeReason=v.state; observation.reason=v.state
+       if v.state=="PUBLIC_BOUNDS" then observation.probeResult=T.Research.CountBoundsMatch(v.lower,v.upper,condition.min,condition.max) end
+       observation.details={}; for j=1,math.min(8,#(v.details or {})) do observation.details[j]=v.details[j] end
+      end
+     end
+     action.conditionObservations[#action.conditionObservations+1]=observation
+    end
+   end end
+  end
+ end
 end
 function C:Check(state,row,index)
  if state.maintenanceOwned and state.maintenanceOwned[row.spellID] then return false,"MAINTENANCE_OWNS_SPELL","MAINTENANCE" end
@@ -360,9 +450,11 @@ function C:Ledger(e)
    for _,condition in ipairs(strategy.conditions) do
     local result=state and self:StrategyCondition(state,row,i,condition)
     local description=condition.kind .. "=" .. tostring(condition.value)
-    if condition.kind=="distance" or condition.kind=="enemies" then description=condition.kind .. "：" .. (condition.min or "不限") .. "～" .. (condition.max or "不限") end
+    if condition.kind=="distance" or condition.kind=="enemies" or condition.kind=="cdmStacks" or condition.kind=="rangedEnemies" or condition.kind=="nearbyEnemies" then description=condition.kind .. "：" .. (condition.min or "不限") .. "～" .. (condition.max or "不限") end
     if condition.op then description="距离" .. condition.op .. condition.threshold end
-    if condition.kind=="cdmBuff" or condition.kind=="cdmCooldown" then description=description .. "；ID " .. (condition.spellID or row.spellID) end
+    if condition.kind=="nearbyEnemies" then description=description .. "；码数 " .. condition.radius .. "（自身范围）" end
+    if condition.kind=="targetType" then description="目标类型=" .. condition.target end
+    if condition.kind=="cdmBuff" or condition.kind=="cdmCooldown" or condition.kind=="cdmStacks" or condition.kind=="rangedEnemies" or condition.kind=="learned" or condition.kind=="succeeded" then description=description .. "；ID " .. (condition.spellID or row.spellID) end
     lines[#lines+1]=description .. "；观察=" .. (result==nil and "未知" or result and "满足" or "不满足")
    end
   end
