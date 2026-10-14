@@ -7,7 +7,7 @@ local function test(name,fn) fn(); n=n+1 end
 local function row(id) return C.CleanRows({{spellID=id,enabled=true,moving="any",activity="any"}})[1] end
 local function state(rows)
  local s={combat={in_combat=true},actions={},scene="single",moving=false,manaPercent=15,distance=19}
- for i,r in ipairs(rows) do s.actions["custom_" .. i]={spellID=r.spellID,name="技能",known=true,usable=true,power_ok=true,in_range=true,ready=true,cdmActive=false} end
+ for i,r in ipairs(rows) do s.actions["custom_" .. i]={spellID=r.spellID,name="技能",known=true,usable=true,loss_control_clear=true,power_ok=true,in_range=true,ready=true,cdmActive=false} end
  return s
 end
 local function fixtures(active)

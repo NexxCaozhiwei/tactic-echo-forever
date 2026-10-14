@@ -158,10 +158,9 @@ function A:Allowed(e,id)
   or s.revision~=(self.State.revision or 0) or not now or not s.sampledAt or now<s.sampledAt or now-s.sampledAt>1 then
   return false,"APL_STALE_OR_UNKNOWN"
  end
- -- A visible standby candidate never grants input authority, including
- -- explicit Request or manual runtime mode. Recheck public combat here.
+ -- 推荐预览不授予输入资格；派发复查公开战斗或显式手动脱战授权。
  local combat=self.State.Boolean("InCombatLockdown")
- if combat~=true and (combat~=false or not TEF.Maintenance:OutsideAllowed(e)) then return false,"APL_DISPATCH_COMBAT_REQUIRED" end
+ if not TEF.Runtime:CombatAllowed(e,combat) then return false,"APL_DISPATCH_COMBAT_REQUIRED" end
  -- Re-read the selected action immediately before transport. User-authorized:
  -- no GCD condition or 61304 query in APL selection/dispatch.
  if e.maintenanceActive or e.db.apl.template=="custom" then
@@ -170,7 +169,7 @@ function A:Allowed(e,id)
   local action=self.Custom:Read(id,row.requireReady,row.targetMode)
   if row.activity~="any" then local ok,record=TEF.Safety.Call("C_Spell.GetSpellCooldown",id); if ok then action.active=TEF.Safety.Field(record,"isActive","boolean") end end
   local live={combat={in_combat=self.State.Boolean("InCombatLockdown")},actions={[c.action]=action},moving=self.State.Boolean("IsPlayerMoving")}
-  if live.combat.in_combat~=true and (live.combat.in_combat~=false or not TEF.Maintenance:OutsideAllowed(e)) then return false,"APL_DISPATCH_COMBAT_REQUIRED" end
+  if not TEF.Runtime:CombatAllowed(e,live.combat.in_combat) then return false,"APL_DISPATCH_COMBAT_REQUIRED" end
   TEF.Maintenance:Context(e,live)
   if e.maintenanceActive and not TEF.Maintenance:BuffSpell(id) then return false,"MAINTENANCE_BUFF_REQUIRED" end
   local isolated={}
@@ -187,7 +186,7 @@ function A:Allowed(e,id)
  action.known=self.State.Boolean("C_SpellBook.IsSpellKnown",id)
  local live={combat={in_combat=self.State.Boolean("InCombatLockdown")},gcd={},
   actions={[c.action]=action},talents=s.talents,enemy_count=s.enemy_count,scene=s.scene,moving=self.State.Boolean("IsPlayerMoving")}
- if live.combat.in_combat~=true then return false,"APL_DISPATCH_COMBAT_REQUIRED" end
+ if not TEF.Runtime:CombatAllowed(e,live.combat.in_combat) then return false,"APL_DISPATCH_COMBAT_REQUIRED" end
  local pack=self.Packs[e.classToken]
  local selection=self:SelectTemplate(s,e.db.apl)
  local template=pack and pack.templates[selection.template]

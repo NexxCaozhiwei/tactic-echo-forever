@@ -6,7 +6,7 @@ local function test(name,fn) fn(); n=n+1 end
 local function row(id) return {spellID=id,enabled=true,moving="any",activity="any",experimentalEnemies=false} end
 local function state(rows)
  local s={combat={in_combat=true},actions={},moving=false,scene="single",enemy_count=3}
- for i,r in ipairs(rows) do s.actions["custom_" .. i]={spellID=r.spellID,name="技能",known=true,usable=true,power_ok=true,in_range=true,ready=true,active=false} end
+ for i,r in ipairs(rows) do s.actions["custom_" .. i]={spellID=r.spellID,name="技能",known=true,usable=true,loss_control_clear=true,power_ok=true,in_range=true,ready=true,active=false} end
  return s
 end
 local function evaluate(rows,s) return C:Evaluate(s or state(rows),{custom={MAGE={single=rows}}},"MAGE") end
@@ -205,10 +205,11 @@ test("retired_resource_threshold_does_not_survive_save",function()
  local e=F.runtime(); local r=row(143); r.manaOp,r.manaValue="lt",20
  assert(C:Save(e,{r},"single","MAGE")); eq(C:Rows(e)[1].manaOp,nil)
 end)
-test("manual_apl_mode_cannot_dispatch_standby_preview",function()
+test("manual_apl_mode_explicit_start_can_dispatch_opener",function()
  local e=F.runtime(); C:Save(e,{row(143)},"single","MAGE"); e.db.dispatch.mode="manual"; InCombatLockdown=function() return false end
- T.Runtime:SetIntent(true); eq(e.aplCandidate.spellID,143); eq(T.Runtime.state,"blocked")
- eq(T.APL:Allowed(e,143),false); eq(T.Dispatch:Request(),false); eq(T.Dispatch:Packet(),nil)
+ T.Runtime:SetIntent(true); eq(e.aplCandidate.spellID,143); eq(T.Runtime.state,"running")
+ eq(T.APL:Allowed(e,143),true); T.Dispatch:TickContinuous(); assert(T.Dispatch:Packet())
+ T.Runtime:Stop(); eq(T.Dispatch:Packet(),nil)
 end)
 test("editor_order_delete_draft_and_scene_keep_saved",function()
  local e=F.runtime(); C:Save(e,{row(143),row(205)},"single","MAGE")
@@ -524,7 +525,7 @@ test("maintenance_ui_singleton_buff_only_and_saved_separately",function()
  C_Spell.GetSpellInfo=info
 end)
 test("maintenance_unknown_conditions_and_damage_never_dispatch",function()
- local e=F.runtime(); local info=C_Spell.GetSpellInfo
+ local e=F.runtime(); e.db.dispatch.mode="auto"; local info=C_Spell.GetSpellInfo
  C_Spell.GetSpellInfo=function(id) return {name=id==168 and "霜甲术" or "火球术"} end
  eq(T.Maintenance:Save(e,{{spellID=143}}),false)
  assert(T.Maintenance:Save(e,{{spellID=168,strategies={{mode="use",conditions={{kind="cdmBuff",value=false,spellID=168}}}}}}))

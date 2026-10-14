@@ -652,7 +652,7 @@ function D:Packet()
     if TEF.Runtime and TEF.Runtime.e==e and TEF.Runtime.intent
         and e.db.dispatch.mode=="auto" and combat~=true and not TEF.Maintenance:OutsideAllowed(e) then self:Cancel("RUNTIME_AUTO_STANDBY"); return nil end
     if p.castQueue and combat~=true then self:Cancel("CAST_QUEUE_COMBAT_REQUIRED"); return nil end
-    if TEF.APL and TEF.APL:IsActive(e) and combat~=true and not TEF.Maintenance:OutsideAllowed(e) then self:Cancel("APL_DISPATCH_COMBAT_REQUIRED"); return nil end
+    if TEF.APL and TEF.APL:IsActive(e) and not TEF.Runtime:CombatAllowed(e,combat) then self:Cancel("APL_DISPATCH_COMBAT_REQUIRED"); return nil end
     if self.pending~=p or not self.enabled or not e.running or e.completed
         or e.generation~=p.generation or e.index~=p.index or p.receiptSerial~=(e.receiptSerial or 0) or TEF.UI.settingsOpen then return nil end
     local stillEligible,_,freshContext=e:UsageEligibility(p.castQueue and p.castQueue.nextIndex or e.index)

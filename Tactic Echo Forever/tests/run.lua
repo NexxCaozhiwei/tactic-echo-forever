@@ -19,6 +19,7 @@ local function test(name,fn)
     UnitClass=function() return "法师","MAGE" end; GetSpecialization=nil
     detectorMode=nil; issecretvalue=detector
     C_Spell={GetSpellInfo=function(id) return {name="spell" .. id} end,GetSpellTexture=function() return 123 end}
+    C_Spell.GetSpellLossOfControlCooldownInfo=function() return {isActive=false} end
     C_Spell.IsSpellInRange=function() return true end; C_Spell.IsSpellUsable=function() return true,false end
     GetSpellInfo=nil; GetSpellTexture=nil
     IsHelpfulSpell=nil; IsHarmfulSpell=nil
@@ -1089,6 +1090,7 @@ test("temporary_block_does_not_disable_intent",function()
         eq(T.Dispatch.pending,nil); T.Transport:Paint(); eq(T.Transport.fields[15],0)
         GetCurrentKeyBoardFocus=function() return nil end; UnitExists=function() return true end
         InCombatLockdown=function() return false end; IsPlayerMoving=function() return false end
+        C_Spell.GetSpellLossOfControlCooldownInfo=function() return {isActive=false} end
         C_Spell.IsSpellInRange=function() return true end; C_Spell.IsSpellUsable=function() return true,false end
         T.Runtime:Reconcile(); eq(T.Runtime.state,"running"); T.Dispatch:TickContinuous()
         assert(T.Dispatch.pending and T.Dispatch.pending~=old)

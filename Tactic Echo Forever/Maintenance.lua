@@ -1,6 +1,8 @@
 local _,T=...
 local S,A,M=T.Safety,T.APL,{}
 T.Maintenance=M
+-- 精确身份只授权维护入口，运行仍要求独立已学、公开可用及失控解除门禁。
+M.ControlBreakers={[1259718]=true}
 local buffTypes={buff=true,armor=true,defense=true,cooldown=true}
 function M:Rows(e) local config=e.db.maintenance and e.db.maintenance[e.classToken]; return config and config.rows or {} end
 function M:Enabled(e) local config=e.db.maintenance and e.db.maintenance[e.classToken]; return config and config.enabled==true or false end
@@ -11,6 +13,7 @@ function M:RegisteredBuff(id)
  return ability and buffTypes[ability.type] and (ability.target=="self" or ability.target=="friendly") or false
 end
 function M:BuffSpell(id)
+ if self.ControlBreakers[id] then return true end
  if self:RegisteredBuff(id) then return true end
  local view=S.Spell(id,tostring(id)); local key=view.reason=="PUBLIC" and A.AbilityNames[view.name]
  if key and A.Abilities[key] and A.Abilities[key].target then return false end
@@ -80,7 +83,7 @@ end
 function M:Save(e,rows)
  local clean=A.Custom.CleanRows(rows); local seen={}
  for _,row in ipairs(clean) do
-  if row.invalid or not self:BuffSpell(row.spellID) or seen[row.spellID] then return false,"仅接受可确认的增益法术，且精确技能ID不得重复。" end
+  if row.invalid or not self:BuffSpell(row.spellID) or seen[row.spellID] then return false,"仅接受可确认的增益或已支持的解控法术，且精确技能ID不得重复。" end
   seen[row.spellID]=true
  end
  T.Runtime:Stop("MAINTENANCE_EDITED"); e.db.maintenance[e.classToken]=e.db.maintenance[e.classToken] or {enabled=false,rows={}}

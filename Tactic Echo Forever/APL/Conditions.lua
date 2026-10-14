@@ -1,7 +1,7 @@
 local _,TEF=...
 local C={}; TEF.APL.Conditions=C
 C.Capabilities={moving="PUBLIC_BOOLEAN",enemy_count="VISIBLE_EXPERIMENTAL",known="PUBLIC_EXACT_LEARNED",
- usable="PUBLIC_BOOLEAN",power_ok="PUBLIC_BOOLEAN",range="PUBLIC_BOOLEAN",ready="EXPLICIT_PUBLIC_ZERO",
+ loss_control_clear="PUBLIC_BOOLEAN",usable="PUBLIC_BOOLEAN",power_ok="PUBLIC_BOOLEAN",range="PUBLIC_BOOLEAN",ready="EXPLICIT_PUBLIC_ZERO",
  talent="PUBLIC_RANK",aura="BLOCKED",stack="BLOCKED",mana_pct="BUILTIN_BLOCKED",
  target_health="BLOCKED",ttd="BLOCKED",in_flight="BLOCKED",prev_gcd="BLOCKED",glyph="BLOCKED",pet="BLOCKED"}
 -- nil is UNKNOWN. Conditions consume only provider-normalized Lua values.
@@ -28,7 +28,7 @@ function C:One(state,term,config)
 end
 function C:ActionTerms(key,requireReady)
  local terms={}
- for _,field in ipairs({"known","usable","power_ok","in_range"}) do terms[#terms+1]={op="action",key=key,field=field} end
+ for _,field in ipairs({"known","usable","power_ok","in_range","loss_control_clear"}) do terms[#terms+1]={op="action",key=key,field=field} end
  if requireReady then terms[#terms+1]={op="action",key=key,field="ready"} end
  return terms
 end

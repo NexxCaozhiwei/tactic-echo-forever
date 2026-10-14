@@ -1,4 +1,5 @@
 local _,T,F=...
+local A=T.APL
 local C,P=T.APL.Custom,T.APL.PublicConditions
 local n=0
 local function eq(a,b) assert(a==b,"strategy expected " .. tostring(b) .. ", got " .. tostring(a)) end
@@ -193,4 +194,140 @@ test("self_radius_migration_and_partial_use_skip_truth",function()
  old.radius=F.secret; assert(row(1449,{old}).invalid)
 end)
 
+test("control_condition_clean_and_secret",function()
+ local r=row(1259718,{{kind="lossOfControl",control="stun",value=true}}); eq(r.invalid,nil)
+ eq(C.CleanRows({r})[1].strategies[1].conditions[1].control,"stun")
+ r.strategies[1].conditions[1].control=F.secret; assert(C.CleanRows({r})[1].invalid)
+ eq(row(1259718,{{kind="lossOfControl",control="invented",value=true}}).invalid,"CUSTOM_STRATEGY_INVALID")
+end)
+test("control_probe_multiple_types_partial_unknown_and_capacity",function()
+ local old=C_LossOfControl
+ C_LossOfControl={GetActiveLossOfControlDataCount=function() return 2 end,GetActiveLossOfControlData=function(i) return {locType=i==1 and "STUN_MECHANIC" or "FEAR"} end}
+ local p=A.State.ProbeControl(); eq(A.State.ControlMatch(p,"stun"),true); eq(A.State.ControlMatch(p,"fear"),true); eq(A.State.ControlMatch(p,"confuse"),false)
+ C_LossOfControl.GetActiveLossOfControlData=function(i) return {locType=i==1 and "CONFUSE" or F.secret} end
+ p=A.State.ProbeControl(); eq(A.State.ControlMatch(p,"confuse"),true); eq(A.State.ControlMatch(p,"stun"),nil)
+ C_LossOfControl.GetActiveLossOfControlDataCount=function() return 0 end; p=A.State.ProbeControl(); eq(A.State.ControlMatch(p,"any"),false)
+ C_LossOfControl.GetActiveLossOfControlDataCount=function() return 17 end; eq(A.State.ControlMatch(A.State.ProbeControl(),"stun"),nil)
+ C_LossOfControl=nil; eq(A.State.ControlMatch(A.State.ProbeControl(),"stun"),nil)
+ C_LossOfControl=old
+end)
+test("control_condition_unknown_is_not_absent",function()
+ local e=F.runtime(); local old=C_LossOfControl
+ local r=row(1259718,{{kind="lossOfControl",control="stun",value=false}})
+ C_LossOfControl={GetActiveLossOfControlDataCount=function() return F.secret end}
+ local s=snapshot(); C:SampleStrategies(s,{r},e); eq(C:CheckStrategies(s,r,1),nil)
+ C_LossOfControl.GetActiveLossOfControlDataCount=function() return 0 end
+ s=snapshot(); C:SampleStrategies(s,{r},e); eq(C:CheckStrategies(s,r,1),true)
+ C_LossOfControl=old
+end)
+test("maintenance_control_breaker_prioritizes_and_live_condition_revokes",function()
+ local e=F.runtime(); local oldLoc,info,known,action,passive=C_LossOfControl,C_Spell.GetSpellInfo,C_SpellBook.IsSpellKnown,GetActionInfo,C_Spell.IsSpellPassive
+ C_LossOfControl={GetActiveLossOfControlDataCount=function() return 1 end,GetActiveLossOfControlData=function() return {locType="STUN"} end}
+ C_Spell.GetSpellInfo=function(id) return {name=id==1259718 and "生存意志" or "火球术"} end
+ C_Spell.IsSpellPassive=function() return false end; C_SpellBook.IsSpellKnown=function() return true end
+ GetActionInfo=function() return "spell",1259718 end
+ assert(T.Maintenance:Save(e,{{spellID=1259718,strategies={{mode="use",conditions={{kind="lossOfControl",control="stun",value=true}}}}}}))
+ T.Maintenance:SetEnabled(e,true); T.Runtime:SetIntent(true); eq(e.maintenanceActive,true); eq(e.aplCandidate.spellID,1259718)
+ T.Dispatch:TickContinuous(); assert(T.Dispatch:Packet())
+ C_LossOfControl.GetActiveLossOfControlDataCount=function() return 0 end
+ eq(T.Dispatch:Packet(),nil)
+ C_LossOfControl,C_Spell.GetSpellInfo,C_SpellBook.IsSpellKnown,GetActionInfo,C_Spell.IsSpellPassive=oldLoc,info,known,action,passive
+end)
+test("maintenance_control_breaker_requires_exact_learned_and_own_loc_gate",function()
+ local e=F.runtime(); local info,known,passive,loc=C_Spell.GetSpellInfo,C_SpellBook.IsSpellKnown,C_Spell.IsSpellPassive,C_Spell.GetSpellLossOfControlCooldownInfo
+ C_Spell.GetSpellInfo=function() return {name="生存意志"} end; C_Spell.IsSpellPassive=function() return false end
+ C_SpellBook.IsSpellKnown=function() return false end; eq(C:Read(1259718).known,false)
+ C_SpellBook.IsSpellKnown=function() return true end
+ C_Spell.GetSpellLossOfControlCooldownInfo=function() return {isActive=true} end
+ local a=C:Read(1259718); eq(a.target,"self"); eq(a.loss_control_clear,false)
+ eq(C:Check({actions={custom_1=a}},C.CleanRows({{spellID=1259718}})[1],1),false)
+ C_Spell.GetSpellInfo,C_SpellBook.IsSpellKnown,C_Spell.IsSpellPassive,C_Spell.GetSpellLossOfControlCooldownInfo=info,known,passive,loc
+end)
+test("maintenance_control_editor_default_and_reload",function()
+ local e=F.runtime(); local info=C_Spell.GetSpellInfo
+ C_Spell.GetSpellInfo=function() return {name="生存意志"} end
+ T.UI:ShowPage("maintenance")
+ local cursor,clear=GetCursorInfo,ClearCursor; local cleared=0
+ GetCursorInfo=function() return "spell",7,"spell",1259718 end
+ ClearCursor=function() cleared=cleared+1 end
+ eq(T.UI:ReceiveCustomSpell(),true); eq(cleared,1)
+ GetCursorInfo,ClearCursor=cursor,clear
+ eq(T.Maintenance.ControlBreakers[59752],nil)
+ local c=T.UI.customDraft[1].strategies[1].conditions[1]; eq(c.kind,"lossOfControl"); eq(c.control,"stun"); eq(c.value,true)
+ T.UI.customSelected=1; T.UI:RefreshStrategyForm()
+ T.UI.customSave.scripts.OnClick(); eq(T.Maintenance:Rows(e)[1].spellID,1259718)
+ local copy=T.Engine.New(T.Config,e.db); eq(T.Maintenance:Rows(copy)[1].strategies[1].conditions[1].control,"stun")
+ local clean=A.Trace.Clean({reason="MAINTENANCE_CANDIDATE",actions={custom_1={spellID=1259718,conditionObservations={{kind="lossOfControl",text="stun",result=true,reason="PUBLIC_CONTROL_TYPES"}}}}})
+ eq(clean.actions.custom_1.conditionObservations[1].text,"stun")
+ C_Spell.GetSpellInfo=info
+end)
+test("strategy_replace_apl_preserves_conditions_and_saved_draft",function()
+ local e=F.runtime(); local r=row(143,{{kind="learned",spellID=143,value=true},{kind="distance",min=10,max=30}})
+ assert(C:Save(e,{r},"single","MAGE")); T.UI:ShowPage("customapl"); T.UI.customSelected=1; T.UI.customFormIndex=nil; T.UI:RefreshCustomAPL()
+ T.UI.strategySpellID.text="205"; T.UI.strategyReplaceID.scripts.OnClick(); eq(T.UI.customDraft[1].spellID,205); eq(C:Rows(e)[1].spellID,143)
+ local c=T.UI.customDraft[1].strategies[1].conditions; eq(c[1].spellID,143); eq(c[2].max,30)
+ T.UI.strategySaveButton.scripts.OnClick(); eq(C:Rows(e)[1].spellID,205)
+ local known=C_SpellBook.IsSpellKnown; C_SpellBook.IsSpellKnown=function() return F.secret end
+ eq(T.UI:ReplaceStrategySpell(143),false); eq(T.UI.customDraft[1].spellID,205)
+ C_SpellBook.IsSpellKnown=known; eq(T.UI:ReplaceStrategySpell(61304),false); eq(T.UI:ReplaceStrategySpell(7268),false)
+end)
+test("strategy_replace_manual_updates_exact_identity_and_preserves_count",function()
+ local e=F.runtime(); assert(T.Recommendation:SetSource(e,"manual","single"))
+ assert(T.Profiles:Save(e,"single",{{spellID=143,name="火球术",matchIDs={143},repeatCount=3,strategies={{mode="use",conditions={{kind="combat",value=true}}}}}}))
+ T.UI.editScene="single"; T.UI:ShowPage("profiles"); T.UI:OpenSequencePolicy(1)
+ local cursor,clear=GetCursorInfo,ClearCursor
+ GetCursorInfo=function() return "spell",3,"spell",205 end; ClearCursor=function() end
+ eq(T.UI:ReceiveStrategySpell(),true)
+ local rows=T.UI:DraftRows(); eq(rows[1].spellID,205); eq(rows[1].matchIDs[1],205); eq(rows[1].repeatCount,3); eq(rows[1].strategies[1].conditions[1].kind,"combat")
+ T.UI.strategySaveButton.scripts.OnClick(); eq(e.db.profiles.single[1].spellID,205); eq(e.steps[1].matches[143],nil)
+ GetCursorInfo,ClearCursor=cursor,clear
+end)
+test("strategy_replace_maintenance_rejects_damage_and_duplicates",function()
+ local e=F.runtime(); local info,known=C_Spell.GetSpellInfo,C_SpellBook.IsSpellKnown
+ C_Spell.GetSpellInfo=function(id) return {name=id==168 and "霜甲术" or id==7300 and "霜甲术" or "火球术"} end
+ C_SpellBook.IsSpellKnown=function() return true end
+ assert(T.Maintenance:Save(e,{{spellID=168,strategies={{mode="use",conditions={{kind="combat",value=false}}}}}}))
+ T.UI:ShowPage("maintenance"); eq(T.UI:ReplaceStrategySpell(143),false); eq(T.UI:ReplaceStrategySpell(7300),true)
+ eq(T.UI.customDraft[1].strategies[1].conditions[1].value,false)
+ T.UI.customDraft[2]=C.CleanRows({{spellID=168}})[1]; eq(T.UI:ReplaceStrategySpell(168),false)
+ T.UI.strategySaveButton.scripts.OnClick(); eq(T.Maintenance:Rows(e)[1].spellID,7300)
+ C_Spell.GetSpellInfo,C_SpellBook.IsSpellKnown=info,known
+end)
+test("highest_rank_uses_public_rank_not_id_or_binding",function()
+ local e=F.runtime(); local book,info=C_SpellBook,C_Spell.GetSpellInfo
+ C_Spell.GetSpellInfo=function() return {name="火球术"} end
+ local rows={{id=143,rank=1},{id=133,rank=3},{id=999,rank=2}}
+ C_SpellBook={GetNumSpellBookSkillLines=function() return 1 end,GetSpellBookSkillLineInfo=function() return {itemIndexOffset=0,numSpellBookItems=#rows} end,
+  GetSpellBookItemInfo=function(i) local r=rows[i]; return {spellID=r.id,name="火球术",rank=r.rank,itemType=1,isPassive=false} end,IsSpellKnown=function() return true end}
+ eq(A.State.HighestLearnedRank(143),133)
+ rows[3].rank=3; eq(A.State.HighestLearnedRank(143),nil)
+ rows[3].rank=F.secret; eq(A.State.HighestLearnedRank(143),nil)
+ C_SpellBook.GetNumSpellBookSkillLines=function() return 17 end; eq(A.State.HighestLearnedRank(143),nil)
+ C_SpellBook,C_Spell.GetSpellInfo=book,info
+end)
+test("highest_rank_text_identity_and_unknown_learning",function()
+ local e=F.runtime(); local book,info=C_SpellBook,C_Spell.GetSpellInfo
+ C_Spell.GetSpellInfo=function() return {name="火球术"} end
+ C_SpellBook={GetNumSpellBookSkillLines=function() return 1 end,GetSpellBookSkillLineInfo=function() return {itemIndexOffset=0,numSpellBookItems=1} end,
+  GetSpellBookItemInfo=function() return {spellID=133,itemType=1,isPassive=false} end,GetSpellBookItemName=function() return "火球术","等级 3" end,IsSpellKnown=function() return true end}
+ eq(A.State.HighestLearnedRank(143),133)
+ C_SpellBook.GetSpellBookItemName=function() return "火球术",F.secret end; eq(A.State.HighestLearnedRank(143),nil)
+ C_SpellBook.GetSpellBookItemName=function() return "火球术","Rank 3" end
+ C_SpellBook.IsSpellKnown=function() return F.secret end; eq(A.State.HighestLearnedRank(143),nil)
+ C_SpellBook.GetSpellBookSkillLineInfo=function() return {itemIndexOffset=0,numSpellBookItems=257} end; eq(A.State.HighestLearnedRank(143),nil)
+ C_SpellBook,C_Spell.GetSpellInfo=book,info
+end)
+test("highest_rank_button_preserves_strategy_and_waits_for_save",function()
+ local e=F.runtime(); local r=row(143,{{kind="distance",min=20}}); assert(C:Save(e,{r},"single","MAGE"))
+ T.UI:ShowPage("customapl"); T.UI.customSelected=1; T.UI.customFormIndex=nil; T.UI:RefreshCustomAPL()
+ local book,info=C_SpellBook,C_Spell.GetSpellInfo
+ C_Spell.GetSpellInfo=function() return {name="火球术"} end
+ C_SpellBook={GetNumSpellBookSkillLines=function() return 1 end,GetSpellBookSkillLineInfo=function() return {itemIndexOffset=0,numSpellBookItems=1} end,
+  GetSpellBookItemInfo=function() return {spellID=133,name="火球术",rank=3,itemType=1,isPassive=false} end,IsSpellKnown=function() return true end}
+ T.UI.strategyUpgrade.scripts.OnClick(); eq(T.UI.customDraft[1].spellID,133); eq(C:Rows(e)[1].spellID,143)
+ eq(T.UI.customDraft[1].strategies[1].conditions[1].min,20)
+ eq(T.UI:UpgradeStrategySpell(),true)
+ T.UI.strategySaveButton.scripts.OnClick(); eq(C:Rows(e)[1].spellID,133)
+ C_SpellBook,C_Spell.GetSpellInfo=book,info
+end)
 return n

@@ -4,7 +4,7 @@ local function eq(a,b) assert(a==b,"foundation expected " .. tostring(b) .. ", g
 local function test(name,fn) fn(); n=n+1; print("PASS " .. name) end
 local function strategy() return A.Clean({template="fire",filler="fireball"}) end
 local function rule(ready) return {id="foundation",action="fireball",status="KEEP",if_all={},requireReady=ready} end
-local function state() return {combat={},actions={fireball={known=true,usable=true,power_ok=true,in_range=true}},talents={},scene="single"} end
+local function state() return {combat={},actions={fireball={known=true,usable=true,loss_control_clear=true,power_ok=true,in_range=true}},talents={},scene="single"} end
 test("apl_normal_spell_does_not_require_cooldown_ready",function() eq(A:RuleAllowed(state(),rule(),strategy()),true) end)
 test("apl_rule_can_explicitly_require_ready",function() local s=state(); s.actions.fireball.ready=true; eq(A:RuleAllowed(s,rule(true),strategy()),true) end)
 test("apl_unknown_required_ready_fail_closed",function() eq(A:RuleAllowed(state(),rule(true),strategy()),nil) end)
@@ -97,4 +97,56 @@ test("apl_direct_sent_association_locks_without_continuous_marker",function()
  eq(T.Runtime:ReplaceRecommendation({{name="Frostbolt",spellID=205,matchIDs={205}}}),true)
 end)
 test("wotlk_support_summary_preserves_all_source_rules",function() local _,c=A:RuleSummary(); eq(c.total,84); eq(c.active,14); eq(c.blocked,33); eq(c.dropped,37) end)
+test("loss_of_control_public_secret_missing_and_failure",function()
+ local e=F.runtime(); local old=C_Spell.GetSpellLossOfControlCooldownInfo
+ C_Spell.GetSpellLossOfControlCooldownInfo=function(id) return {isActive=id==143} end
+ eq(A.State.LossOfControl(143),false); eq(A.State.LossOfControl(205),true)
+ C_Spell.GetSpellLossOfControlCooldownInfo=function() return {isActive=F.secret} end
+ eq(A.State.LossOfControl(143),nil)
+ C_Spell.GetSpellLossOfControlCooldownInfo=function() error("PRIVATE_ERROR") end
+ eq(A.State.LossOfControl(143),nil)
+ C_Spell.GetSpellLossOfControlCooldownInfo=nil; eq(A.State.LossOfControl(143),nil)
+ C_Spell.GetSpellLossOfControlCooldownInfo=old
+end)
+test("loss_of_control_blocks_candidate_and_live_dispatch",function()
+ local e=F.runtime(); T.Runtime:SetIntent(true); T.Dispatch:TickContinuous(); assert(T.Dispatch:Packet())
+ local old=C_Spell.GetSpellLossOfControlCooldownInfo
+ C_Spell.GetSpellLossOfControlCooldownInfo=function() return {isActive=true} end
+ eq(T.Dispatch:Packet(),nil)
+ local s=state(); s.actions.fireball.loss_control_clear=false
+ eq(A:RuleAllowed(s,rule(),strategy()),false)
+ s.actions.fireball.loss_control_clear=nil; eq(A:RuleAllowed(s,rule(),strategy()),nil)
+ C_Spell.GetSpellLossOfControlCooldownInfo=old
+end)
+test("loss_of_control_trace_sanitizes_secret",function()
+ local a=A.Trace.Clean({reason="APL_CANDIDATE",actions={custom_1={spellID=143,loss_control_clear=false,lossControlReason="PUBLIC_LOSS_OF_CONTROL_ACTIVE"}}}).actions.custom_1
+ eq(a.loss_control_clear,false); eq(a.lossControlReason,"PUBLIC_LOSS_OF_CONTROL_ACTIVE")
+ a=A.Trace.Clean({reason="APL_CANDIDATE",actions={custom_1={spellID=143,loss_control_clear=F.secret,lossControlReason=F.secret}}}).actions.custom_1
+ eq(a.loss_control_clear,nil); eq(a.lossControlReason,nil)
+end)
+test("custom_loss_of_control_falls_back_and_rechecks_live",function()
+ local e=F.runtime(); local C=A.Custom
+ assert(C:Save(e,{{spellID=143},{spellID=205}},"single","MAGE"))
+ local old=C_Spell.GetSpellLossOfControlCooldownInfo
+ C_Spell.GetSpellLossOfControlCooldownInfo=function(id) return {isActive=id==143} end
+ local oldAction=GetActionInfo; GetActionInfo=function() return "spell",205 end
+ T.Runtime:SetIntent(true); eq(T.Recommendation:Current(e).spellID,205)
+ T.Dispatch:TickContinuous(); assert(T.Dispatch:Packet())
+ C_Spell.GetSpellLossOfControlCooldownInfo=function() return {isActive=F.secret} end
+ eq(T.Dispatch:Packet(),nil)
+ C_Spell.GetSpellLossOfControlCooldownInfo=old; GetActionInfo=oldAction
+end)
+test("manual_opener_requires_human_intent_and_public_combat",function()
+ local e=F.runtime(); e.db.dispatch.mode="manual"; InCombatLockdown=function() return false end
+ T.Runtime:SetIntent(true,"RUNTIME_AUTO_WORLD"); eq(T.APL:Allowed(e,143),false)
+ T.Dispatch:TickContinuous(); eq(T.Dispatch:Packet(),nil)
+ T.Runtime:Stop(); T.Runtime:SetIntent(true); T.Dispatch:TickContinuous(); assert(T.Dispatch:Packet())
+ InCombatLockdown=function() return F.secret end; eq(T.Dispatch:Packet(),nil)
+ T.Runtime:Stop(); InCombatLockdown=function() return true end; T.Runtime:Reconcile(); eq(T.Runtime.intent,false)
+end)
+test("manual_opener_maintenance_idle_does_not_block_battle_source",function()
+ local e=F.runtime(); e.db.dispatch.mode="manual"; InCombatLockdown=function() return false end
+ e.db.maintenance[e.classToken]={enabled=true,rows={}}
+ T.Runtime:SetIntent(true); eq(T.Runtime.state,"running"); T.Dispatch:TickContinuous(); assert(T.Dispatch:Packet())
+end)
 return n

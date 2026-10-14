@@ -44,7 +44,7 @@ function U:RefreshCustomAPL()
  end
  self:Paint(self.customChild,"SetHeight",math.max(108,#self.customDraft*36))
  self:RefreshStrategyForm()
- if maintenance then self:Paint(self.readouts.customapl,"SetText",(e.classToken or "职业未知") .. " · 增益维护 · " .. #self.customDraft .. "/16个增益法术") end
+ if maintenance then self:Paint(self.readouts.customapl,"SetText",(e.classToken or "职业未知") .. " · 增益维护 · " .. #self.customDraft .. "/16个增益／解控技能") end
  for _,button in pairs(self.customPlanControls or {}) do self:Paint(button,maintenance and "Hide" or "Show") end
  self:Paint(self.planRenameBoxes.apl.frame,maintenance and "Hide" or "Show"); self:Paint(self.customUseButton,maintenance and "Hide" or "Show")
  self:Paint(self.maintenanceHint,maintenance and "Show" or "Hide")
@@ -53,11 +53,14 @@ end
 function U:AddCustomSpell(id)
  if not self.customDraft then self:RefreshCustomAPL() end
  id=S.ID(id); if not id then self:CustomMessage("请输入公开合法技能ID。"); return false end
- if self.page=="maintenance" and not T.Maintenance:BuffSpell(id) then self:CustomMessage("仅支持可确认的增益法术；治疗、伤害、造物和位移不能加入。"); return false end
+ if self.page=="maintenance" and not T.Maintenance:BuffSpell(id) then self:CustomMessage("仅支持可确认的增益或已支持的解控法术；治疗、伤害、造物和位移不能加入。"); return false end
  if not self:CommitCustomNumbers() then return false end
  if #self.customDraft>=16 then self:CustomMessage("最多16条规则。"); return false end
  self.customDraft[#self.customDraft+1]={spellID=id,enabled=true,moving="any",activity="any",distanceOp="any",cdmKind="none",experimentalEnemies=false,strategies={}}
- if self.page=="maintenance" then self.customDraft[#self.customDraft].strategies={{mode="use",conditions={{kind="cdmBuff",value=false,spellID=id}}}} end
+ if self.page=="maintenance" then
+  local condition=T.Maintenance.ControlBreakers[id] and {kind="lossOfControl",control="stun",value=true} or {kind="cdmBuff",value=false,spellID=id}
+  self.customDraft[#self.customDraft].strategies={{mode="use",conditions={condition}}}
+ end
  self.customSelected=#self.customDraft; self.customFormIndex=nil; self:RefreshCustomAPL(); self:CustomMessage("已加入草稿；保存后生效。自动无法识别目标类型时，请编辑施放类型。"); return true
 end
 function U:ReceiveCustomSpell()
@@ -78,7 +81,7 @@ function U:CreateCustomAPLEditor(parent)
  self.customEnableButton,self.customEnableLabel=self:CreateToggleRow(parent,"启用本方案",0,-116,250,
   function() return self.page=="maintenance" and T.Maintenance:Enabled(self.engine) or (self.page~="maintenance" and self.engine.db.enabledPlans.apl[self.customScene]) end,
   function(value) if self.page=="maintenance" then T.Maintenance:SetEnabled(self.engine,value) else T.Profiles:SetPlanEnabled(self.engine,"apl",self.customScene,value) end end)
- self.maintenanceHint=self:CreateHintText(parent,"优先于战斗来源；脱战需要手动开启派发。新技能默认要求CDM增益未活动，请核对目录ID；未知不补增益。",0,-32,550)
+ self.maintenanceHint=self:CreateHintText(parent,"优先于战斗来源；脱战需要手动开启派发。增益默认检查CDM未活动；生存意志1259718默认昏迷存在。按行优先，未知不派发。",0,-32,550)
  self:Paint(self.maintenanceHint,"Hide")
  self.customUseButton=action("使用本方案",280,-116,120,function()
   local ok,reason=T.Profiles:UsePlan(self.engine,"apl",self.customScene)
@@ -161,14 +164,53 @@ function U:ReorderCustomRule(index,other)
  local row=table.remove(self.customDraft,index); table.insert(self.customDraft,other,row)
  self.customSelected=other; self.customFormIndex=nil; self:RefreshCustomAPL()
 end
-local strategyKinds={"usable","range","distance","moving","enemies","cdmCooldown","cdmBuff","cooldown","combat","targetType","learned","succeeded","cdmStacks","nearbyEnemies"}
-local strategyNames={usable="技能可用性",range="技能范围",distance="目标距离",moving="移动状态",enemies="可见敌人数",cdmCooldown="CDM冷却状态",cdmBuff="CDM增益状态",cooldown="技能是否CD",combat="战斗状态",targetType="当前目标类型",learned="指定技能已学",succeeded="精确成功使用记录",cdmStacks="CDM增益层数",rangedEnemies="自身范围内可见敌人数",nearbyEnemies="自身范围内可见敌人数"}
+local strategyKinds={"lossOfControl","usable","range","distance","moving","enemies","cdmCooldown","cdmBuff","cooldown","combat","targetType","learned","succeeded","cdmStacks","nearbyEnemies"}
+local strategyNames={lossOfControl="自身失控类型",usable="技能可用性",range="技能范围",distance="目标距离",moving="移动状态",enemies="可见敌人数",cdmCooldown="CDM冷却状态",cdmBuff="CDM增益状态",cooldown="技能是否CD",combat="战斗状态",targetType="当前目标类型",learned="指定技能已学",succeeded="精确成功使用记录",cdmStacks="CDM增益层数",rangedEnemies="自身范围内可见敌人数",nearbyEnemies="自身范围内可见敌人数"}
 function U:ChangeCustomStrategy(callback)
  if not self:CommitCustomNumbers() then return end
  local row=self:CustomRow(); if not row then return end
  row.strategies=row.strategies or {}; callback(row)
  self:StoreSequencePolicy()
  self.customFormIndex=nil; self:RefreshCustomAPL()
+end
+function U:ReplaceStrategySpell(rawID)
+ local id=S.ID(rawID)
+ if not id or id==7268 or id==61304 then self:CustomMessage("替换失败：请提供有效的精确技能ID。"); return false end
+ if not self:CommitCustomNumbers() then return false end
+ local row=self:CustomRow(); if not row then return false end
+ if T.APL.State.Boolean("C_SpellBook.IsSpellKnown",id)~=true then self:CustomMessage("替换失败：新技能的精确ID尚未公开确认已学。"); return false end
+ local view=S.Spell(id,tostring(id))
+ if view.reason~="PUBLIC" then self:CustomMessage("替换失败：新技能信息未公开确认。"); return false end
+ local action=C:Read(id,false,row.targetMode)
+ if action.reason=="CUSTOM_PASSIVE_SPELL" or action.reason=="CUSTOM_PASSIVE_UNKNOWN" then self:CustomMessage("替换失败：新技能为被动或被动状态未知。"); return false end
+ local maintenance=self.strategySource=="maintenance" or (self.strategySource~="manual" and self.page=="maintenance")
+ if maintenance then
+  if not T.Maintenance:BuffSpell(id) then self:CustomMessage("替换失败：增益维护仅接受支持的增益或解控技能。"); return false end
+  for _,other in ipairs(self.customDraft or {}) do if other~=row and other.spellID==id then self:CustomMessage("替换失败：增益维护中已有该精确ID。"); return false end end
+ end
+ if self.strategySource=="manual" then
+  local rows=self:DraftRows(); local current=rows and rows[self.sequencePolicyIndex]
+  if not current or current.spellID~=row.spellID then self:CustomMessage("替换失败：当前草稿已变化，请重新打开策略。"); return false end
+  current.spellID=id; current.name=view.name; current.matchIDs={id}
+  self.sequencePolicyRow=current; self:WriteDraft(rows)
+ else row.spellID=id; row.invalid=nil end
+ self.customFormIndex=nil; self:RefreshCustomAPL()
+ self:CustomMessage("已更换草稿技能，保留策略及显式观察ID；点击保存后生效。"); return true
+end
+function U:UpgradeStrategySpell()
+ if not self:CommitCustomNumbers() then return false end
+ local row=self:CustomRow(); if not row then return false end
+ local id,reason,rank=T.APL.State.HighestLearnedRank(row.spellID)
+ if not id then self:CustomMessage("未更换：无法唯一确认已学最高等级（" .. (reason or "UNKNOWN") .. "）。"); return false end
+ if id==row.spellID then self:CustomMessage("当前已是法术书确认的最高已学等级。" ); return true end
+ if not self:ReplaceStrategySpell(id) then return false end
+ self:CustomMessage("已替换为法术书确认的等级" .. rank .. "，策略保留；点击保存生效。"); return true
+end
+function U:ReceiveStrategySpell()
+ local id,why=T.ActionSources:Cursor()
+ if not id then self:CustomMessage("替换失败：拖入技能的精确ID未确认（" .. (why or "UNKNOWN") .. "）。"); return false end
+ if not self:ReplaceStrategySpell(id) then return false end
+ S.Call("ClearCursor"); return true
 end
 function U:RefreshStrategyForm()
  if not self.strategyPanel then return end
@@ -188,6 +230,16 @@ function U:RefreshStrategyForm()
  self.strategyInputs={}; self.customNumbers={}
  local y=0
  if row then
+  self:CreateHintText(form,"更换当前技能（保留策略条件）",0,y,390); y=y-28
+  self.strategySpellID=self:SequenceInput(form,0,y,110); self:Paint(self.strategySpellID,"SetText",tostring(row.spellID))
+  self.strategyReplaceID=self:CreateActionButton(form,"ID替换",122,y,100,function()
+   local ok,raw=self:Invoke(self.strategySpellID,"GetText"); local text=ok and S.Public(raw,"string")
+   self:ReplaceStrategySpell(text and text:match("^%s*(%d+)%s*$") and tonumber(text))
+  end)
+  self.strategyReplaceDrop=self:CreateActionButton(form,"拖入替换",234,y,150,function() self:ReceiveStrategySpell() end)
+  self:Paint(self.strategyReplaceDrop,"SetScript","OnReceiveDrag",function() self:Guard(function() self:ReceiveStrategySpell() end) end)
+  y=y-40
+  self.strategyUpgrade=self:CreateActionButton(form,"替换为已学最高等级",0,y,390,function() self:UpgradeStrategySpell() end); y=y-40
   self:CreateToggleRow(form,"启用当前技能",0,y,390,function() return row.enabled end,function(v) row.enabled=v end); y=y-40
   self:CreateSelectRow(form,"施放类型（自动无法确认时手动选择）",{{"auto","自动"},{"self","自身"},{"friendly","友方"},{"enemy","敌方"},{"ground","地面"}},0,y,390,
    function() return row.targetMode or "auto" end,function(v) row.targetMode=v end); y=y-68
@@ -238,6 +290,10 @@ function U:RefreshStrategyForm()
       self:CreateHintText(card,condition.kind=="nearbyEnemies" and "自身码数(0,40]；未知按数量上下界判断" or condition.kind=="cdmStacks" and "目录ID；Secret/隐藏/缺失均未知" or "范围技能ID；空白=本技能，非命中数",120,cy-70,250)
      else self:CreateHintText(card,"单边可留空；距离区间跨越阈值时视为未知。",8,cy-70,370) end
      end
+    elseif condition.kind=="lossOfControl" then
+     self:CreateSegmentedControl(card,{{"stun","昏迷"},{"confuse","迷惑"},{"fear","恐惧"},{"any","任意失控"}},8,cy-36,370,
+      function() return condition.control end,function(v) condition.control=v end)
+     self:CreateSegmentedControl(card,{{true,"存在"},{false,"不存在"}},8,cy-70,190,function() return condition.value end,function(v) condition.value=v end)
     elseif condition.kind=="targetType" then
      self:CreateSegmentedControl(card,{{"enemy","敌对"},{"friendly","友方"},{"self","自己"},{"none","无目标"}},8,cy-36,370,
       function() return condition.target end,function(v) condition.target=v end)
@@ -302,7 +358,7 @@ function U:CreateStrategyPanel()
    local c=self.strategyKindTarget; if not c then return end
    for k in pairs(c) do c[k]=nil end
    c.kind=selectedKind
-   if selectedKind=="distance" then c.max=20 elseif selectedKind=="nearbyEnemies" then c.min=1; c.radius=10 elseif selectedKind=="enemies" or selectedKind=="rangedEnemies" or selectedKind=="cdmStacks" then c.min=1 elseif selectedKind=="targetType" then c.target="enemy" else c.value=selectedKind~="cdmCooldown" and selectedKind~="cooldown" end
+   if selectedKind=="lossOfControl" then c.control="stun"; c.value=true elseif selectedKind=="distance" then c.max=20 elseif selectedKind=="nearbyEnemies" then c.min=1; c.radius=10 elseif selectedKind=="enemies" or selectedKind=="rangedEnemies" or selectedKind=="cdmStacks" then c.min=1 elseif selectedKind=="targetType" then c.target="enemy" else c.value=selectedKind~="cdmCooldown" and selectedKind~="cooldown" end
   end); self:Paint(menu,"Hide") end)
  end
  self:Paint(menu,"Hide"); self:Paint(panel,"Hide")

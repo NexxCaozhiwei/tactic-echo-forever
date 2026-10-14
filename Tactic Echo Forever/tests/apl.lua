@@ -6,7 +6,7 @@ local function test(name,fn) fn(); n=n+1 end
 local function state()
  local s={combat={in_combat=true},gcd={ready=true},actions={},talents={},enemy_count=4,scene="single",buildSignature={}}
  for _,key in ipairs(A.RuleActions) do
-  s.actions[key]={known=false,spellID=key=="fireball" and 143 or key=="frostbolt" and 205 or key=="pyroblast" and 11366 or key=="arcane_power" and 12042 or key=="presence_of_mind" and 12043 or 5143,usable=true,in_range=true,power_ok=true,ready=true}
+  s.actions[key]={known=false,spellID=key=="fireball" and 143 or key=="frostbolt" and 205 or key=="pyroblast" and 11366 or key=="arcane_power" and 12042 or key=="presence_of_mind" and 12043 or 5143,usable=true,loss_control_clear=true,in_range=true,power_ok=true,ready=true}
  end
  for key in pairs(A.Talents) do s.talents[key]={status="UNKNOWN"} end
  return s
@@ -60,7 +60,7 @@ local function book(rows)
   IsSpellKnown=function(id) for _,r in ipairs(rows) do if r[1]==id then return true end end; return false end}
  C_Spell={GetSpellInfo=function(id) for _,r in ipairs(rows) do if r[1]==id then return {name=r[2]} end end end,
   GetSpellCooldown=function() return {startTime=0,duration=0,isEnabled=true,isActive=false} end,
-  IsSpellUsable=function() return true,false end,IsSpellInRange=function() return true end}
+  GetSpellLossOfControlCooldownInfo=function() return {isActive=false} end,IsSpellUsable=function() return true,false end,IsSpellInRange=function() return true end}
  A:Invalidate(true)
 end
 test("book_actual_rank_exact_id_no_alias_or_catalog_guess",function() book({{205,"寒冰箭"},{143,"火球术"}}); local learned=A.State:Learned(config()); eq(learned.frostbolt.spellID,205); eq(learned.fireball.spellID,143); eq(learned.pyroblast.known,false); eq(learned.frostbolt.spellID==116,false) end)

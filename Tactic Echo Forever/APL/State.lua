@@ -17,6 +17,57 @@ function P:Invalidate(static)
  self.revision=(self.revision or 0)+1; self.dirty=true
  if static then self.learned=nil; self.talents=nil; self.build=nil end
 end
+-- 编辑时按需完整扫描；等级只来自同一公开法术书槽位，绝不按ID大小推断。
+function P.HighestLearnedRank(rawID)
+ local current=S.ID(rawID); if not current then return nil,"CURRENT_ID_UNKNOWN" end
+ local got,info=S.Call("C_Spell.GetSpellInfo",current)
+ local name=got and S.Field(info,"name","string"); if not name then return nil,"CURRENT_NAME_UNKNOWN" end
+ local family=A.AbilityNames[name]
+ local bank=S.Field(S.Field(Enum,"SpellBookSpellBank","table"),"Player","number")
+ local spellType=S.Field(S.Field(Enum,"SpellBookItemType","table"),"Spell","number")
+ local ok,raw=S.Call("C_SpellBook.GetNumSpellBookSkillLines"); local total=ok and int(raw,16)
+ if not total or bank==nil or spellType==nil then return nil,"SPELLBOOK_UNKNOWN" end
+ local highest,highestRank,seenRanks,seenIDs,slots=nil,nil,{},{},0
+ for line=1,total do
+  local read,record=S.Call("C_SpellBook.GetSpellBookSkillLineInfo",line)
+  local offset=read and int(S.Field(record,"itemIndexOffset","number"),512)
+  local count=read and int(S.Field(record,"numSpellBookItems","number"),256)
+  if not offset or not count or slots+count>256 then return nil,"SPELLBOOK_UNKNOWN" end
+  for index=offset+1,offset+count do
+   slots=slots+1
+   local valid,item=S.Call("C_SpellBook.GetSpellBookItemInfo",index,bank)
+   local kind=valid and S.Field(item,"itemType","number")
+   if kind==nil then return nil,"SPELLBOOK_UNKNOWN" end
+   if kind==spellType then
+    local id=S.ID(S.Field(item,"spellID","number")); local slotName=S.Field(item,"name","string")
+    local nameFn=S.Resolve("C_SpellBook.GetSpellBookItemName")
+    local named,rawName,rawRank
+    if nameFn then named,rawName,rawRank=pcall(nameFn,index,bank) end
+    local bookName=named and S.Public(rawName,"string"); local text=named and S.Public(rawRank,"string")
+    if slotName and bookName and slotName~=bookName then return nil,"SPELLBOOK_NAME_CONFLICT" end
+    slotName=slotName or bookName
+    if not id or not slotName then return nil,"SPELLBOOK_UNKNOWN" end
+    if slotName==name or (family and A.AbilityNames[slotName]==family) then
+     if S.Field(item,"isPassive","boolean")~=false then return nil,"RANK_PASSIVE_UNKNOWN" end
+     local known=P.Boolean("C_SpellBook.IsSpellKnown",id)
+     if known==nil then return nil,"RANK_LEARNED_UNKNOWN" end
+     if known==true then
+      local rank=S.Field(item,"rank","number")
+      local textRank=text and tonumber(text:match("^Rank (%d+)$") or text:match("^等级%s*(%d+)$"))
+      if rank and textRank and rank~=textRank then return nil,"RANK_NUMBER_CONFLICT" end
+      rank=rank or textRank
+      if not rank or rank<1 or rank>100 or rank%1~=0 then return nil,"RANK_NUMBER_UNKNOWN" end
+      if seenRanks[rank] and seenRanks[rank]~=id then return nil,"RANK_ID_AMBIGUOUS" end
+      if seenIDs[id] and seenIDs[id]~=rank then return nil,"RANK_NUMBER_CONFLICT" end
+      seenRanks[rank]=id; seenIDs[id]=rank
+      if not highestRank or rank>highestRank then highest,highestRank=id,rank end
+     end
+    end
+   end
+  end
+ end
+ return highest,highest and "PUBLIC_HIGHEST_LEARNED_RANK" or "RANK_NOT_FOUND",highestRank
+end
 function P:Learned(config)
  local sets,complete={},false
  local bank=S.Field(S.Field(Enum,"SpellBookSpellBank","table"),"Player","number")
@@ -153,10 +204,45 @@ function P.FriendlyUnit()
  if P.Boolean("UnitExists","player")~=true or P.Boolean("UnitIsDeadOrGhost","player")~=false then return nil,"PLAYER_DEAD_OR_UNKNOWN" end
  return "player","PUBLIC_AUTO_SELF_CAST"
 end
+-- 失控冷却与普通冷却分离；未知不能视为未锁定。
+P.ControlTypes={stun={STUN=true,STUN_MECHANIC=true},fear={FEAR=true,FEAR_MECHANIC=true},confuse={CONFUSE=true}}
+function P.ProbeControl()
+ local probe={types={},reason="UNKNOWN_CONTROL"}
+ local ok,raw,why=S.Call("C_LossOfControl.GetActiveLossOfControlDataCount")
+ local count=ok and int(raw,16)
+ if not count then probe.reason=ok and "CONTROL_COUNT_UNKNOWN" or why; return probe end
+ probe.count=count; probe.complete=true
+ for i=1,count do
+  local got,data=S.Call("C_LossOfControl.GetActiveLossOfControlData",i)
+  local kind,status; if got then kind,status=S.Field(data,"locType","string") end
+  if kind and #kind<=40 and kind:match("^[A-Z_]+$") then probe.types[kind]=true
+  else probe.complete=false; probe.reason=status or "CONTROL_RECORD_UNKNOWN" end
+ end
+ if probe.complete then probe.reason="PUBLIC_CONTROL_TYPES" end
+ return probe
+end
+function P.ControlMatch(probe,kind)
+ if not probe then return nil end
+ if kind=="any" then
+  if next(probe.types or {}) then return true end
+ else
+  local types=P.ControlTypes[kind]; if not types then return nil end
+  for token in pairs(types) do if probe.types and probe.types[token] then return true end end
+ end
+ if probe.complete==true then return false end
+end
+function P.LossOfControl(id)
+ local ok,record,reason=S.Call("C_Spell.GetSpellLossOfControlCooldownInfo",id)
+ if not ok then return nil,reason end
+ local active,why=S.Field(record,"isActive","boolean")
+ if active==nil then return nil,why end
+ return not active,active and "PUBLIC_LOSS_OF_CONTROL_ACTIVE" or "PUBLIC_LOSS_OF_CONTROL_CLEAR"
+end
 function P:ReadAction(key,learned,readReady,override)
  local result={known=learned.known,spellID=learned.spellID,reason=learned.reason}
  local ability=override or A.Abilities[key]; local id=result.spellID
  if result.known~=true or not id then return result end
+ result.loss_control_clear,result.lossControlReason=P.LossOfControl(id)
  local fn=S.Resolve("C_Spell.IsSpellUsable")
  if fn then
   local ok,usable,power=pcall(fn,id)

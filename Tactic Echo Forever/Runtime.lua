@@ -105,6 +105,13 @@ function C:Suspend(reason,state)
     TEF.Dispatch:StopContinuous(reason); TEF.Dispatch:Cancel(reason)
     self:Changed(self.intent and (state or "blocked") or "paused",reason)
 end
+-- 仅用户手动开启且选择手动启停时授予普通来源脱战资格。
+function C:OutsideCombatAllowed(e)
+ return self.e==e and TEF.engine==e and self.intent==true and self.maintenanceManual==true and e.db.dispatch.mode=="manual"
+end
+function C:CombatAllowed(e,combat)
+ return combat==true or (combat==false and (self:OutsideCombatAllowed(e) or TEF.Maintenance:OutsideAllowed(e)))
+end
 function C:SetIntent(enabled,reason)
     if enabled~=true then self:Stop(reason); return true end
     self.maintenanceManual=reason~="RUNTIME_AUTO_WORLD"
@@ -229,7 +236,7 @@ function C:Reconcile()
         if not current() then return end
         if not allowed then self:Suspend(reason); return end
     end
-    if maintenanceOutside and not e.maintenanceActive then self:Suspend("MAINTENANCE_IDLE","standby"); return end
+    if maintenanceOutside and not e.maintenanceActive and not self:OutsideCombatAllowed(e) then self:Suspend("MAINTENANCE_IDLE","standby"); return end
     if e.db.dispatch.mode=="auto" and combat==false and not TEF.Maintenance:OutsideAllowed(e) then
         if TEF.Recommendation:Source(e)=="manual" then
             -- 待命保留固定序列的精确回执监听，输入仍由派发门禁控制。

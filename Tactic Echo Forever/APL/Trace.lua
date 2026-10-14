@@ -3,7 +3,7 @@ local T={}; TEF.APL.Trace=T
 function T:Record(e,trace,reason,candidate,state)
  local old=e.aplTrace
  local parts={reason}
- if state then parts[#parts+1]=tostring(state.gcd.ready); for _,key in ipairs({"fireball","frostbolt","scorch","arcane_missiles"}) do local a=state.actions[key]; if a then for _,field in ipairs({"known","usable","power_ok","in_range","ready"}) do parts[#parts+1]=tostring(a[field]) end end end end
+ if state then parts[#parts+1]=tostring(state.gcd.ready); for _,key in ipairs({"fireball","frostbolt","scorch","arcane_missiles"}) do local a=state.actions[key]; if a then for _,field in ipairs({"known","usable","power_ok","in_range","loss_control_clear","ready"}) do parts[#parts+1]=tostring(a[field]) end end end end
  for _,r in ipairs(trace) do parts[#parts+1]=r.rule .. ":" .. r.result .. ":" .. r.reason end
  for _,tree in ipairs({"ARCANE","FIRE","FROST"}) do parts[#parts+1]=state and state.buildSignature[tree] or "UNKNOWN" end
  if state then
@@ -17,7 +17,8 @@ function T:Record(e,trace,reason,candidate,state)
    local a=state.actions["custom_" .. i]
    if a then
     parts[#parts+1]="custom_" .. i .. "=" .. tostring(a.spellID)
-    for _,field in ipairs({"known","usable","power_ok","in_range","ready","active"}) do parts[#parts+1]=tostring(a[field]) end
+    for _,field in ipairs({"known","usable","power_ok","in_range","loss_control_clear","ready","active"}) do parts[#parts+1]=tostring(a[field]) end
+    parts[#parts+1]=a.lossControlReason or "UNKNOWN"
     parts[#parts+1]=tostring(a.cdmActive) .. ":" .. (a.cdmReason or "UNKNOWN")
     parts[#parts+1]=(a.cdmScanReason or "NONE") .. ":" .. tostring(a.cdmSkippedFrames)
     for _,v in ipairs(a.conditionObservations or {}) do
@@ -58,7 +59,7 @@ function T:Record(e,trace,reason,candidate,state)
    row.apl.distanceLow,row.apl.distanceHigh=state.distanceLow,state.distanceHigh
    row.apl.actions={}; row.apl.talents={}
    for key,action in pairs(state.actions) do
-    row.apl.actions[key]={spellID=action.spellID,known=action.known,usable=action.usable,power_ok=action.power_ok,in_range=action.in_range,ready=action.ready,active=action.active,cdmActive=action.cdmActive,cdmReason=action.cdmReason,cooldownReason=action.cooldownReason,cdmScanReason=action.cdmScanReason,cdmSkippedFrames=action.cdmSkippedFrames}
+    row.apl.actions[key]={spellID=action.spellID,known=action.known,usable=action.usable,power_ok=action.power_ok,in_range=action.in_range,loss_control_clear=action.loss_control_clear,lossControlReason=action.lossControlReason,ready=action.ready,active=action.active,cdmActive=action.cdmActive,cdmReason=action.cdmReason,cooldownReason=action.cooldownReason,cdmScanReason=action.cdmScanReason,cdmSkippedFrames=action.cdmSkippedFrames}
     row.apl.actions[key].cooldownProbe=action.cooldownProbe
     row.apl.actions[key].conditionObservations=action.conditionObservations
    end
@@ -109,7 +110,8 @@ function T.Clean(raw)
   local r=actions and S.Field(actions,key,"table")
   if r then
    local a={spellID=S.ID(S.Field(r,"spellID","number"))}
-   for _,field in ipairs({"known","usable","power_ok","in_range","ready","active","cdmActive"}) do a[field]=S.Field(r,field,"boolean") end
+   for _,field in ipairs({"known","usable","power_ok","in_range","loss_control_clear","ready","active","cdmActive"}) do a[field]=S.Field(r,field,"boolean") end
+   local loc=S.Field(r,"lossControlReason","string"); if loc and #loc<=80 and loc:match("^[A-Z_]+$") then a.lossControlReason=loc end
    local cooldown=S.Field(r,"cooldownReason","string"); if cooldown and #cooldown<=80 and cooldown:match("^[A-Z_]+$") then a.cooldownReason=cooldown end
    local why=S.Field(r,"cdmReason","string"); if why and #why<=80 and why:match("^[A-Z_]+$") then a.cdmReason=why end
    local scan=S.Field(r,"cdmScanReason","string"); if scan=="CDM_FRAME_ID_UNKNOWN" then a.cdmScanReason=scan end
@@ -136,7 +138,7 @@ function T.Clean(raw)
       local v={kind=kind,spellID=S.ID(S.Field(raw,"spellID","number")),result=S.Field(raw,"result","boolean")}
       local number=S.Field(raw,"number","number"); if number and number>=0 and number<=255 then v.number=number end
       local reason=S.Field(raw,"reason","string"); if reason and #reason<=80 and reason:match("^[A-Z_]+$") then v.reason=reason end
-      local text=S.Field(raw,"text","string"); if text=="enemy" or text=="friendly" or text=="self" or text=="none" then v.text=text end
+      local text=S.Field(raw,"text","string"); if text=="enemy" or text=="friendly" or text=="self" or text=="none" or text=="stun" or text=="fear" or text=="confuse" or text=="any" then v.text=text end
       for _,field in ipairs({"probeRadius","lower","upper","unknownCount","identityIndex"}) do
        local number=S.Field(raw,field,"number"); if number and number>=0 and number<=40 then v[field]=number end
       end
