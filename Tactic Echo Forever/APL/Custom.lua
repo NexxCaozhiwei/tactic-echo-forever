@@ -274,7 +274,7 @@ function C:SampleStrategies(state,rows,e)
     local ok,record=S.Call("C_Spell.GetSpellCooldown",row.spellID)
     a.active=nil; if ok then a.active=S.Field(record,"isActive","boolean") end
    end
-   if condition.kind=="cdmCooldown" or condition.kind=="cdmBuff" or condition.kind=="cdmStacks" then
+   if condition.kind=="cdmCooldown" or condition.kind=="cdmBuff" then
     requests[#requests+1]={enabled=true,cdmKind=condition.kind~="cdmCooldown" and "buff" or "cooldown",cdmSpellID=condition.spellID or row.spellID,cdmStacks=condition.kind=="cdmStacks"}
    end
   end end
@@ -322,9 +322,8 @@ function C:StrategyCondition(state,row,index,c)
   if not record or record.state~="PUBLIC_BOUNDS" then return nil end
   return T.Research.CountBoundsMatch(record.lower,record.upper,c.min,c.max)
  elseif c.kind=="cdmStacks" then
-  local record=a.strategyCDM and a.strategyCDM["buff:" .. (c.spellID or row.spellID)]
-  if not record or record.stacks==nil then return nil end
-  return (not c.min or record.stacks>=c.min) and (not c.max or record.stacks<=c.max)
+  -- 兼容旧配置供用户删除，不把移除条件静默改成无条件派发。
+  return nil
  elseif c.kind=="range" then value=a.in_range
  elseif c.kind=="moving" then value=state.moving
  elseif c.kind=="cooldown" then value=a.active
@@ -396,8 +395,7 @@ function C:Sample(e,state,provided)
      if condition.kind=="comboPoints" then local p=state.comboPointProbe; observation.number=p and p.value; observation.reason=state.classToken~="ROGUE" and "CLASS_UNSUPPORTED" or p and p.reason or "UNKNOWN_COMBO_POINTS" end
      if condition.kind=="lossOfControl" then observation.text=condition.control; observation.reason=state.controlProbe and state.controlProbe.reason or "UNKNOWN_CONTROL"; observation.number=state.controlProbe and state.controlProbe.count end
      if condition.kind=="cdmStacks" then
-      local v=action.strategyCDM and action.strategyCDM["buff:" .. id]
-      observation.number=v and v.stacks; observation.reason=v and (v.stackReason or v.reason) or "CDM_FRAME_MISSING"
+      observation.reason="CDM_STACKS_REMOVED"
 
      end
      if condition.kind=="nearbyEnemies" or condition.kind=="rangedEnemies" then
@@ -622,7 +620,7 @@ function C:PolicyStamp(e,row)
  return "stable"
 end
 local conditionLabels={moving="移动",combat="战斗",usable="技能可用与资源",range="技能范围",distance="目标距离",enemies="可见敌人数",
- nearbyEnemies="自身范围内可见敌人数",rangedEnemies="自身范围内可见敌人数",comboPoints="连击点",cdmStacks="CDM层数",
+ nearbyEnemies="自身范围内可见敌人数",rangedEnemies="自身范围内可见敌人数",comboPoints="连击点",cdmStacks="已移除的CDM层数条件",
  cdmBuff="CDM增益活动",cdmCooldown="CDM冷却活动",cooldown="技能冷却活动",learned="已学技能",succeeded="精确成功记录",targetType="目标类型",lossOfControl="失控状态"}
 local function publicText(v)
  local n=S.Public(v,"number"); if n then return tostring(n) end
@@ -631,6 +629,7 @@ local function publicText(v)
  return "未知"
 end
 function C:ConditionView(state,row,index,c)
+ if c.kind=="cdmStacks" then return "CDM层数条件已移除：请删除或更换类型后保存；旧条件保持未知阻断。" end
  local a=state and state.actions and state.actions["custom_" .. index] or {}
  local expected=c.value==nil and "" or (c.value and "是" or "否")
  if c.min or c.max then expected=(c.min or "不限") .. "～" .. (c.max or "不限") end

@@ -80,13 +80,23 @@ test("cdm_stacks_exact_public_secret_hidden_missing_conflict",function()
  for key,value in pairs(saved) do _G[key]=value[1] end
 end)
 
-test("new_stack_and_count_conditions_unknown_never_authorize",function()
+test("removed_stacks_stays_unknown_even_with_public_old_sample",function()
  local r=row(143,{{kind="cdmStacks",spellID=133,min=3,max=4},{kind="rangedEnemies",spellID=205,min=2}})
  local s=snapshot(); s.actions.custom_1.strategyCDM={["buff:133"]={stacks=3}}; s.nearbyEnemies={[10]={state="PUBLIC_BOUNDS",lower=2,upper=2}}
- eq(C:CheckStrategies(s,r,1),true)
- s.actions.custom_1.strategyCDM["buff:133"].stacks=2; eq(C:CheckStrategies(s,r,1),false)
+ eq(C:CheckStrategies(s,r,1),nil)
+ s.actions.custom_1.strategyCDM["buff:133"].stacks=2; eq(C:CheckStrategies(s,r,1),nil)
  s.actions.custom_1.strategyCDM["buff:133"].stacks=nil; eq(C:CheckStrategies(s,r,1),nil)
  s.actions.custom_1.strategyCDM["buff:133"].stacks=3; s.nearbyEnemies[10]={state="UNKNOWN_RANGE"}; eq(C:CheckStrategies(s,r,1),nil)
+end)
+
+test("removed_stack_condition_does_not_request_cdm_and_cannot_authorize_skip",function()
+ local e=F.runtime(); local viewer=C_CooldownViewer; local calls=0
+ C_CooldownViewer={GetCooldownViewerCategorySet=function() calls=calls+1; return {} end}
+ local r=row(143,{{kind="cdmStacks",spellID=133,min=4}})
+ local s=snapshot(); C:Sample(e,s,{r}); eq(calls,0)
+ eq(s.actions.custom_1.conditionObservations[1].reason,"CDM_STACKS_REMOVED")
+ r.strategies[1].mode="skip"; eq(C:CheckStrategies(s,r,1),nil)
+ C_CooldownViewer=viewer
 end)
 
 test("self_radius_live_recheck_revokes_transport",function()
@@ -105,7 +115,8 @@ test("six_condition_editor_fields_save_roundtrip",function()
  local conditions={{kind="combat",value=true},{kind="targetType",target="enemy"},{kind="learned",spellID=205,value=true},{kind="succeeded",spellID=143,value=false},{kind="cdmStacks",spellID=133,min=2,max=4},{kind="rangedEnemies",spellID=143,min=1,max=3}}
  assert(C:Save(e,{row(143,conditions)},"single","MAGE"))
  T.UI:ShowPage("customapl"); T.UI.customSelected=1; T.UI.customFormIndex=nil; T.UI:RefreshCustomAPL()
- eq(#T.UI.strategyInputs,7); eq(T.UI:CommitCustomNumbers(),true)
+ eq(#T.UI.strategyInputs,4); eq(T.UI:CommitCustomNumbers(),true)
+ eq(T.UI.strategyKindButtons.cdmStacks,nil)
  T.UI.strategySaveButton.scripts.OnClick()
  eq(#C:Rows(e)[1].strategies[1].conditions,6)
  local clean=T.APL.Trace.Clean({reason="APL_CANDIDATE",actions={custom_1={spellID=143,conditionObservations={{kind="cdmStacks",spellID=133,result=F.secret,number=F.secret,reason="SECRET"}}}}})

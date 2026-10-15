@@ -191,8 +191,8 @@ function U:ReorderCustomRule(index,other)
  local row=table.remove(self.customDraft,index); table.insert(self.customDraft,other,row)
  self.customSelected=other; self.customFormIndex=nil; self:RefreshCustomAPL()
 end
-local strategyKinds={"comboPoints","lossOfControl","usable","range","distance","moving","enemies","cdmCooldown","cdmBuff","cooldown","combat","targetType","learned","succeeded","cdmStacks","nearbyEnemies"}
-local strategyNames={comboPoints="连击点数",lossOfControl="自身失控类型",usable="技能可用性",range="技能范围",distance="目标距离",moving="移动状态",enemies="可见敌人数",cdmCooldown="CDM冷却状态",cdmBuff="CDM增益状态",cooldown="技能是否CD",combat="战斗状态",targetType="当前目标类型",learned="指定技能已学",succeeded="精确成功使用记录",cdmStacks="CDM增益层数",rangedEnemies="自身范围内可见敌人数",nearbyEnemies="自身范围内可见敌人数"}
+local strategyKinds={"comboPoints","lossOfControl","usable","range","distance","moving","enemies","cdmCooldown","cdmBuff","cooldown","combat","targetType","learned","succeeded","nearbyEnemies"}
+local strategyNames={comboPoints="连击点数",lossOfControl="自身失控类型",usable="技能可用性",range="技能范围",distance="目标距离",moving="移动状态",enemies="可见敌人数",cdmCooldown="CDM冷却状态",cdmBuff="CDM增益状态",cooldown="技能是否CD",combat="战斗状态",targetType="当前目标类型",learned="指定技能已学",succeeded="精确成功使用记录",cdmStacks="已移除：CDM增益层数",rangedEnemies="自身范围内可见敌人数",nearbyEnemies="自身范围内可见敌人数"}
 function U:RefreshStrategyKinds()
  local count=0
  for _,kind in ipairs(strategyKinds) do
@@ -359,7 +359,9 @@ function U:RefreshStrategyForm()
      self:Paint(box,"SetText",condition[field] and tostring(condition[field]) or "")
      self.strategyInputs[#self.strategyInputs+1]={box=box,condition=condition,field=field,label=label,labelText=labels[field] or field}
     end
-    if condition.kind=="comboPoints" and self.engine.classToken~="ROGUE" then
+    if condition.kind=="cdmStacks" then
+     self:CreateHintText(card,"此条件已移除，旧配置保持未知阻断。请删除此条件或更换类型后保存。",8,cy-48,370)
+    elseif condition.kind=="comboPoints" and self.engine.classToken~="ROGUE" then
      self:CreateHintText(card,"当前职业不支持，保持未知阻断；可以删除或更换条件。",8,cy-40,370)
     elseif condition.kind=="comboPoints" or condition.kind=="distance" or condition.kind=="enemies" or condition.kind=="cdmStacks" or condition.kind=="rangedEnemies" or condition.kind=="nearbyEnemies" then
      if condition.op then
