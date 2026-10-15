@@ -25,7 +25,7 @@ function H:Result(ok,reason)
 end
 function H:Status()
     local labels={HOTKEY_APPLIED="已生效",HOTKEY_DEFERRED="已保存，等待脱战应用",
-        HOTKEY_CONFLICT="与已有绑定冲突：开启临时覆盖后重新录入",HOTKEY_CONFLICT_UNKNOWN="未生效：无法核对已有绑定",
+        HOTKEY_CONFLICT="与已有绑定冲突：请选择未绑定的快捷键",HOTKEY_CONFLICT_UNKNOWN="未生效：无法核对已有绑定",
         HOTKEY_VERIFY_FAILED="已保存，绑定未验证",HOTKEY_APPLY_FAILED="已保存，绑定应用失败",
         HOTKEY_CLEAR_FAILED="已保存，旧绑定清理失败",HOTKEY_OWNER_FAILED="未生效：绑定所有者创建失败",
         HOTKEY_INVALID="未保存：快捷键无效"}
@@ -47,7 +47,7 @@ function H:Check(key)
         local known,raw=S.Call("GetBindingAction",key,includeOverrides)
         local command=known and S.Public(raw,"string")
         if not command then return false,"HOTKEY_CONFLICT_UNKNOWN" end
-        if command~="" and command~="TEF_TOGGLE_DISPATCH" and not TEF.engine.db.dispatch.hotkeyOverride then
+        if command~="" and command~="TEF_TOGGLE_DISPATCH" then
             return false,"HOTKEY_CONFLICT"
         end
         if includeOverrides then return true,nil,command end

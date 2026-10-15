@@ -419,6 +419,13 @@ local function object(name)
                 child.layer=select(2,...); local children=rawget(self,"children") or {}; self.children=children
                 children[#children+1]=child; return child
             elseif method=="SetTexture" then if uiThrowTexture then error("TEXTURE_EXCEPTION") end; self.texture=(...)
+            elseif method=="ClearAllPoints" then self.point=nil
+            elseif method=="SetParent" then self.parent=(...)
+            elseif method=="SetScrollChild" then local child=(...); if self.scrollChild~=child then child:SetPoint("TOPLEFT",self,"TOPLEFT",0,0) end; self.scrollChild=child
+            elseif method=="SetPoint" then self.point={...}
+            elseif method=="SetSize" then self.width,self.height=...
+            elseif method=="SetWidth" then self.width=(...)
+            elseif method=="SetHeight" then self.height=(...)
             elseif method=="SetText" then self.text=(...)
             elseif method=="GetText" then return self.text
             elseif method=="GetEffectiveScale" then return 1
@@ -1217,7 +1224,7 @@ test("mode_controls_do_not_change_advanced_gates_and_hud_has_no_test_buttons",fu
     T.UI.modeControls.manual.scripts.OnClick(); eq(settings.mode,"manual")
     eq(settings.signal,true); eq(settings.permission,true)
     eq(T.HUD.permission,nil); eq(T.HUD.pause,nil)
-    eq(T.UI.testReset.parent,T.UI.pages.profiles); eq(T.UI.testSingle.parent,T.UI.pages.diagnostics)
+    eq(T.UI.testReset.parent,T.UI.manualLoopPanel); eq(T.UI.testSingle.parent,T.UI.pages.diagnostics)
     eq(T.UI.signalToggle.parent,T.UI.pages.tek); eq(T.UI.intentToggle.parent,T.UI.pages.overview)
     T.UI:CloseSettings()
 end)
@@ -1247,7 +1254,7 @@ test("geometry_number_input_validates_range_integer_and_applies",function()
     deliveryFixture(); local value=64
     local slider,box=T.UI:CreateSliderRow(T.UI.pages.hud,"大小",0,0,400,32,112,1,function() return value end,function(v) value=v end,true)
     box.text="80"; box.scripts.OnEnterPressed(); eq(value,80)
-    box.text="113"; box.scripts.OnEnterPressed(); eq(value,80); eq(box.text,"80")
+    box.text="113"; box.scripts.OnEnterPressed(); eq(value,80); eq(box.text,"113")
     box.text="40.5"; box.scripts.OnEditFocusLost(); eq(value,80)
     slider.scripts.OnValueChanged(nil,48); eq(value,48)
 end)
@@ -1255,8 +1262,8 @@ test("hidden_auxiliary_pages_and_manual_loop_parent",function()
     deliveryFixture()
     T.UI:ShowPage("profiles")
     eq(T.UI.navigation.scene.shown,false); eq(T.UI.navigation.diagnostics.shown,false)
-    eq(T.UI.testReset.parent,T.UI.pages.profiles)
-    eq(T.UI.loopModeControls.normal.parent,T.UI.pages.profiles)
+    eq(T.UI.testReset.parent,T.UI.manualLoopPanel)
+    eq(T.UI.loopModeControls.normal.parent,T.UI.manualLoopPanel)
     eq(T.UI.sourceSelect.manual.parent,T.UI.pages.overview)
     eq(T.UI.pageTitles.profiles,"列表循环")
     eq(T.UI.editorScroll.shown,false); eq(T.UI.sequenceScroll.shown,true)
@@ -1842,25 +1849,23 @@ test("hotkey_new_base_binding_not_hidden_by_own_override",function()
     eq(f.overrides.F8,nil); eq(T.engine.db.dispatch.hotkey,"F8")
     f.base.F8=nil; assert(T.Hotkeys:Apply()); eq(f.overrides.F8,"TEF_TOGGLE_DISPATCH")
 end)
-test("f5_explicit_override_preserves_native_and_survives_reload",function()
+test("legacy_hotkey_override_cannot_bypass_native_conflict",function()
     local f=hotkeyFixture(); f.base.F5="TARGETPARTYMEMBER4"
-    eq(T.Hotkeys:Set("F5"),false); eq(T.engine.db.dispatch.hotkey,"")
-    T.engine.db.dispatch.hotkeyOverride=true; assert(T.Hotkeys:Set("F5"))
-    eq(f.base.F5,"TARGETPARTYMEMBER4"); eq(f.overrides.F5,"TEF_TOGGLE_DISPATCH")
-    local e=engine(T.Config,T.engine.db); eq(e.db.dispatch.hotkey,"F5"); eq(e.db.dispatch.hotkeyOverride,true)
-    T.engine=e; T.UI.engine=e; T.Runtime:Initialize(e); f.overrides={}; assert(T.Hotkeys:Apply())
-    e.db.dispatch.hotkeyOverride=false; eq(T.Hotkeys:Apply(),false)
-    eq(f.overrides.F5,nil); eq(f.base.F5,"TARGETPARTYMEMBER4")
+    T.engine.db.dispatch.hotkeyOverride=true
+    eq(T.Hotkeys:Set("F5"),false); eq(f.overrides.F5,nil); eq(f.base.F5,"TARGETPARTYMEMBER4")
+    T.engine.db.dispatch.hotkey="F5"
+    local e=engine(T.Config,T.engine.db); eq(e.db.dispatch.hotkeyOverride,nil)
+    T.engine=e; T.UI.engine=e; T.Runtime:Initialize(e); eq(T.Hotkeys:Apply(),false); eq(f.overrides.F5,nil)
 end)
-test("control_f5_never_becomes_spell_dispatch_with_alternate_binding",function()
-    local f=hotkeyFixture(); f.base.F5="ACTIONBUTTON1"; T.engine.db.dispatch.hotkeyOverride=true
-    assert(T.Hotkeys:Set("F5")); GetBindingKey=function() return "F5","2" end
+
+test("control_hotkey_never_becomes_spell_dispatch_with_alternate_binding",function()
+    local f=hotkeyFixture(); assert(T.Hotkeys:Set("F8")); GetBindingKey=function() return "F8","2" end
     local binding=T.Dispatch:Resolve(116); assert(binding); eq(binding.key,"2")
-    eq(T.Dispatch.SkillToken("F5"),nil)
-    GetBindingKey=function() return "F5" end; eq(T.Dispatch:Resolve(116),nil)
+    eq(T.Dispatch.SkillToken("F8"),nil)
+    GetBindingKey=function() return "F8" end; eq(T.Dispatch:Resolve(116),nil)
     eq(T.Dispatch:VerifyCurrent(binding),false)
     InCombatLockdown=function() return true end; T.Hotkeys:Set("F6")
-    eq(T.Dispatch.SkillToken("F5"),nil); eq(T.Dispatch.SkillToken("F6"),nil)
+    eq(T.Dispatch.SkillToken("F8"),nil); eq(T.Dispatch.SkillToken("F6"),nil)
 end)
 test("f5_override_still_rejects_unknown_detector_and_api",function()
     hotkeyFixture(); T.engine.db.dispatch.hotkeyOverride=true
@@ -1982,8 +1987,8 @@ test("simplified_pages_source_and_merged_control_ownership",function()
     deliveryFixture("manual")
     eq(T.UI.pages.apl,nil); eq(T.UI.pages.labels,nil); eq(T.UI.pages.looping,nil)
     eq(T.UI.sourceSelect.code,nil); assert(T.UI.sourceSelect.manual and T.UI.sourceSelect.apl)
-    eq(T.UI.testReset.parent,T.UI.pages.profiles)
-    eq(T.UI.loopModeControls.normal.parent,T.UI.pages.profiles)
+    eq(T.UI.testReset.parent,T.UI.manualLoopPanel)
+    eq(T.UI.loopModeControls.normal.parent,T.UI.manualLoopPanel)
     assert(T.UI.pageFrames.overview~=T.UI.pages.overview)
     assert(T.UI.pageFrames.hud~=T.UI.pages.hud)
     T.UI:ShowPage("labels"); eq(T.UI.page,"hud")

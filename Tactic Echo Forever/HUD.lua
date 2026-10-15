@@ -128,10 +128,8 @@ function H:Layout()
         x=x+card.size+(i==1 and g.gap1 or i==2 and g.gap2 or 0)
     end
     self.layoutWidth=math.max(244,x+8); self.textShift=maxSize-64
-    U:Paint(self.frame,"SetSize",self.layoutWidth,maxSize+80)
-    U:Paint(self.rangeText,"ClearAllPoints")
-    U:Paint(self.rangeText,"SetPoint","TOPLEFT",self.frame,"TOPLEFT",8,-maxSize-55)
-    U:Paint(self.rangeText,"SetWidth",self.layoutWidth-16)
+    U:Paint(self.frame,"SetSize",self.layoutWidth,maxSize+104)
+
     TEF.HudStyles:Apply(self)
 end
 function H:Create(e)

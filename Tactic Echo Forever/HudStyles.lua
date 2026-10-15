@@ -8,8 +8,8 @@ local presets={normal=true,highlight=true,disable=true}
 local defaults={
     key={12,"TOPRIGHT",-3,-3},chargeText={12,"BOTTOMRIGHT",-3,3},
     cooldownText={14,"CENTER",0,0},state={11,"BOTTOMLEFT",3,3},
-    label={10,"TOPLEFT",3,-3},name={12,"TOPLEFT",8,-80},status={12,"TOPLEFT",8,-99}}
-local keys={"key","chargeText","cooldownText","state","label","name","status"}
+    label={10,"TOPLEFT",3,-3},name={16,"TOPLEFT",8,-80},status={14,"TOPLEFT",8,-108},rangeText={12,"TOPLEFT",8,-132}}
+local keys={"key","chargeText","cooldownText","state","label","name","status","rangeText"}
 local colors={{"白",1,1,1},{"黄",1,.82,.2},{"绿",.3,1,.55},{"蓝",.35,.7,1},{"红",1,.35,.35},{"灰",.65,.65,.65}}
 local function number(raw,key,min,max,fallback)
     local n=S.Field(raw,key,"number")
@@ -63,37 +63,38 @@ function A:Apply(hud)
     end
     paint(hud.name,hud.frame,styles.global.name,(hud.layoutWidth or 244)-16)
     paint(hud.status,hud.frame,styles.global.status,(hud.layoutWidth or 244)-16)
+    paint(hud.rangeText,hud.frame,styles.global.rangeText,(hud.layoutWidth or 244)-16)
     for _,card in ipairs(hud.cards or {}) do TEF.Presentation:PaintRange(card,card.displayStep) end
 end
 function A:BuildUI(U,parent)
     local module,key="main","key"
     local function current() return U.engine.db.hud.styles[module][key] end
     local function changed() TEF.HUD:Layout() end
-    U:CreateSegmentedControl(parent,{{"main","主卡"},{"preview","预览卡"},{"global","整体文字"}},0,0,580,
+    local function globalKey(v) return v=="name" or v=="status" or v=="rangeText" end
+    U.labelModuleButtons=U:CreateSegmentedControl(parent,{{"main","主卡"},{"preview","预览卡"},{"global","整体文字"}},0,0,548,
         function() return module end,function(v) module=v; key=v=="global" and "name" or "key" end)
-    local choices={{"key","键位"},{"chargeText","充能"},{"cooldownText","冷却"},{"state","状态"},{"label","卡片标题"},{"name","技能名称"},{"status","进度行"}}
-    local buttons=U:CreateSegmentedControl(parent,choices,0,-42,580,function() return key end,function(v)
-        if (module=="global")==(v=="name" or v=="status") then key=v end
+    local choices={{"key","键位"},{"chargeText","充能"},{"cooldownText","冷却"},{"state","状态"},{"label","卡片标题"},{"name","技能名称"},{"status","进度行"},{"rangeText","目标距离"}}
+    local buttons=U:CreateSegmentedControl(parent,choices,0,-48,548,function() return key end,function(v)
+        if (module=="global")==globalKey(v) then key=v end
     end)
-    U.controls[#U.controls+1]=function()
-        for _,v in ipairs(choices) do U:SetControlEnabled(buttons[v[1]],(module=="global")== (v[1]=="name" or v[1]=="status")) end
-    end
-    U:CreateToggleRow(parent,"显示当前标签",0,-84,580,function() return current().enabled end,function(v) current().enabled=v; changed() end)
-    U:CreateSegmentedControl(parent,{{"normal","普通描边"},{"highlight","高亮描边"},{"disable","无描边"}},0,-122,580,
+    U.labelStyleButtons=buttons
+    U:AddControlSync(function()
+        for _,v in ipairs(choices) do U:SetControlEnabled(buttons[v[1]],(module=="global")==globalKey(v[1]),"请先选择标签所属的主卡、预览卡或整体文字分组。") end
+    end,parent)
+    U.labelEnabledButton=U:CreateToggleRow(parent,"显示当前标签",0,-96,548,function() return current().enabled end,function(v) current().enabled=v; changed() end)
+    U:CreateSegmentedControl(parent,{{"normal","普通描边"},{"highlight","高亮描边"},{"disable","无描边"}},0,-144,548,
         function() return current().fontPreset end,function(v) current().fontPreset=v; changed() end)
-    U:CreateSliderRow(parent,"字号",0,-162,278,8,30,1,function() return current().fontSize end,function(v) current().fontSize=v; changed() end)
-    U:CreateSliderRow(parent,"标签缩放",300,-162,278,.6,2,.1,function() return current().scale end,function(v) current().scale=v; changed() end)
-    U:CreateSegmentedControl(parent,{{"TOPLEFT","左上"},{"TOPRIGHT","右上"},{"CENTER","中间"},{"BOTTOMLEFT","左下"},{"BOTTOMRIGHT","右下"}},0,-220,580,
+    U:CreateSliderRow(parent,"字号",0,-200,548,8,30,1,function() return current().fontSize end,function(v) current().fontSize=v; changed() end,true)
+    U:CreateSliderRow(parent,"标签缩放",0,-264,548,.6,2,.1,function() return current().scale end,function(v) current().scale=v; changed() end,true)
+    U:CreateSegmentedControl(parent,{{"TOPLEFT","左上"},{"TOPRIGHT","右上"},{"CENTER","中间"},{"BOTTOMLEFT","左下"},{"BOTTOMRIGHT","右下"}},0,-328,548,
         function() return current().point end,function(v) current().point=v; changed() end)
-    U:CreateSliderRow(parent,"水平偏移",0,-266,278,-100,100,1,function() return current().offsetX end,function(v) current().offsetX=v; changed() end)
-    U:CreateSliderRow(parent,"垂直偏移",300,-266,278,-150,150,1,function() return current().offsetY end,function(v) current().offsetY=v; changed() end)
+    U:CreateSliderRow(parent,"水平偏移",0,-376,548,-100,100,1,function() return current().offsetX end,function(v) current().offsetX=v; changed() end,true)
+    U:CreateSliderRow(parent,"垂直偏移",0,-440,548,-150,150,1,function() return current().offsetY end,function(v) current().offsetY=v; changed() end,true)
     for i,color in ipairs(colors) do
-        U:CreateActionButton(parent,color[1],(i-1)*68,-325,62,function()
-            current().color={r=color[2],g=color[3],b=color[4],a=1}; changed()
-        end)
+        U:CreateActionButton(parent,color[1],(i-1)*92,-504,80,function() current().color={r=color[2],g=color[3],b=color[4],a=1}; changed() end)
     end
-    U:CreateActionButton(parent,"重置当前标签",416,-325,164,function()
-        U.engine.db.hud.styles[module][key]=A.Clean(nil)[module][key]; changed()
+    U:CreateActionButton(parent,"重置当前标签",360,-552,188,function()
+        U:ConfirmAction("确认恢复当前标签的默认样式？其他标签保留。",function() U.engine.db.hud.styles[module][key]=A.Clean(nil)[module][key]; changed() end,"恢复标签")
     end)
-    U:CreateHintText(parent,"主卡与预览卡独立保存；名称/进度属于整体文字。\n锚点相对所属卡片或HUD；字号8–30，缩放60–200%。\n战斗中仅保存，脱战后应用。样式不改变冷却数据或派发资格。",0,-378,580)
+    U:CreateHintText(parent,"目标距离属于整体文字，可独立调节字号、颜色、位置与显示。主卡和预览卡分别保存；战斗中布局变更延后。",0,-600,548)
 end

@@ -1,4 +1,4 @@
-# Tactic Echo Forever 1.2.0
+# Tactic Echo Forever 1.2.4
 
 当前基线包含列表循环、优先级推荐、每种来源三套独立方案、技能组、增益维护、共享策略编辑器和 HUD 预览。
 
@@ -8,7 +8,7 @@
 
 增益维护高于战斗来源，脱战需要手动开启派发；CDM未知不补增益。普通战斗技能组仍须公开战斗状态。技能等级、可用性、资源、目标、范围与回执身份检查保留，不从未知推断就绪。
 
-仓库根目录 README 提供完整安装与构建说明，`docs/baselines/tef/BASELINE_1.2.0.md` 记录基线范围，`docs/SKILL_GROUPS_DRAFT.md` 提供实机验收步骤。离线检查和部署哈希不证明真实游戏派发通过。
+仓库根目录 README 提供完整安装与构建说明，`docs/baselines/tef/BASELINE_1.2.4.md` 记录基线范围，`docs/SKILL_GROUPS_DRAFT.md` 提供实机验收步骤。离线检查和部署哈希不证明真实游戏派发通过。
 
 ## 历史使用说明
 

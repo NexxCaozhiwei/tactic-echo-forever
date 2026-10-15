@@ -15,7 +15,6 @@ function C.Clean(raw)
     return {mode=modes[mode] and mode or "auto",autoStart=S.Field(raw,"autoStart","boolean")~=false,
         permission=S.Field(raw,"permission","boolean")~=false,signal=S.Field(raw,"signal","boolean")~=false,
         hotkey=key and #key<=40 and key:match("^[A-Z0-9%-=]+$") and key or "",
-        hotkeyOverride=S.Field(raw,"hotkeyOverride","boolean")==true,
         ordinaryContinuous=ordinary==true or ordinaryReason=="NO_DATA",
         castQueue=S.Field(raw,"castQueue","boolean")==true,
         castQueueLead=lead and math.max(0,math.min(.5,lead)) or .2}

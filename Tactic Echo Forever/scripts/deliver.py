@@ -62,7 +62,7 @@ def main():
         "unsupported": ["unverified_aura_truth", "secret_numeric_comparison", "distance_estimation"], "comparators": ["lt", "le", "eq", "ne", "ge", "gt"], "cdm_directory_identity": "explicit_exact_spell_id", "missing_frame_means_inactive": False, "unknown_frame_identity_policy": "skip_bounded_preserve_exact_matches", "cdm_skipped_frame_diagnostics": True,
         "live_recheck": True, "in_game_verified": False}
     receipt["hotkey"] = {"capture_saves_immediately": True, "typed_save_or_enter": True,
-        "explicit_override_existing_binding": True, "override_default": False,
+        "explicit_override_existing_binding": False, "override_default": False,
         "control_keys_excluded_from_spell_dispatch": True,
         "readback_requires_exact_override_command": True, "reapply_events": ["PLAYER_LOGIN",
         "PLAYER_ENTERING_WORLD", "UPDATE_BINDINGS", "PLAYER_REGEN_ENABLED"],
@@ -82,6 +82,7 @@ def main():
                      list((ROOT / "docs").rglob("*.md")) + list((ROOT / "docs/references/wotlk").glob("*.json")) +
                      [ROOT / "tests/run.lua", ROOT / "tests/run.py", ROOT / "tests/apl.lua", ROOT / "tests/foundation.lua", ROOT / "tests/custom_apl.lua", ROOT / "tests/public_conditions.lua", ROOT / "tests/strategy_conditions.lua", ROOT / "tests/cast_queue.lua", ROOT / "tests/skip_unavailable.lua", ROOT / "tests/test_acceptance_harness.py", ROOT / "scripts/deliver.py", ROOT / "scripts/import_apl_catalog.py", ROOT / "scripts/import_wotlk_apl.py", ROOT / "scripts/tek_acceptance.py"])
     sources += sorted((ROOT.parent / "docs/baselines/tef").glob("BASELINE_*.md"))
+    sources = sorted(set(sources) | set((ROOT / "tests").glob("*.lua")))
     archive = out / f"Tactic Echo Forever-{VERSION}.zip"
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
         for source in sources:

@@ -1,6 +1,7 @@
 # TEF文档
 
-- [1.2.0当前基线](baselines/tef/BASELINE_1.2.0.md)
+- [1.2.4当前基线](baselines/tef/BASELINE_1.2.4.md)
+- [UI/UX开发与验收标准](UI_UX_STANDARD.md)
 - [技能组使用与验收](SKILL_GROUPS_DRAFT.md)
 - [增益维护使用与验收](BUFF_MAINTENANCE_DRAFT.md)
 

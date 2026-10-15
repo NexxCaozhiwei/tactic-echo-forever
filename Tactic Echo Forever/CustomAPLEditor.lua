@@ -1,21 +1,35 @@
 local _,T=...
 local U,S,C=T.UI,T.Safety,T.APL.Custom
-function U:CustomMessage(text) if self.strategySource=="manual" then self:SequenceMessage(text) else self:Paint(self.customMessage,"SetText",text) end end
+function U:CustomMessage(text) self:Paint(self.strategyMessage,"SetText",text); if self.strategySource=="manual" then self:SequenceMessage(text) else self:Paint(self.customMessage,"SetText",text) end end
 function U:CustomRow() if self.strategySource=="groupStep" then return self.groupDraft and self.groupDraft.steps[self.groupSelected or 1] end; if self.strategySource=="manual" then return self.sequencePolicyRow end; return self.customDraft and self.customDraft[self.customSelected or 1] end
 function U:CommitCustomNumbers()
  local pending={}
  for _,entry in ipairs(self.strategyInputs or {}) do
   local ok,raw=self:Invoke(entry.box,"GetText"); local text=ok and S.Public(raw,"string")
-  if not text then return false end
+  if not text then self:CustomMessage("无法公开读取输入，请取消编辑或重新输入。"); return false end
   text=text:match("^%s*(.-)%s*$")
   local n=text~="" and text:match("^%d+%.?%d*$") and tonumber(text) or nil
   local limit=entry.field=="spellID" and 2147483647 or entry.field=="radius" and 40 or entry.condition.kind=="distance" and 2000 or entry.condition.kind=="cdmStacks" and 255 or entry.condition.kind=="comboPoints" and 10 or 40
   if text~="" and (not n or n>limit or (entry.condition.kind~="distance" and entry.field~="radius" and n%1~=0) or ((entry.field=="spellID" or entry.field=="radius") and n<=0)) then
+   if entry.label then self:Paint(entry.label,"SetText",(entry.labelText or "数值") .. "：格式或范围无效") end
    self:CustomMessage("数值无效：距离0～2000码、敌人数0～40整数、层数0～255整数、连击点0～10整数，观察技能填写精确ID。"); return false
   end
   pending[#pending+1]={condition=entry.condition,field=entry.field,value=n}
  end
- for _,entry in ipairs(pending) do entry.condition[entry.field]=entry.value end
+ for _,entry in ipairs(pending) do
+  local function effective(field)
+   for _,other in ipairs(pending) do if other.condition==entry.condition and other.field==field then return other.value end end
+   return S.Public(entry.condition[field],"number")
+  end
+  local lower,upper=effective("min"),effective("max")
+  if lower and upper and lower>upper then
+   self:CustomMessage("条件下限不能大于上限；输入已保留，请修正后保存。")
+   for _,input in ipairs(self.strategyInputs) do if input.condition==entry.condition and input.label then self:Paint(input.label,"SetText",input.labelText .. "：检查上下限") end end
+   return false
+  end
+ end
+ for _,input in ipairs(self.strategyInputs or {}) do if input.label then self:Paint(input.label,"SetText",input.labelText) end end
+ for _,entry in ipairs(pending) do if self.strategySource=="groupStep" and entry.condition[entry.field]~=entry.value then self.groupDirty=true end; entry.condition[entry.field]=entry.value end
  if self:StoreSequencePolicy()==false then self:CustomMessage("策略条件无效：请检查范围上下限或清空条件后重建。"); return false end
  return true
 end
@@ -26,24 +40,32 @@ function U:RefreshCustomAPL()
  if self.customEngine~=e then self.customScene=e.db.selectedPlans.apl end
  local scene=maintenance and "maintenance" or self.customScene or "single"
  if not self.customDraft or self.customEngine~=e or self.customClass~=e.classToken or self.customLoadedScene~=scene then
+  self.customDraftCache=self.customDraftCache or {}
+  if self.customDraft and self.customEngine==e and self.customClass==e.classToken and self.customLoadedScene then
+   self.customDraftCache[self.customClass .. ":" .. self.customLoadedScene]=self.customDraft
+  elseif self.customEngine~=e then self.customDraftCache={} end
   self.customEngine=e
   self.customClass,self.customLoadedScene=e.classToken,scene
   self.customMaintenanceMode=maintenance
-  self.customDraft=C.CleanRows(maintenance and T.Maintenance:Rows(e) or C:Rows(e,scene)); self.customSelected=1; self.customFormIndex=nil; self.strategyInputs={}; self:Paint(self.strategyPanel,"Hide")
+  self.customDraft=self.customDraftCache[(e.classToken or "UNKNOWN") .. ":" .. scene] or C.CleanRows(maintenance and T.Maintenance:Rows(e) or C:Rows(e,scene)); self.customSelected=1; self.customFormIndex=nil; self.strategyInputs={}; self:Paint(self.strategyPanel,"Hide")
   for _,row in ipairs(self.customDraft) do C:UpgradeStrategies(row) end
  end
- self:Paint(self.readouts.customapl,"SetText",(e.classToken or "职业未知") .. " · 编辑" .. T.Profiles:PlanName(scene,e,"apl") .. " · 当前使用：" .. T.Profiles:PlanName(e.scene,e,T.Recommendation:Source(e)) .. " · " .. #self.customDraft .. "/16条")
+ self:Paint(self.readouts.customapl,"SetText",self:ClassLabel() .. " · 编辑" .. T.Profiles:PlanName(scene,e,"apl") .. " · 当前使用：" .. T.Profiles:PlanName(e.scene,e,T.Recommendation:Source(e)) .. " · " .. #self.customDraft .. "/16条")
+ local listHeight=0
  for i,w in ipairs(self.customWidgets) do
   local row=self.customDraft[i]; self:Paint(w.frame,row and "Show" or "Hide")
   if row then
-   self:Paint(w.groupEdit,row.group and "Show" or "Hide"); self:Paint(w.name,"SetWidth",row.group and 170 or 278)
+   local height=row.group and 76 or 44
+   self:Paint(w.frame,"ClearAllPoints"); self:Paint(w.frame,"SetPoint","TOPLEFT",self.customChild,"TOPLEFT",0,-listHeight); self:Paint(w.frame,"SetHeight",height); listHeight=listHeight+height+8
+   self:Paint(w.groupEdit,row.group and "Show" or "Hide"); self:Paint(w.name,"SetWidth",232)
    local view=S.Spell(row.spellID,tostring(row.spellID or "未解析")); if row.group then view.name="【" .. row.group.name .. "】" end
-   self:Paint(w.name,"SetText",(i==self.customSelected and "|cffffcf45" or "") .. i .. ". " .. view.name .. " · ID " .. (row.spellID or "?") .. (row.enabled and "" or " · 已停用") .. "|r")
+   self:Paint(w.name,"SetText",(i==self.customSelected and "|cff8cf0df" or "") .. i .. ". " .. self:ShortLabel(view.name,8) .. " · ID " .. (row.spellID or "?") .. (row.enabled and "" or " · 已停用") .. "|r")
+   w.frame.tefTooltipTitle=view.name; w.frame.tefTooltipBody="精确ID " .. (row.spellID or "未知") .. "；编辑策略仅修改草稿，保存后生效。"
    local sampled=self.engine.aplSnapshot and self.engine.aplSnapshot.actions["custom_" .. i]
    if sampled and sampled.spellID==row.spellID and sampled.reason=="CUSTOM_TARGET_UNKNOWN" then self:Paint(w.name,"SetText",i .. ". " .. view.name .. " |cffffcf45· 请选择施放类型|r") end
   end
  end
- self:Paint(self.customChild,"SetHeight",math.max(108,#self.customDraft*36))
+ self:Paint(self.customChild,"SetHeight",math.max(108,listHeight))
  self:RefreshStrategyForm()
  if maintenance then self:Paint(self.readouts.customapl,"SetText",(e.classToken or "职业未知") .. " · 增益维护 · " .. #self.customDraft .. "/16个增益／解控技能") end
  for _,button in pairs(self.customPlanControls or {}) do self:Paint(button,maintenance and "Hide" or "Show") end
@@ -77,24 +99,25 @@ function U:CreateCustomAPLEditor(parent)
  self:Paint(parent,"SetScript","OnReceiveDrag",function() self:Guard(function() self:ReceiveCustomSpell() end) end)
  local function action(text,x,y,w,fn) return self:CreateActionButton(parent,text,x,y,w,fn) end
  self.customScene=self.customScene or "single"
- self.customPlanControls=self:CreateSegmentedControl(parent,{{"single","方案一"},{"multi","方案二"},{"third","方案三"}},0,-30,550,
+ self.customPlanControls=self:CreateSegmentedControl(parent,{{"single","方案一"},{"multi","方案二"},{"third","方案三"}},0,-40,580,
   function() return self.customScene end,function(key) if self:CommitCustomNumbers() then self.customScene=key; self:RefreshCustomAPL() end end)
- self:CreatePlanRename(parent,"apl",0,-76,function() return self.customScene end)
- self.customEnableButton,self.customEnableLabel=self:CreateToggleRow(parent,"启用本方案",0,-116,250,
+ self:CreatePlanRename(parent,"apl",0,-80,function() return self.customScene end)
+ self.customEnableButton,self.customEnableLabel=self:CreateToggleRow(parent,"启用本方案",0,-120,284,
   function() return self.page=="maintenance" and T.Maintenance:Enabled(self.engine) or (self.page~="maintenance" and self.engine.db.enabledPlans.apl[self.customScene]) end,
   function(value) if self.page=="maintenance" then T.Maintenance:SetEnabled(self.engine,value) else T.Profiles:SetPlanEnabled(self.engine,"apl",self.customScene,value) end end)
  self.maintenanceHint=self:CreateHintText(parent,"优先于战斗来源；脱战需要手动开启派发。增益默认检查CDM未活动；生存意志1259718默认昏迷存在。按行优先，未知不派发。",0,-32,550)
  self:Paint(self.maintenanceHint,"Hide")
- self.customUseButton=action("使用本方案",280,-116,120,function()
+ self.customUseButton=action("使用本方案",392,-120,188,function()
   local ok,reason=T.Profiles:UsePlan(self.engine,"apl",self.customScene)
   self:CustomMessage(ok and "已选择并停止派发；关闭设置后开启。" or "请先启用本方案。")
  end)
- self.customID=self:SequenceInput(parent,160,-150,90)
- action("ID新增",265,-150,80,function()
+ self:CreateHintText(parent,"精确技能ID",160,-156,112)
+ self.customID=self:SequenceInput(parent,148,-184,136)
+ action("ID新增",296,-184,136,function()
   local ok,raw=self:Invoke(self.customID,"GetText"); local text=ok and S.Public(raw,"string")
   self:AddCustomSpell(text and text:match("^%d+$") and tonumber(text))
  end)
- local drop=action("拖入技能",0,-150,140,function() self:ReceiveCustomSpell() end)
+ local drop=action("拖入技能",0,-184,136,function() self:ReceiveCustomSpell() end)
  self.customDrop=drop
  self:Paint(drop,"RegisterForDrag","LeftButton")
  self:Paint(drop,"RegisterForClicks","LeftButtonUp")
@@ -104,26 +127,24 @@ function U:CreateCustomAPLEditor(parent)
    self:ReceiveCustomSpell()
   end)
  end)
- self.customNewGroup=self:CreateActionButton(parent,"新建技能组",360,-150,140,function() self:AddSkillGroup("apl") end)
- self.customSave=action("保存配置",435,-116,140,function()
+ self.customNewGroup=self:CreateActionButton(parent,"新建技能组",444,-184,136,function() self:AddSkillGroup("apl") end)
+ local footer=self:Footer(parent)
+ self.customSave=self:CreateActionButton(footer,"保存配置",436,-52,144,function()
   if not self:CommitCustomNumbers() then return end
   if self.page=="maintenance" then local ok,reason=T.Maintenance:Save(self.engine,self.customDraft); self:CustomMessage(ok and "增益维护已保存并停止派发；关闭设置后手动开启。" or reason); return end
   local ok,reason=C:Save(self.engine,self.customDraft,self.customLoadedScene,self.customClass)
   if ok and self.engine.db.enabledPlans.apl[self.customLoadedScene] then ok,reason=T.Profiles:UsePlan(self.engine,"apl",self.customLoadedScene) end
   self:CustomMessage(ok and "已保存并停止派发；关闭设置后主动开启。" or (reason or "保存失败"))
  end)
- self:CreateSectionCard(parent,"技能列表 · 拖动条目或用上下箭头排序",0,-190,575,450)
- for _,edge in ipairs({{0,-190,575,2},{0,-638,575,2},{0,-190,2,450},{573,-190,2,450}}) do
-  local ok,line=self:Invoke(parent,"CreateTexture",nil,"BORDER")
-  if ok then self:Paint(line,"SetPoint","TOPLEFT",parent,"TOPLEFT",edge[1],edge[2]); self:Paint(line,"SetSize",edge[3],edge[4]); self:Paint(line,"SetColorTexture",.25,.45,.60,1) end
- end
+ self.customListCard=self:CreateSectionCard(parent,"技能列表 · 拖动条目或用上下箭头排序",0,-228,580,412)
  local scroll=self:Frame("ScrollFrame",parent,"UIPanelScrollFrameTemplate")
- self:Paint(scroll,"SetPoint","TOPLEFT",parent,"TOPLEFT",10,-227); self:Paint(scroll,"SetSize",540,390)
+ self:Paint(scroll,"SetPoint","TOPLEFT",parent,"TOPLEFT",10,-272); self:Paint(scroll,"SetSize",540,360)
+ self.customScroll=scroll
  local child=self:Frame("Frame",scroll); self.customChild=child; self:Paint(child,"SetSize",530,108); self:Paint(scroll,"SetScrollChild",child)
  self.customWidgets={}
  for i=1,16 do
   local index=i; local frame=self:Frame("Frame",child,"BackdropTemplate")
-  self:Paint(frame,"SetPoint","TOPLEFT",child,"TOPLEFT",0,-(i-1)*36); self:Paint(frame,"SetSize",530,32)
+  self:Paint(frame,"SetPoint","TOPLEFT",child,"TOPLEFT",0,-(i-1)*80); self:Paint(frame,"SetSize",530,72)
   self:Paint(frame,"EnableMouse",true)
   self:Paint(frame,"SetScript","OnReceiveDrag",function() self:Guard(function() self:ReceiveCustomSpell() end) end)
   self:Paint(frame,"SetBackdrop",{bgFile="Interface\\Buttons\\WHITE8X8",edgeFile="Interface\\Buttons\\WHITE8X8",edgeSize=1})
@@ -140,18 +161,20 @@ function U:CreateCustomAPLEditor(parent)
     if ok and S.Public(raw,"boolean")==true and self.customDraft[target] then self:ReorderCustomRule(source,target); break end
    end
   end) end)
-  local name=self:Text(frame,6,-7,278,"GameFontHighlightSmall")
+  local name=self:Text(frame,8,-10,232)
   self:Paint(name,"SetWordWrap",false)
-  local groupEdit=self:CreateActionButton(frame,"技能组编辑",180,-2,104,function() self:OpenSkillGroup("apl",index) end)
-  local policy=self:CreateActionButton(frame,"编辑策略",290,-2,80,function() if self:PrepareGroupPanelSwitch(false) and self:CommitCustomNumbers() then self.strategySource=self.page=="maintenance" and "maintenance" or "apl"; self.customSelected=index; self.customFormIndex=nil; self:RefreshCustomAPL(); self:Paint(self.strategyPanel,"Show") end end)
-  self:CreateActionButton(frame,"↑",376,-2,38,function() self:MoveCustomRule(index,-1) end)
-  self:CreateActionButton(frame,"↓",420,-2,38,function() self:MoveCustomRule(index,1) end)
-  self:CreateActionButton(frame,"删",464,-2,52,function()
-   if self:CommitCustomNumbers() then table.remove(self.customDraft,index); self.customSelected=math.min(index,math.max(1,#self.customDraft)); self.customFormIndex=nil; self:RefreshCustomAPL() end
-  end)
-  self.customWidgets[i]={frame=frame,name=name,groupEdit=groupEdit,policy=policy}
+  local groupEdit=self:CreateActionButton(frame,"编辑技能组",8,-40,120,function() self:OpenSkillGroup("apl",index) end)
+  local policy=self:CreateActionButton(frame,"编辑策略",248,-8,88,function() if self:PrepareGroupPanelSwitch(false) and self:CommitCustomNumbers() then self.strategySource=self.page=="maintenance" and "maintenance" or "apl"; self.customSelected=index; self.customFormIndex=nil; self:RefreshCustomAPL(); self:Paint(self.strategyPanel,"Show") end end)
+  local up=self:CreateActionButton(frame,"↑",344,-8,32,function() self:MoveCustomRule(index,-1) end)
+  local down=self:CreateActionButton(frame,"↓",384,-8,32,function() self:MoveCustomRule(index,1) end)
+  local delete=self:CreateActionButton(frame,"删除",424,-8,96,function() self:DeleteDraft("apl",index) end)
+  self:BindControlTooltip(frame,"技能条目","编辑当前技能或技能组草稿。")
+  self:CompactControl(policy,88); self:CompactControl(groupEdit,120); self:CompactControl(up,32); self:CompactControl(down,32); self:CompactControl(delete,96)
+  self:StyleListRow(frame,i)
+  self.customWidgets[i]={frame=frame,name=name,groupEdit=groupEdit,policy=policy,up=up,down=down,delete=delete}
  end
- self.customMessage=self:Text(parent,0,-652,570,"GameFontHighlightSmall")
+ self.customMessage=self:Text(footer,0,-4,580)
+ self.customUndoButton=self:CreateActionButton(footer,"撤销删除",0,-52,120,function() self:UndoDelete("apl") end)
  self:CreateStrategyPanel()
  self:CustomMessage("从上往下检查；使用条件全部满足，否则检查下一技能。")
 end
@@ -176,12 +199,13 @@ function U:RefreshStrategyKinds()
   local button=self.strategyKindButtons and self.strategyKindButtons[kind]
   if button then
    if kind=="comboPoints" and self.engine.classToken~="ROGUE" then self:Paint(button,"Hide")
-   else self:Paint(button,"Show"); self:Paint(button,"ClearAllPoints"); self:Paint(button,"SetPoint","TOPLEFT",self.strategyKindChild,"TOPLEFT",0,-count*30); count=count+1 end
+   else self:Paint(button,"Show"); self:Paint(button,"ClearAllPoints"); self:Paint(button,"SetPoint","TOPLEFT",self.strategyKindChild,"TOPLEFT",0,-count*40); count=count+1 end
   end
  end
- self:Paint(self.strategyKindChild,"SetHeight",math.max(30,count*30))
+ self:Paint(self.strategyKindChild,"SetHeight",math.max(30,count*40))
 end
 function U:ChangeCustomStrategy(callback)
+ if self.strategySource=="groupStep" then self.groupDirty=true end
  if not self:CommitCustomNumbers() then return end
  local row=self:CustomRow(); if not row then return end
  row.strategies=row.strategies or {}; callback(row)
@@ -208,7 +232,7 @@ function U:ReplaceStrategySpell(rawID)
   if not current or current.spellID~=row.spellID then self:CustomMessage("替换失败：当前草稿已变化，请重新打开策略。"); return false end
   current.spellID=id; current.name=view.name; current.matchIDs={id}
   self.sequencePolicyRow=current; self:WriteDraft(rows)
- elseif self.strategySource=="groupStep" then row.spellID=id; local view=S.Spell(id,"技能 " .. id); row.name=view.name; row.matchIDs={id}; row.unverified=nil
+ elseif self.strategySource=="groupStep" then self.groupDirty=true; row.spellID=id; local view=S.Spell(id,"技能 " .. id); row.name=view.name; row.matchIDs={id}; row.unverified=nil
  else row.spellID=id; row.invalid=nil end
  self.customFormIndex=nil; self:RefreshCustomAPL()
  self:CustomMessage("已更换草稿技能，保留策略及显式观察ID；点击保存后生效。"); return true
@@ -231,24 +255,33 @@ end
 function U:RefreshStrategyForm()
  if not self.strategyPanel then return end
  local row=self:CustomRow()
+ self:Paint(self.strategyTitle,"SetWordWrap",false)
+ self.strategyPanel.tefTooltipTitle=row and (row.group and row.group.name or S.Spell(row.spellID,tostring(row.spellID)).name) or "未选择技能"
  self:Paint(self.strategyTitle,"SetText",row and ("策略条件设置 · " .. (row.group and row.group.name or S.Spell(row.spellID,tostring(row.spellID)).name)) or "策略条件设置 · 未选择技能")
  if self.customFormIndex==self.customSelected then return end
- self.customFormIndex=self.customSelected
+ local first
+ local scrollOK,rawScroll=self:Invoke(self.strategyScroll,"GetVerticalScroll"); local previousScroll=scrollOK and S.Public(rawScroll,"number") or 0
+ local resetScroll=self.strategyRenderedIndex~=self.customSelected or self.strategyRenderedSource~=self.strategySource or self.strategyRenderedScene~=self.customLoadedScene
  self:Paint(self.strategyKindMenu,"Hide")
  if self.strategyForm then self:Paint(self.strategyForm,"Hide") end
  if self.strategyFormControls then
   local keep={}; for _,sync in ipairs(self.controls) do if not self.strategyFormControls[sync] then keep[#keep+1]=sync end end
   self.controls=keep
  end
- local first=#self.controls
+ first=#self.controls
+ self:BeginStrategyPool()
+ local built,problem=pcall(function()
  local form=self:Frame("Frame",self.strategyScroll); self.strategyForm=form
  self:Paint(form,"SetSize",390,100); self:Paint(self.strategyScroll,"SetScrollChild",form)
+ -- SetScrollChild复用同一对象时不能代替重新锚定。
+ self:Paint(form,"SetPoint","TOPLEFT",self.strategyScroll,"TOPLEFT",0,0)
  self.strategyInputs={}; self.customNumbers={}
  local y=0
  if row then
   if not row.group then
   self:CreateHintText(form,"更换当前技能（保留策略条件）",0,y,390); y=y-28
-  self.strategySpellID=self:SequenceInput(form,0,y,110); self:Paint(self.strategySpellID,"SetText",tostring(row.spellID))
+  self:CreateHintText(form,"精确技能ID",0,y,112); y=y-24
+  self.strategySpellID=self:SequenceInput(form,0,y,112); self:Paint(self.strategySpellID,"SetText",tostring(row.spellID))
   self.strategyReplaceID=self:CreateActionButton(form,"ID替换",122,y,100,function()
    local ok,raw=self:Invoke(self.strategySpellID,"GetText"); local text=ok and S.Public(raw,"string")
    self:ReplaceStrategySpell(text and text:match("^%s*(%d+)%s*$") and tonumber(text))
@@ -269,7 +302,7 @@ function U:RefreshStrategyForm()
   end
   for si,strategy in ipairs(row.strategies or {}) do
    local index=si; local card=self:Frame("Frame",form,"BackdropTemplate")
-   local height=50+#strategy.conditions*120
+   local height=56+#strategy.conditions*192
    self:Paint(card,"SetPoint","TOPLEFT",form,"TOPLEFT",0,y); self:Paint(card,"SetSize",390,height)
    self:Paint(card,"SetBackdrop",{bgFile="Interface\\Buttons\\WHITE8X8",edgeFile="Interface\\Buttons\\WHITE8X8",edgeSize=1})
    self:Paint(card,"SetBackdropColor",.045,.075,.11,1); self:Paint(card,"SetBackdropBorderColor",.25,.45,.60,1)
@@ -278,21 +311,23 @@ function U:RefreshStrategyForm()
     if #strategy.conditions>=8 then self:CustomMessage("每条策略最多8个条件。"); return end
     strategy.conditions[#strategy.conditions+1]={kind="usable",value=true}
    end) end)
-   self:CreateActionButton(card,"删除策略",279,-8,102,function() self:ChangeCustomStrategy(function(r) table.remove(r.strategies,index) end) end)
+   self:CreateActionButton(card,"删除策略",279,-8,102,function() self:ConfirmAction("确认删除这条策略及全部条件？保存后生效。",function() self:ChangeCustomStrategy(function(r) table.remove(r.strategies,index) end) end,"删除策略") end)
    for ci,condition in ipairs(strategy.conditions) do
-    local conditionIndex=ci; local cy=-46-(ci-1)*120
+    local conditionIndex=ci; local cy=-56-(ci-1)*192
     local typeButton=self:CreateActionButton(card,condition.kind=="comboPoints" and self.engine.classToken~="ROGUE" and "当前职业不支持此条件" or strategyNames[condition.kind] or "未知条件",8,cy,190,function() end)
     self:Paint(typeButton,"SetScript","OnClick",function() self:Guard(function()
      self:Paint(self.strategyKindMenu,"ClearAllPoints"); self:Paint(self.strategyKindMenu,"SetPoint","TOPLEFT",typeButton,"BOTTOMLEFT",0,-2)
      self.strategyKindTarget=condition; self:RefreshStrategyKinds(); self:Paint(self.strategyKindMenu,"Show")
     end) end)
-    self:CreateActionButton(card,"删除条件",282,cy,99,function() self:ChangeCustomStrategy(function()
+    self:CreateActionButton(card,"删除条件",282,cy,99,function() self:ConfirmAction("确认删除这条条件？保存后生效。",function() self:ChangeCustomStrategy(function()
      table.remove(strategy.conditions,conditionIndex); if #strategy.conditions==0 then table.remove(row.strategies,index) end
-    end) end)
+    end) end,"删除条件") end)
     local function input(field,x,width)
-     local box=self:SequenceInput(card,x,cy-36,width)
+     local labels={min="下限",max="上限",threshold="阈值",spellID="观察技能ID",radius="自身范围（码）"}
+     local label=self:CreateHintText(card,labels[field] or field,x,cy-48,width)
+     local box=self:SequenceInput(card,x,cy-68,width)
      self:Paint(box,"SetText",condition[field] and tostring(condition[field]) or "")
-     self.strategyInputs[#self.strategyInputs+1]={box=box,condition=condition,field=field}
+     self.strategyInputs[#self.strategyInputs+1]={box=box,condition=condition,field=field,label=label,labelText=labels[field] or field}
     end
     if condition.kind=="comboPoints" and self.engine.classToken~="ROGUE" then
      self:CreateHintText(card,"当前职业不支持，保持未知阻断；可以删除或更换条件。",8,cy-40,370)
@@ -301,39 +336,40 @@ function U:RefreshStrategyForm()
       local ops={{"lt","<"},{"le","≤"},{"eq","="},{"ne","≠"},{"ge","≥"},{"gt",">"}}
       self:CreateSegmentedControl(card,ops,8,cy-36,250,function() return condition.op end,function(v) condition.op=v end)
       input("threshold",280,92)
-      self:CreateHintText(card,"保留旧条件的比较方式；重新选择目标距离可改为区间。",8,cy-70,370)
+      self:CreateHintText(card,"保留旧条件的比较方式；重新选择目标距离可改为区间。",8,cy-112,370)
      else
-     self:CreateHintText(card,condition.kind=="comboPoints" and "连击点：下限～上限（0～10整数）" or condition.kind=="distance" and "码数：下限～上限（含边界）" or condition.kind=="cdmStacks" and "公开层数：下限～上限" or "数量：下限～上限（可见姓名板）",8,cy-40,205)
-     input("min",220,65); input("max",307,65)
+     self:CreateHintText(card,condition.kind=="comboPoints" and "连击点：下限～上限（0～10整数）" or condition.kind=="distance" and "码数：下限～上限（含边界）" or condition.kind=="cdmStacks" and "公开层数：下限～上限" or "数量：下限～上限（可见姓名板）",8,cy-48,160)
+     input("min",176,96); input("max",280,96)
      if condition.kind=="rangedEnemies" or condition.kind=="nearbyEnemies" then
       local choices={{5,"5码"},{10,"10码"},{20,"20码"},{25,"25码"},{30,"30码"},{35,"35码"},{40,"40码"}}
-      self:CreateSegmentedControl(card,choices,8,cy-66,370,function() return condition.radius end,
+      self:CreateSegmentedControl(card,choices,8,cy-112,370,function() return condition.radius end,
        function(value) if self:CommitCustomNumbers() then condition.radius=value; self.customFormIndex=nil; self:RefreshStrategyForm() end end)
       local supported=false; for _,choice in ipairs(choices) do if condition.radius==choice[1] then supported=true end end
-      self:CreateHintText(card,supported and "自身所选码数内；探针未知不视为满足。" or ("旧半径 " .. tostring(condition.radius) .. "码；请选择新档位，原条件暂保留。"),8,cy-100,370)
+      self:CreateHintText(card,supported and "自身所选码数内；探针未知不视为满足。" or ("旧半径 " .. tostring(condition.radius) .. "码；请选择新档位，原条件暂保留。"),8,cy-152,370)
      elseif condition.kind=="cdmStacks" then
-      local box=self:SequenceInput(card,8,cy-66,105); local field=(condition.kind=="nearbyEnemies" or condition.kind=="rangedEnemies") and "radius" or "spellID"
+      self:CreateHintText(card,"观察技能ID",8,cy-108,112)
+      local box=self:SequenceInput(card,8,cy-132,112); local field=(condition.kind=="nearbyEnemies" or condition.kind=="rangedEnemies") and "radius" or "spellID"
       self:Paint(box,"SetText",condition[field] and tostring(condition[field]) or "")
       self.strategyInputs[#self.strategyInputs+1]={box=box,condition=condition,field=field}
-      self:CreateHintText(card,"目录ID；Secret/隐藏/缺失均未知",120,cy-70,250)
-     else self:CreateHintText(card,"单边可留空；距离区间跨越阈值时视为未知。",8,cy-70,370) end
+      self:CreateHintText(card,"目录ID；Secret/隐藏/缺失均未知",136,cy-132,240)
+     else self:CreateHintText(card,"单边可留空；距离区间跨越阈值时视为未知。",8,cy-112,370) end
      end
     elseif condition.kind=="lossOfControl" then
-     self:CreateSegmentedControl(card,{{"stun","昏迷"},{"confuse","迷惑"},{"fear","恐惧"},{"any","任意失控"}},8,cy-36,370,
+     self:CreateSegmentedControl(card,{{"stun","昏迷"},{"confuse","迷惑"},{"fear","恐惧"},{"any","任意失控"}},8,cy-44,370,
       function() return condition.control end,function(v) condition.control=v end)
-     self:CreateSegmentedControl(card,{{true,"存在"},{false,"不存在"}},8,cy-70,190,function() return condition.value end,function(v) condition.value=v end)
+     self:CreateSegmentedControl(card,{{true,"存在"},{false,"不存在"}},8,cy-88,190,function() return condition.value end,function(v) condition.value=v end)
     elseif condition.kind=="targetType" then
-     self:CreateSegmentedControl(card,{{"enemy","敌对"},{"friendly","友方"},{"self","自己"},{"none","无目标"}},8,cy-36,370,
+     self:CreateSegmentedControl(card,{{"enemy","敌对"},{"friendly","友方"},{"self","自己"},{"none","无目标"}},8,cy-44,370,
       function() return condition.target end,function(v) condition.target=v end)
-     self:CreateHintText(card,"只检查当前目标，不选择或切换目标。",8,cy-70,370)
+     self:CreateHintText(card,"只检查当前目标，不选择或切换目标。",8,cy-112,370)
     else
      local labels=condition.kind=="combat" and {"战斗中","脱战"} or condition.kind=="learned" and {"已学","未学"}
       or condition.kind=="succeeded" and {"本轮已成功","本轮未成功"} or condition.kind=="moving" and {"移动中","站定"} or condition.kind=="cdmBuff" and {"存在","不存在"}
       or (condition.kind=="cdmCooldown" or condition.kind=="cooldown") and {"冷却中","可用"} or condition.kind=="range" and {"范围内","范围外"} or {"可用","不可用"}
-     self:CreateSegmentedControl(card,{{true,labels[1]},{false,labels[2]}},8,cy-36,190,function() return condition.value end,function(v) condition.value=v end)
+     self:CreateSegmentedControl(card,{{true,labels[1]},{false,labels[2]}},8,cy-68,190,function() return condition.value end,function(v) condition.value=v end)
      if condition.kind=="cdmCooldown" or condition.kind=="cdmBuff" or condition.kind=="learned" or condition.kind=="succeeded" then
-      input("spellID",270,102); self:CreateHintText(card,"ID",230,cy-42,35)
-      self:CreateHintText(card,condition.kind=="succeeded" and "ID空白=本技能；开始/重置/编辑清除，暂停保留。" or condition.kind=="learned" and "精确已学ID；空白=本技能，不按名称或最高等级推断。" or "ID空白=当前技能；帧缺失为未知；增益存在指帧活动。",8,cy-70,370)
+      input("spellID",264,112)
+      self:CreateHintText(card,condition.kind=="succeeded" and "ID空白=本技能；开始/重置/编辑清除，暂停保留。" or condition.kind=="learned" and "精确已学ID；空白=本技能，不按名称或最高等级推断。" or "ID空白=当前技能；帧缺失为未知；增益存在指帧活动。",8,cy-112,370)
      end
     end
    end
@@ -341,16 +377,33 @@ function U:RefreshStrategyForm()
   end
   if #(row.strategies or {})==0 then self:CreateHintText(form,"点击 [+] 添加策略；没有策略时按基础可用性判断。",0,y,390); y=y-55 end
  end
- self:Paint(form,"SetHeight",math.max(120,-y))
+ local height=math.max(120,-y); self:Paint(form,"SetHeight",height)
+ local viewOK,rawHeight=self:Invoke(self.strategyScroll,"GetHeight"); local viewHeight=viewOK and S.Public(rawHeight,"number")
+ self:Paint(self.strategyScroll,"SetVerticalScroll",resetScroll and 0 or viewHeight and math.min(previousScroll,math.max(0,height-viewHeight)) or 0)
  self.strategyFormControls={}; for i=first+1,#self.controls do self.strategyFormControls[self.controls[i]]=true end
+ end)
+ self:EndStrategyPool()
+ if not built then
+  self.customFormIndex=nil
+  self.strategyFormControls={}; for i=first+1,#self.controls do self.strategyFormControls[self.controls[i]]=true end
+  local detail=S.Public(problem,"string"); detail=detail and detail:gsub("[|%c]"," "):sub(1,240)
+  self.strategyBuildError=detail or "UI_STRATEGY_FORM_FAILED"
+  self:CustomMessage("策略编辑器构建失败，草稿未删除；请重新打开。" .. (detail and ("原因：" .. detail) or ""))
+  self.engine:Log("display","UI_STRATEGY_FORM_FAILED")
+  error(detail or "UI_STRATEGY_FORM_FAILED")
+ end
+ self.strategyBuildError=nil; self.customFormIndex=self.customSelected
+ self.strategyRenderedIndex=self.customSelected; self.strategyRenderedSource=self.strategySource; self.strategyRenderedScene=self.customLoadedScene
+ self:LayoutSettings()
 end
 function U:CreateStrategyPanel()
  local panel=self:Frame("Frame",self.settings,"BackdropTemplate","TEF_StrategySettings"); self.strategyPanel=panel
+ self:Paint(panel,"SetFrameStrata","DIALOG"); self:Paint(panel,"EnableMouse",true)
  self:Paint(panel,"SetPoint","TOPLEFT",self.settings,"TOPRIGHT",8,0); self:Paint(panel,"SetSize",430,720)
  self:Paint(panel,"SetBackdrop",{bgFile="Interface\\Buttons\\WHITE8X8",edgeFile="Interface\\Buttons\\WHITE8X8",edgeSize=2})
  self:Paint(panel,"SetBackdropColor",.025,.035,.055,.98); self:Paint(panel,"SetBackdropBorderColor",.25,.45,.60,1)
  self.strategyTitle=self:Text(panel,15,-18,335,"GameFontNormal")
- self:CreateActionButton(panel,"关闭",365,-12,52,function() if self.strategySource=="groupStep" then if not self:CommitCustomNumbers() then return end; self.strategySource=nil; self.strategyInputs={}; self.customFormIndex=nil; self:RefreshSkillGroup(); self:Paint(self.groupPanel,"Show") end; self:Paint(panel,"Hide") end)
+ self:CreateActionButton(panel,"关闭",365,-12,52,function() if not self:CommitCustomNumbers() then return end; if self.strategySource=="groupStep" then self.strategySource=nil; self.strategyInputs={}; self.customFormIndex=nil; self:RefreshSkillGroup(); self:Paint(self.groupPanel,"Show") end; self:Paint(panel,"Hide"); self:LayoutSettings() end)
  self:CreateHintText(panel,"使用条件全部满足；任一跳过策略满足则跳过。未知不授权使用。",15,-51,395)
  self:CreateActionButton(panel,"+",365,-84,50,function() self:ChangeCustomStrategy(function(r)
   if #r.strategies>=8 then self:CustomMessage("每个技能最多8条策略。"); return end
@@ -359,7 +412,7 @@ function U:CreateStrategyPanel()
  self:CreateHintText(panel,"每条策略内的条件共同满足（AND）",15,-91,335)
  self.strategyScroll=self:Frame("ScrollFrame",panel,"UIPanelScrollFrameTemplate")
  self:Paint(self.strategyScroll,"SetPoint","TOPLEFT",panel,"TOPLEFT",15,-126); self:Paint(self.strategyScroll,"SetSize",385,530)
- self.strategySaveButton=self:CreateActionButton(panel,"保存",15,-675,190,function()
+ self.strategySaveButton=self:CreateActionButton(panel,"保存方案",224,-675,190,function()
   if not self:CommitCustomNumbers() then return end
   if self.strategySource=="groupStep" then self:SaveSkillGroup(); return end
   if self.strategySource=="manual" then
@@ -371,19 +424,22 @@ function U:CreateStrategyPanel()
   if ok and self.engine.db.enabledPlans.apl[self.customLoadedScene] then ok,reason=T.Profiles:UsePlan(self.engine,"apl",self.customLoadedScene) end
   self:CustomMessage(ok and "已保存并停止派发；关闭设置后主动开启。" or (reason or "保存失败"))
  end)
- self:CreateActionButton(panel,"清空",220,-675,190,function() self.strategyInputs={}; local row=self:CustomRow(); if row then row.strategies={} end; self:ChangeCustomStrategy(function(r)
+ self.strategyClearButton=self:CreateActionButton(panel,"清空条件",16,-675,184,function() self:ConfirmAction("确认清空当前技能的全部条件？保存后生效。",function() self.strategyInputs={}; local row=self:CustomRow(); if row then row.strategies={} end; self:ChangeCustomStrategy(function(r)
   r.strategies={}; r.moving="any"; r.activity="any"; r.distanceOp="any"; r.distanceValue=nil
   r.cdmKind="none"; r.cdmSpellID=nil; r.enemyMin=nil; r.enemyMax=nil
- end); self:CustomMessage("已清空当前技能条件草稿；保存后生效。") end)
+ end); self:CustomMessage("已清空当前技能条件草稿；保存后生效。") end,"清空条件") end)
+ self:Paint(self.strategySaveButton,"ClearAllPoints"); self:Paint(self.strategySaveButton,"SetPoint","BOTTOMRIGHT",panel,"BOTTOMRIGHT",-16,16)
+ self:Paint(self.strategyClearButton,"ClearAllPoints"); self:Paint(self.strategyClearButton,"SetPoint","BOTTOMLEFT",panel,"BOTTOMLEFT",16,16)
+ self.strategyMessage=self:Text(panel,16,-611,398); self:Paint(self.strategyMessage,"ClearAllPoints"); self:Paint(self.strategyMessage,"SetPoint","BOTTOMLEFT",panel,"BOTTOMLEFT",16,64)
  local menu=self:Frame("Frame",panel,"BackdropTemplate"); self.strategyKindMenu=menu
  self:Paint(menu,"SetSize",220,248); self:Paint(menu,"SetFrameStrata","DIALOG"); self:Paint(menu,"SetClampedToScreen",true)
  local scroll=self:Frame("ScrollFrame",menu,"UIPanelScrollFrameTemplate")
  self:Paint(scroll,"SetPoint","TOPLEFT",menu,"TOPLEFT",4,-4); self:Paint(scroll,"SetSize",190,240)
- local child=self:Frame("Frame",scroll); self.strategyKindChild=child; self.strategyKindButtons={}; self:Paint(child,"SetSize",187,#strategyKinds*30); self:Paint(scroll,"SetScrollChild",child)
+ local child=self:Frame("Frame",scroll); self.strategyKindChild=child; self.strategyKindButtons={}; self:Paint(child,"SetSize",187,#strategyKinds*40); self:Paint(scroll,"SetScrollChild",child)
  self:Paint(menu,"SetBackdrop",{bgFile="Interface\\Buttons\\WHITE8X8",edgeFile="Interface\\Buttons\\WHITE8X8",edgeSize=1})
  self:Paint(menu,"SetBackdropColor",.03,.05,.08,1)
  for i,kind in ipairs(strategyKinds) do local selectedKind=kind
-  self.strategyKindButtons[kind]=self:CreateActionButton(child,strategyNames[kind],0,-(i-1)*30,187,function()
+  self.strategyKindButtons[kind]=self:CreateActionButton(child,strategyNames[kind],0,-(i-1)*40,187,function()
    if selectedKind=="comboPoints" and self.engine.classToken~="ROGUE" then return end
    self:ChangeCustomStrategy(function()
    local c=self.strategyKindTarget; if not c then return end

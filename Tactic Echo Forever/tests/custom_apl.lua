@@ -457,7 +457,7 @@ test("manual_invalid_policy_range_does_not_silently_drop_conditions",function()
  T.UI:ChangeCustomStrategy(function(r) r.strategies={{mode="use",conditions={{kind="distance",min=20,max=30}}}} end)
  local low
  for _,entry in ipairs(T.UI.strategyInputs) do if entry.field=="min" then low=entry.box; low.text="40" end end
- eq(T.UI:CommitCustomNumbers(),false); eq(T.UI:DraftRows(),nil)
+ eq(T.UI:CommitCustomNumbers(),false); eq(T.UI:DraftRows()[1].strategies[1].conditions[1].min,20)
  T.UI.strategySaveButton.scripts.OnClick(); eq(e.db.profiles.single[1].strategies,nil)
  low.text="25"; eq(T.UI:CommitCustomNumbers(),true); T.UI.strategySaveButton.scripts.OnClick()
  eq(e.db.profiles.single[1].strategies[1].conditions[1].min,25)

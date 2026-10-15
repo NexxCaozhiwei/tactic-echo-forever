@@ -44,7 +44,7 @@ test("group_editor_save_roundtrip_and_reject_nested_secret",function()
  T.UI.groupName.text="连招A"; T.UI.groupRounds.text="2"; assert(T.UI:SaveSkillGroup())
  local row=T.APL.Custom:Rows(e)[1]; eq(row.group.name,"连招A"); eq(row.group.rounds,2); eq(#row.group.steps,2)
  local reload=T.Engine.New(T.Config,e.db); eq(T.APL.Custom:Rows(reload,"single")[1].group.steps[2].spellID,205)
- T.UI:CloseSkillGroup()
+ T.UI:CloseSkillGroup(true)
  local g=group(); g.steps[1].group=group(); eq(T.SkillGroups:Clean(g),nil)
  g=group(); g.rounds=F.secret; eq(T.SkillGroups:Clean(g),nil)
 end)
@@ -86,7 +86,7 @@ test("manual_group_editor_child_policy_and_roundtrip",function()
  T.UI.groupDraft.steps[1].strategies={{mode="use",conditions={{kind="moving",value=false}}}}
  assert(T.UI:SaveSkillGroup()); eq(e.db.profiles.single[1].group.steps[1].repeatCount,3)
  local reload=T.Engine.New(T.Config,e.db); eq(reload.db.profiles.single[1].group.steps[1].strategies[1].conditions[1].kind,"moving")
- T.UI:CloseSkillGroup()
+ T.UI:CloseSkillGroup(true)
  local bad=T.SkillGroups:Row(group()); bad.enabled=F.secret; eq(T.Profiles:Clean({bad}),nil)
 end)
 test("group_drop_on_list_and_row_preserves_cursor_when_rejected",function()
@@ -100,17 +100,17 @@ test("group_drop_on_list_and_row_preserves_cursor_when_rejected",function()
  eq(cleared,2)
  for i=3,8 do T.UI:GroupAdd(143) end
  T.UI.groupDrop.scripts.OnReceiveDrag(); eq(#T.UI.groupDraft.steps,8); eq(cleared,2)
- assert(T.UI.groupListBox); T.UI:CloseSkillGroup(); GetCursorInfo,ClearCursor=cursor,clear
+ assert(T.UI.groupListBox); T.UI:CloseSkillGroup(true); GetCursorInfo,ClearCursor=cursor,clear
 end)
-test("right_panel_switch_saves_group_and_never_overlaps",function()
+test("right_panel_switch_stages_group_and_never_overlaps",function()
  local e=F.runtime(); T.UI:ShowPage("customapl"); T.UI:AddSkillGroup("apl"); T.UI:GroupAdd(143)
  T.UI.groupName.text="切换前保存"; T.UI.groupWidgets[1].count.text="3"
  T.UI.customWidgets[1].policy.scripts.OnClick()
  eq(T.UI.groupPanel.shown,false); eq(T.UI.strategyPanel.shown,true); eq(T.UI.groupEditing,nil)
- eq(T.APL.Custom:Rows(e)[1].group.name,"切换前保存"); eq(T.APL.Custom:Rows(e)[1].group.steps[1].repeatCount,3)
+ eq(#T.APL.Custom:Rows(e),0); eq(T.UI.customDraft[1].group.name,"切换前保存"); eq(T.UI.customDraft[1].group.steps[1].repeatCount,3)
  T.UI:OpenSkillGroup("apl",1); eq(T.UI.strategyPanel.shown,false); eq(T.UI.groupPanel.shown,true)
  T.UI.groupWidgets[1].policy.scripts.OnClick(); eq(T.UI.groupPanel.shown,false); eq(T.UI.strategyPanel.shown,true)
- eq(T.UI.strategySource,"groupStep"); T.UI:CloseSkillGroup()
+ eq(T.UI.strategySource,"groupStep"); T.UI:CloseSkillGroup(true)
 end)
 test("parent_loop_does_not_bypass_three_group_rounds",function()
  local e=F.runtime(); assert(T.Recommendation:SetSource(e,"manual","single"))
@@ -172,4 +172,173 @@ test("last_channel_success_waits_for_finish_before_next_round",function()
  receipt(143,"channel-round2-x"); T.Runtime:Reconcile(); receipt(5144,"channel-round2-y"); T.Runtime:Reconcile()
  eq(e.groupRun,nil); eq(e.index,2); eq(e.receiptSerial,4); T.Runtime:Stop()
 end)
+
+
+test("group_header_survives_skip_and_dirty_exit_confirmation",function()
+ F.runtime(); T.UI:ShowPage("customapl"); T.UI:AddSkillGroup("apl"); T.UI:GroupAdd(143)
+ T.UI.groupName.text="未保存名称"; T.UI.groupRounds.text="4"
+ T.UI.groupWidgets[1].skip.scripts.OnClick()
+ eq(T.UI.groupDraft.name,"未保存名称"); eq(T.UI.groupDraft.rounds,4); eq(T.UI.groupName.text,"未保存名称")
+ eq(T.UI:CloseSkillGroup(),false); assert(T.UI.pendingConfirmation)
+ T.UI.confirmCancel.scripts.OnClick(); assert(T.UI.groupEditing)
+ T.UI:CloseSkillGroup(); T.UI.confirmAccept.scripts.OnClick(); eq(T.UI.groupEditing,nil)
+end)
+test("strategy_pool_is_bounded_after_warmup",function()
+ F.runtime(); T.UI:ShowPage("customapl"); T.UI:AddCustomSpell(143)
+ local create=CreateFrame; local made=0
+ CreateFrame=function(...) made=made+1; return create(...) end
+ T.UI.customFormIndex=nil; T.UI:RefreshStrategyForm(); local first=made; local syncs=#T.UI.controls
+ for i=1,25 do T.UI.customFormIndex=nil; T.UI:RefreshStrategyForm() end
+ eq(made,first); eq(#T.UI.controls,syncs); eq(T.UI.strategyPoolActive,false)
+ CreateFrame=create
+end)
+test("settings_fit_small_viewport_and_use_side_editor_when_room_exists",function()
+ local parent=UIParent; UIParent={GetWidth=function() return 1000 end,GetHeight=function() return 600 end}
+ T.UI.strategyPanel.IsShown=function() return true end; T.UI.groupPanel.IsShown=function() return false end
+ T.UI:LayoutSettings(); eq(T.UI.settingsFitScale,1); eq(T.UI.settingsHeight,568); eq(T.UI.editorOverlay,true)
+ UIParent.GetWidth=function() return 1920 end; UIParent.GetHeight=function() return 1080 end
+ T.UI:LayoutSettings(); eq(T.UI.settingsFitScale,1); eq(T.UI.editorOverlay,false)
+ UIParent=parent; T.UI.strategyPanel.IsShown=nil; T.UI.groupPanel.IsShown=nil
+end)
+test("attack_skip_hidden_and_slider_submit_once",function()
+ F.runtime(); T.UI:ShowPage("profiles"); T.UI:WriteDraft({spell(6603)}); T.UI:RefreshSequenceEditor(true)
+ eq(T.UI.sequenceRows[1].skip.shown,false)
+ local value,calls=5,0
+ local slider,input=T.UI:CreateSliderRow(T.UI.settings,"测试数值",0,0,300,1,99,1,function() return value end,function(v) value=v; calls=calls+1 end,true)
+ input.text="7"; input.scripts.OnEnterPressed(); input.scripts.OnEditFocusLost(); eq(calls,1); eq(value,7)
+ input.text="100"; input.scripts.OnEnterPressed(); eq(calls,1); eq(value,7)
+ assert(slider.scripts.OnEnter); assert(slider.scripts.OnLeave)
+end)
+
+test("theme_typography_footer_and_owned_tooltip",function()
+ F.runtime(); T.UI:ShowPage("profiles")
+ eq(T.UI.controlHeight,32); eq(T.UI.controlFontSize,14); assert(T.UI.manualSave.parent~=T.UI.pages.profiles)
+ local old=GameTooltip; local owner,hidden=nil,0
+ GameTooltip={SetOwner=function(_,v) owner=v end,GetOwner=function() return owner end,Hide=function() hidden=hidden+1 end}
+ local control=T.UI.manualSave; T.UI:ShowControlTooltip(control); owner={}; T.UI:HideControlTooltip(control); eq(hidden,0)
+ T.UI:ShowControlTooltip(control); T.UI:HideControlTooltip(control); eq(hidden,1); GameTooltip=old
+end)
+test("delete_undo_and_group_delete_confirmation",function()
+ F.runtime(); T.UI:ShowPage("profiles"); T.UI:WriteDraft({spell(143),spell(205)})
+ assert(T.UI:DeleteDraft("manual",1)); eq(#T.UI:DraftRows(),1); assert(T.UI:UndoDelete("manual")); eq(T.UI:DraftRows()[1].spellID,143)
+ T.UI:WriteDraft({T.SkillGroups:Row(group()),spell(205)})
+ eq(T.UI:DeleteDraft("manual",1),false); eq(#T.UI:DraftRows(),2); assert(T.UI.pendingConfirmation)
+ T.UI.confirmationShield.scripts.OnKeyDown(nil,"ESCAPE"); eq(T.UI.pendingConfirmation,nil); eq(#T.UI:DraftRows(),2)
+ T.UI:DeleteDraft("manual",1); T.UI.confirmAccept.scripts.OnClick(); eq(#T.UI:DraftRows(),1)
+end)
+test("custom_plan_and_maintenance_switch_preserve_unsaved_rows",function()
+ F.runtime(); T.UI:ShowPage("customapl"); T.UI:AddCustomSpell(143)
+ T.UI.customScene="multi"; T.UI:RefreshCustomAPL(); T.UI:AddCustomSpell(205)
+ T.UI:ShowPage("maintenance"); T.UI:ShowPage("customapl")
+ eq(T.UI.customDraft[1].spellID,205); T.UI.customScene="single"; T.UI:RefreshCustomAPL(); eq(T.UI.customDraft[1].spellID,143)
+end)
+test("atomic_range_validation_labels_and_unknown_input",function()
+ F.runtime(); T.UI:ShowPage("customapl"); T.UI:AddCustomSpell(143)
+ T.UI:ChangeCustomStrategy(function(row) row.strategies={{mode="use",conditions={{kind="distance",min=10,max=30}}}} end)
+ local low,high; for _,entry in ipairs(T.UI.strategyInputs) do assert(entry.label); if entry.field=="min" then low=entry else high=entry end end
+ low.box.text="40"; eq(T.UI:CommitCustomNumbers(),false); eq(low.condition.min,10); eq(high.condition.max,30)
+ low.box.text="20"; high.box.text=""; eq(T.UI:CommitCustomNumbers(),true); eq(low.condition.min,20); eq(high.condition.max,nil)
+ local detector=issecretvalue; issecretvalue=function(v) if v=="20" then return true end; return detector(v) end
+ eq(T.UI:CommitCustomNumbers(),false); issecretvalue=detector
+end)
+test("input_focus_cancel_and_single_commit",function()
+ local value,calls=5,0; local _,box=T.UI:CreateSliderRow(T.UI.settings,"测试",0,0,300,1,99,1,function() return value end,function(v) value=v; calls=calls+1 end,true)
+ box.text="5"; box.scripts.OnEditFocusGained(); box.text="99"; box.scripts.OnEscapePressed(); box.scripts.OnEditFocusLost(); eq(value,5); eq(calls,0)
+ box.text="7"; box.scripts.OnEnterPressed(); box.scripts.OnEditFocusLost(); eq(value,7); eq(calls,1)
+ box.text="100"; box.scripts.OnEnterPressed(); T.UI:RefreshControls(); eq(box.text,"100"); eq(value,7)
+end)
+test("largest_strategy_form_pool_stable_and_callback_identity",function()
+ F.runtime(); T.UI:ShowPage("customapl"); T.UI:AddCustomSpell(143)
+ T.UI:ChangeCustomStrategy(function(row) row.strategies={}; for i=1,8 do local conditions={}; for j=1,8 do conditions[j]={kind="nearbyEnemies",radius=10,min=2} end; row.strategies[i]={mode="use",conditions=conditions} end end)
+ local create=CreateFrame; local made=0; CreateFrame=function(...) made=made+1; return create(...) end
+ T.UI.customFormIndex=nil; T.UI:RefreshStrategyForm(); local warm=made; local syncs=#T.UI.controls
+ for i=1,25 do T.UI.customFormIndex=nil; T.UI:RefreshStrategyForm() end
+ eq(made,warm); eq(#T.UI.controls,syncs); CreateFrame=create
+ T.UI:AddCustomSpell(205); local former=T.UI.customDraft[1]; T.UI.strategySpellID.text="143"; T.UI.strategyReplaceID.scripts.OnClick(); eq(former.spellID,143); eq(T.UI.customDraft[2].spellID,143)
+end)
+
+test("overview_sections_order_and_class_label",function()
+ F.runtime(); T.UI:ShowPage("overview")
+ local titles={}; for _,child in ipairs(T.UI.pages.overview.children or {}) do if type(child.text)=="string" and type(child.point)=="table" then titles[child.text]=child.point[5] end end
+ assert(titles["运行模式"]>titles["当前配置"]); assert(titles["当前配置"]>titles["派发启停快捷键"])
+ for title in pairs(titles) do assert(not title:find("临时覆盖已有绑定",1,true)) end
+ T.UI:ShowPage("profiles"); assert(T.UI.readouts.profiles.text:find("法师",1,true)); assert(not T.UI.readouts.profiles.text:find(":base",1,true))
+end)
+test("matching_plan_toolbar_and_visible_list_bottom",function()
+ F.runtime(); T.UI:ShowPage("profiles"); T.UI:WriteDraft({spell(143)})
+ local parent=UIParent; UIParent={GetWidth=function() return 1920 end,GetHeight=function() return 1080 end}; T.UI.settingsLayoutSignature=nil; T.UI:LayoutSettings()
+ eq(T.UI.manualSave.text,"保存配置"); eq(T.UI.customSave.text,"保存配置")
+ eq(T.UI.manualSave.point[4],T.UI.customSave.point[4]); eq(T.UI.manualSave.point[5],T.UI.customSave.point[5]); eq(T.UI.manualSave.width,T.UI.customSave.width)
+ local a,b=T.UI.sequenceRows[1].policy,T.UI.customWidgets[1].policy; eq(a.point[4],b.point[4]); eq(a.point[5],b.point[5]); eq(a.width,b.width)
+ assert(228+T.UI.customListCard.height<=T.UI.pageScrolls.customapl.height)
+ assert(272+T.UI.customScroll.height<228+T.UI.customListCard.height)
+ assert(252+T.UI.sequenceListCard.height<=T.UI.pageScrolls.profiles.height)
+ UIParent=parent
+end)
+test("hud_slider_columns_do_not_overlap_and_accept_signed_decimal",function()
+ F.runtime(); T.UI:ShowPage("hud"); eq(T.UI.labelStylePanel.point[5],-48)
+ for _,row in pairs(T.UI.hudGeometryControls) do assert(row.slider.point[4]+row.slider.width<row.input.point[4]); eq(row.input.height,32) end
+ local value=0; local _,box=T.UI:CreateSliderRow(T.UI.settings,"偏移",0,0,548,-100,100,1,function() return value end,function(v) value=v end,true)
+ box.text="-35"; box.scripts.OnEnterPressed(); eq(value,-35)
+ local scale=1; local _,decimal=T.UI:CreateSliderRow(T.UI.settings,"缩放",0,0,548,.6,2,.1,function() return scale end,function(v) scale=v end,true)
+ decimal.text="1.2"; decimal.scripts.OnEnterPressed(); eq(scale,1.2)
+end)
+test("distance_style_controls_apply_and_survive_reload",function()
+ local e=F.runtime(); local combat,hudEngine=InCombatLockdown,T.HUD.engine; T.HUD.engine=e; InCombatLockdown=function() return false end; T.UI:ShowPage("hud"); assert(e.db.hud.styles.global.rangeText)
+ T.UI.labelModuleButtons.global.scripts.OnClick(); T.UI:RefreshControls(); assert(T.UI.labelStyleButtons.rangeText.tefControlEnabled)
+ T.UI.labelStyleButtons.rangeText.scripts.OnClick(); T.UI.labelEnabledButton.scripts.OnClick(); eq(e.db.hud.styles.global.rangeText.enabled,false)
+ e.db.hud.styles.global.rangeText.fontSize=18; e.db.hud.styles.global.rangeText.offsetX=25
+ T.HudStyles:Apply(T.HUD); eq(T.HUD.rangeText.shown,false); eq(T.HUD.rangeText.point[4],25)
+ T.Presentation:UpdateRange(T.HUD); eq(T.HUD.rangeText.shown,false)
+ local copy=T.Engine.New(T.Config,e.db); eq(copy.db.hud.styles.global.rangeText.fontSize,18); eq(copy.db.hud.styles.global.rangeText.enabled,false); InCombatLockdown=combat; T.HUD.engine=hudEngine
+end)
+
+test("reused_strategy_scroll_child_keeps_anchor_and_skill_controls",function()
+ F.runtime(); T.UI:ShowPage("customapl"); T.UI:AddCustomSpell(143)
+ T.UI:ChangeCustomStrategy(function(row) row.strategies={{mode="use",conditions={{kind="distance",min=10,max=30}}}} end)
+ local form=T.UI.strategyForm
+ for i=1,10 do
+  T.UI.customFormIndex=nil; T.UI:RefreshStrategyForm(); eq(T.UI.strategyForm,form)
+  eq(form.point[1],"TOPLEFT"); eq(form.point[2],T.UI.strategyScroll)
+  assert(T.UI.strategySpellID.shown); assert(T.UI.strategyReplaceID.shown); assert(T.UI.strategyUpgrade.shown); eq(#T.UI.strategyInputs,2)
+  assert(T.UI.strategySpellID.parent==form); assert(T.UI.strategyUpgrade.parent==form)
+ end
+end)
+test("strategy_build_failure_not_cached_and_retry_preserves_conditions",function()
+ F.runtime(); T.UI:ShowPage("customapl"); T.UI:AddCustomSpell(143)
+ T.UI:ChangeCustomStrategy(function(row) row.strategies={{mode="use",conditions={{kind="moving",value=true}}}} end)
+ local create=T.UI.CreateHintText; T.UI.CreateHintText=function() error("SIMULATED_FORM_BUILD_ERROR") end
+ T.UI.customFormIndex=nil; eq(pcall(function() T.UI:RefreshStrategyForm() end),false)
+ eq(T.UI.customFormIndex,nil); eq(T.UI.strategyPoolActive,false); eq(#T.UI.customDraft[1].strategies,1)
+ T.UI.CreateHintText=create; T.UI:RefreshStrategyForm(); eq(T.UI.customFormIndex,1)
+ assert(T.UI.strategyForm.point); assert(T.UI.strategyUpgrade.shown); eq(T.UI.strategyBuildError,nil)
+end)
+
+test("negative_control_reproduces_anchor_loss_and_explicit_anchor_repairs_it",function()
+ F.runtime(); T.UI:ShowPage("customapl"); T.UI:AddCustomSpell(143)
+ local paint=T.UI.Paint
+ T.UI.Paint=function(self,object,method,...) if object==self.strategyForm and method=="SetPoint" then return true end; return paint(self,object,method,...) end
+ T.UI.customFormIndex=nil; T.UI:RefreshStrategyForm(); eq(rawget(T.UI.strategyForm,"point"),nil)
+ T.UI.Paint=paint; T.UI.customFormIndex=nil; T.UI:RefreshStrategyForm(); eq(T.UI.strategyForm.point[1],"TOPLEFT")
+ local scroll=T.UI.strategyScroll; scroll.GetVerticalScroll=function() return 5000 end; scroll.GetHeight=function() return 530 end
+ scroll.SetVerticalScroll=function(self,value) self.testScroll=value end
+ T.UI.customFormIndex=nil; T.UI:RefreshStrategyForm(); eq(scroll.testScroll,0)
+ scroll.GetVerticalScroll=nil; scroll.GetHeight=nil; scroll.SetVerticalScroll=nil
+end)
+
+test("compact_list_controls_stay_inside_row_bounds",function()
+ F.runtime(); T.UI:ShowPage("profiles"); T.UI:WriteDraft({spell(143),T.SkillGroups:Row(group())})
+ local function inside(frame,controls)
+  for _,control in ipairs(controls) do local point=control.point; assert(point and point[1]=="TOPLEFT")
+   local x,y=point[4],-point[5]; assert(x>=0 and y>=0); assert(x+control.width<=frame.width); assert(y+control.height<=frame.height)
+  end
+ end
+ for _,w in ipairs(T.UI.sequenceRows) do inside(w.frame,{w.count,w.groupEdit,w.policy,w.up,w.down,w.delete,w.skip,w.usage}); eq(w.frame.height,80) end
+ T.UI:ShowPage("customapl"); T.UI:AddCustomSpell(143)
+ for _,w in ipairs(T.UI.customWidgets) do if w.frame.shown then inside(w.frame,{w.policy,w.up,w.down,w.delete}); eq(w.frame.height,44) end end
+ T.UI:AddSkillGroup("apl"); T.UI:GroupAdd(143)
+ for _,w in ipairs(T.UI.groupWidgets) do inside(w.frame,{w.count,w.policy,w.up,w.down,w.delete,w.skip}); eq(w.frame.height,80) end
+ T.UI:CloseSkillGroup(true)
+end)
+
 return n

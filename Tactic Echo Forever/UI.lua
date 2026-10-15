@@ -15,17 +15,22 @@ function UI:Error()
 end
 function UI:Paint(object,method,...)
     if not self:Call(object,method,...) then self:Error(); return false end
+    if (object==self.strategyPanel or object==self.groupPanel) and (method=="Show" or method=="Hide") and self.LayoutSettings then self:LayoutSettings() end
     return true
 end
 function UI:Frame(kind,parent,template,name)
+    if self.strategyPoolActive and not name then return self:AcquireStrategyFrame(kind,parent,template) end
     local ok,f=pcall(CreateFrame,kind,name,parent,template)
     if not ok then self:Error(); return nil end
     return f
 end
 function UI:Text(parent,x,y,width,template)
-    local ok,t=self:Invoke(parent,"CreateFontString",nil,"OVERLAY",template or "GameFontHighlight")
+    local ok,t
+    if self.strategyPoolActive then t=self:AcquireStrategyText(parent,template or "GameFontHighlight"); ok=t~=nil
+    else ok,t=self:Invoke(parent,"CreateFontString",nil,"OVERLAY",template or "GameFontHighlight") end
     if not ok then self:Error(); return nil end
     self:Paint(t,"SetPoint","TOPLEFT",parent,"TOPLEFT",x,y)
+    if self.StyleText then self:StyleText(t,template) end
     self:Paint(t,"SetWidth",width); self:Paint(t,"SetJustifyH","LEFT")
     return t
 end
@@ -58,6 +63,7 @@ function UI:Layout()
     if self:Combat()~=false then self.layoutPending=true; return end
     self.layoutPending=false
     self:Paint(self.frame,"SetScale",self.engine.db.hud.scale)
+    self:LayoutSettings()
 end
 function UI:Refresh()
     if TEF.HUD then TEF.HUD:Refresh() end
@@ -99,16 +105,21 @@ function UI:OpenSettings()
     self.settingsOpen=true
     TEF.Runtime:Suspend("RUNTIME_SETTINGS_STANDBY","standby")
     if not self.settings then self:CreateSettings() end
-    self:Paint(self.settings,"Show"); self:Paint(self.settings,"Raise"); self:ShowPage(self.page or "overview")
+    self:Paint(self.settings,"Show"); self:Paint(self.settings,"Raise"); self:ShowPage(self.page or "overview"); self:LayoutSettings()
 end
 function UI:CloseSettings()
+    if not self:CommitSequenceCounts() then return end
+    if self.groupEditing and not self:CloseSkillGroup(false,function() self:CloseSettings() end) then return end
+    if not self:CommitCustomNumbers() then return end
+    self:CancelConfirmation()
     self.captureHotkey=false; self.settingsOpen=false
     self:Paint(self.settings,"Hide")
     TEF.Runtime:Reconcile("SETTINGS_CLOSED")
     self:Refresh()
 end
 function UI:ShowPage(key)
-    if self.groupEditing then self:CloseSkillGroup() end
+    if self.sequenceEngine==self.engine and not self:CommitSequenceCounts() then return end
+    if self.groupEditing and not self:CloseSkillGroup(false,function() self:ShowPage(key) end) then return end
     if self.sequenceEngine~=self.engine then
         self.sequenceEngine=self.engine; self.sequenceDrafts={}; self.sequenceDraft=nil; self.drafts={}; self.loadedScene=nil; self.loadedProfile=nil
         if self.strategySource=="manual" then self.sequencePolicyRow=nil; self.strategyInputs={} end
@@ -125,11 +136,13 @@ function UI:ShowPage(key)
         if draft and #draft<=4096 then self.drafts[(self.loadedProfile or "unknown") .. ":" .. self.loadedScene]=draft end
     end
     self.page=key
+    for parent,footer in pairs(self.pageFooters or {}) do self:Paint(footer,self.pages[key]==parent and "Show" or "Hide") end
     self.strategySource=key=="maintenance" and "maintenance" or key=="customapl" and "apl" or nil; self.sequencePolicyRow=nil; self.strategyInputs={}; self.customFormIndex=nil
     if key~="customapl" then self:Paint(self.strategyPanel,"Hide") end
     if self.pageTitles then self:Paint(self.pageHeading,"SetText",self.pageTitles[key] or "设置") end
     for name,nav in pairs(self.navigation or {}) do
-        self:Paint(nav,"SetText",(name==key and "|cffffcf45" or "|cffb8c6dc") .. (self.pageTitles[name] or name) .. "|r")
+        nav.tefControlSelected=name==key; self:SetControlEnabled(nav,true)
+        self:Paint(nav,"SetText",(name==key and "|cffffcf45● " or "|cffb8c6dc") .. (self.pageTitles[name] or name) .. "|r")
     end
     local shown=(self.pageFrames or self.pages)[key]
     for _,panel in pairs(self.pageFrames or self.pages) do self:Paint(panel,panel==shown and "Show" or "Hide") end
@@ -142,24 +155,26 @@ function UI:ShowPage(key)
         self.sequenceDraft=(self.sequenceDrafts and self.sequenceDrafts[draftKey]) or TEF.Profiles:Clean(self.engine.db.profiles[self.editScene],32)
         local got,value=self:Invoke(self.editor,"GetText"); self.sequenceDraftText=got and S.Public(value,"string")
     end
+    self:LayoutSettings()
     self:RefreshPage()
     if key=="profiles" then self:RefreshSequenceEditor(true) end
 end
 function UI:RefreshPage()
+    self:LayoutSettings()
     local e=self.engine
     if self.RefreshControls then self:RefreshControls() end
-    self:RefreshPlanFeedback()
+    self:RefreshPlanFeedback(); self:RefreshUndoControls()
     if self.page=="overview" then
         if self.hotkeyMessage and not self.captureHotkey then self:Paint(self.hotkeyMessage,"SetText",TEF.Hotkeys:Status()) end
         local v=TEF.Runtime:GetViewState()
         self:Paint(self.overviewBadge,"SetText",v.label .. " · " .. (v.intent and "派发意图开启" or "派发意图关闭"))
-        self:Paint(self.readouts.overview,"SetText",(v.source=="apl" and ((e.classToken or "职业未知") .. " · 优先级推荐") or e.profileKey or "职业未解析") .. " · " .. TEF.Profiles:PlanName(e.scene)
-            .. " · " .. (v.source=="apl" and "优先级推荐" or "列表循环") .. "\n" .. (v.source=="apl" and (e.aplTrace and e.aplTrace.reason or "等待启动采样") or ("步骤 " .. e.index .. "/" .. (e.steps and #e.steps or 0) .. " · 固定练习不保证ready")))
+        self:Paint(self.readouts.overview,"SetText",(self:ClassLabel() .. (v.source=="apl" and " · 优先级推荐" or " · 列表循环")) .. " · " .. TEF.Profiles:PlanName(e.scene)
+            .. "\n" .. (v.source=="apl" and (e.aplTrace and e.aplTrace.reason or "等待启动采样") or ("步骤 " .. e.index .. "/" .. (e.steps and #e.steps or 0) .. " · 固定练习不保证ready")))
     elseif self.page=="profiles" then
         if self.loadedProfile~=e.profileKey then self:ShowPage("profiles"); return end
-        self:Paint(self.readouts.profiles,"SetText",(e.profileKey or "职业未解析") .. " · 编辑：" .. TEF.Profiles:PlanName(self.editScene,e,"manual") .. " · 当前使用：" .. TEF.Profiles:PlanName(e.scene,e,TEF.Recommendation:Source(e))
-            .. "\n每套最多16步，每步1–99次；保存后暂停并重置。"
-            .. (e.db.profileMigrationConflicts[e.classToken] and "\n旧专精配置存在冲突：原配置保留，请明确编辑并保存职业配置。" or ""))
+        self:Paint(self.readouts.profiles,"SetText",self:ClassLabel() .. " · 编辑：" .. TEF.Profiles:PlanName(self.editScene,e,"manual") .. " · 当前使用：" .. TEF.Profiles:PlanName(e.scene,e,TEF.Recommendation:Source(e))
+)
+        if e.db.profileMigrationConflicts[e.classToken] and self.migrationHintEngine~=e then self.migrationHintEngine=e; self:SequenceMessage("旧职业配置存在冲突，原配置已保留，请核对并保存。") end
         self:RefreshSequenceEditor()
 
     elseif self.page=="customapl" or self.page=="maintenance" then
@@ -197,14 +212,15 @@ function UI:CreateSettings()
     self:Paint(f,"SetMovable",true); self:Paint(f,"EnableMouse",true); self:Paint(f,"RegisterForDrag","LeftButton")
     self:Paint(f,"SetScript","OnDragStart",function() if self:Combat()==false then self:Call(f,"StartMoving") end end)
     self:Paint(f,"SetScript","OnDragStop",function() self:Call(f,"StopMovingOrSizing") end)
-    self:Paint(self:Text(f,22,-18,600,"GameFontNormalLarge"),"SetText","战术回响 · FOREVER")
-    self:Paint(self:Text(f,22,-43,600,"GameFontHighlightSmall"),"SetText","TEF " .. TEF.Version .. "  /  列表循环 · 优先级推荐 · TEK派发")
+    local title=self:Text(f,24,-20,600,"GameFontNormalLarge"); self:ApplyControlFont(title,false,self.theme.fontTitle); self:Paint(title,"SetText","战术回响 · FOREVER")
+    self:Paint(self:Text(f,24,-48,640,"GameFontHighlightSmall"),"SetText","TEF " .. TEF.Version .. " · 设置期间派发阻断，运行意图由启停控制")
     self:Button(f,"关闭",722,-16,75,function() self:CloseSettings() end)
     self:Paint(f,"SetScript","OnHide",function()
+        self:CancelConfirmation()
         if self.settingsOpen then self.settingsOpen=false; self.captureHotkey=false; TEF.Runtime:Reconcile("SETTINGS_CLOSED") end
     end)
-    self.navigation={}; self.pageTitles={}; self.pageFrames={}
-    self.pageHeading=self:Text(f,190,-78,595,"GameFontNormalLarge")
+    self.navigation={}; self.pageTitles={}; self.pageFrames={}; self.pageScrolls={}
+    self.pageHeading=self:Text(f,192,-80,592,"GameFontNormalLarge")
     local tabs={{"overview","派发总览"},{"profiles","列表循环"},{"customapl","优先级推荐"},{"maintenance","增益维护"},{"scene","场景与验证"},{"hud","HUD外观"},{"tek","高级TEK"},{"diagnostics","诊断/测试"}}
     local visibleIndex=0
     for i,tab in ipairs(tabs) do
@@ -212,17 +228,18 @@ function UI:CreateSettings()
         self.pageTitles[key]=tab[2]
         local hidden=key=="scene" or key=="diagnostics"
         if not hidden then visibleIndex=visibleIndex+1 end
-        self.navigation[key]=self:Button(f,tab[2],18,-78-(visibleIndex-1)*42,145,function() self:ShowPage(key) end)
+        self.navigation[key]=self:Button(f,tab[2],24,-80-(visibleIndex-1)*44,144,function() self:ShowPage(key) end)
         if hidden then self:Paint(self.navigation[key],"Hide") end
         local panel=self:Frame("Frame",f)
         self.pages[key]=panel
-        self:Paint(panel,"SetSize",610,590); self:Paint(panel,"SetPoint","TOPLEFT",f,"TOPLEFT",190,-112)
+        self:Paint(panel,"SetSize",610,590); self:Paint(panel,"SetPoint","TOPLEFT",f,"TOPLEFT",192,-116)
         self.pageFrames[key]=panel
-        if key=="overview" or key=="hud" or key=="profiles" or key=="customapl" then
+        if key=="overview" or key=="hud" or key=="profiles" or key=="customapl" or key=="tek" or key=="scene" or key=="diagnostics" then
             local scroll=self:Frame("ScrollFrame",panel,"UIPanelScrollFrameTemplate")
+            self.pageScrolls[key]=scroll
             self:Paint(scroll,"SetSize",580,575); self:Paint(scroll,"SetPoint","TOPLEFT",panel,"TOPLEFT",0,0)
             local content=self:Frame("Frame",scroll)
-            self:Paint(content,"SetSize",580,key=="hud" and 1230 or key=="profiles" and 920 or key=="customapl" and 670 or 570)
+            self:Paint(content,"SetSize",580,key=="hud" and 1370 or key=="profiles" and 920 or key=="customapl" and 670 or 570)
             self:Paint(scroll,"SetScrollChild",content)
             self:Paint(content,"SetPoint","TOPLEFT",scroll,"TOPLEFT",0,0)
             self:Paint(content,"Show"); self:Paint(scroll,"Show")
@@ -237,13 +254,13 @@ function UI:CreateSettings()
     local function button(page,label,x,y,w,fn) return self:Button(self.pages[page],label,x,y,w,fn) end
     local function selectEditor(key) self.editScene=key; self:ShowPage("profiles") end
     self.editScene=e.db.selectedPlans.manual
-    self.manualPlanControls=self:CreateSegmentedControl(self.pages.profiles,{{"single","方案一"},{"multi","方案二"},{"third","方案三"}},4,-42,550,
+    self.manualPlanControls=self:CreateSegmentedControl(self.pages.profiles,{{"single","方案一"},{"multi","方案二"},{"third","方案三"}},0,-40,580,
         function() return self.editScene end,function(key) selectEditor(key) end)
-    self:CreatePlanRename(self.pages.profiles,"manual",4,-80,function() return self.editScene end)
-    self:CreateToggleRow(self.pages.profiles,"启用本方案",4,-120,250,
+    self:CreatePlanRename(self.pages.profiles,"manual",0,-80,function() return self.editScene end)
+    self:CreateToggleRow(self.pages.profiles,"启用本方案",0,-120,284,
         function() return e.db.enabledPlans.manual[self.editScene] end,
         function(value) TEF.Profiles:SetPlanEnabled(e,"manual",self.editScene,value) end)
-    self.manualUseButton=button("profiles","使用本方案",270,-120,140,function()
+    self.manualUseButton=button("profiles","使用本方案",392,-120,188,function()
         local ok,reason=TEF.Profiles:UsePlan(e,"manual",self.editScene)
         self:SequenceMessage(ok and "已选择并停止派发；关闭设置后开启。" or "请先启用本方案。")
     end)
@@ -266,74 +283,82 @@ function UI:CreateSettings()
     self:Paint(editor,"SetScript","OnEscapePressed",function() self:Paint(editor,"ClearFocus") end)
     self:Paint(scroll,"SetScrollChild",editor)
     self:Paint(scroll,"Hide") -- 内部草稿序列化载体，不再提供高级文本界面。
-    self.editorMessage=self:Text(self.pages.profiles,4,-574,555)
-    button("profiles","保存配置",4,-537,120,function()
+    local manualFooter=self:Footer(self.pages.profiles)
+    self.editorMessage=self:Text(manualFooter,0,-4,580)
+    self.manualUndoButton=self:CreateActionButton(manualFooter,"撤销删除",0,-52,120,function() self:UndoDelete("manual") end)
+    self.manualSave=self:CreateActionButton(manualFooter,"保存配置",436,-52,144,function()
+        if not self:CommitSequenceCounts() then return end
         if not self:CommitCustomNumbers() then return end
         local ok,raw=self:Invoke(editor,"GetText")
         local rows=ok and self:DraftRows()
         local saved,reason=false,"CONFIG_INVALID"
         if rows then saved,reason=TEF.Profiles:Save(e,self.editScene,rows) end
         if saved then self.drafts[(e.profileKey or "unknown") .. ":" .. self.editScene]=nil end
-        self:Paint(self.editorMessage,"SetText",saved and "已保存；当前练习已暂停并重置。" or ("未保存：" .. reason))
+        self:Paint(self.editorMessage,"SetText",saved and "方案已保存；旧派发已停止并重置。" or ("未保存：" .. reason))
         self:Paint(editor,"ClearFocus")
     end)
     button("scene","切换单体",4,-345,115,function() TEF.Profiles:Select(e,"single") end)
     button("scene","切换多目标",129,-345,115,function() TEF.Profiles:Select(e,"multi") end)
     self:CreateSectionCard(self.pages.overview,"派发状态",0,0,580,100)
-    self.overviewBadge=self:CreateStatusBadge(self.pages.overview,15,-38,370)
-    self.intentToggle=self:CreateToggleRow(self.pages.overview,"派发启/停",15,-67,540,
+    self.overviewBadge=self:CreateStatusBadge(self.pages.overview,16,-38,368)
+    self.intentToggle=self:CreateToggleRow(self.pages.overview,"派发启/停",16,-64,548,
         function() return TEF.Runtime:IsDispatchIntentEnabled() end,function() TEF_ToggleDispatchIntent() end)
     self:CreateSectionCard(self.pages.overview,"运行模式",0,-112,580,80)
-    self.modeControls=self:CreateSegmentedControl(self.pages.overview,{{"auto","自动启停"},{"manual","手动启停"},{"stop","脱战后停止"}},12,-150,556,
+    self.modeControls=self:CreateSegmentedControl(self.pages.overview,{{"auto","自动启停"},{"manual","手动启停"},{"stop","脱战后停止"}},16,-152,548,
         function() return e.db.dispatch.mode end,function(value) TEF.Runtime:SetMode(value) end)
-    self:CreateToggleRow(self.pages.overview,"登录/reload自动启动（创建新意图）",12,-207,556,
+    self:CreateToggleRow(self.pages.overview,"登录/reload自动启动（创建新意图）",16,-208,548,
         function() return e.db.dispatch.autoStart end,function(value) e.db.dispatch.autoStart=value end)
-    self:CreateSectionCard(self.pages.overview,"派发启停快捷键",0,-250,580,100)
-    self:CreateHotkeyRow(self.pages.overview,14,-285,550)
-    self:CreateToggleRow(self.pages.overview,"临时覆盖已有绑定（不改原生绑定）",14,-348,550,
-        function() return e.db.dispatch.hotkeyOverride end,function(v) e.db.dispatch.hotkeyOverride=v; TEF.Hotkeys:Apply() end)
-    self:CreateSectionCard(self.pages.overview,"当前配置",0,-390,580,140)
+    self:CreateSectionCard(self.pages.overview,"当前配置",0,-260,580,168)
     self:Paint(self.readouts.overview,"ClearAllPoints")
-    self:Paint(self.readouts.overview,"SetPoint","TOPLEFT",self.pages.overview,"TOPLEFT",14,-464)
-    self:CreateSectionCard(self.pages.profiles,"循环 / 重置",0,-600,580,270)
-    self.loopModeControls=self:CreateSegmentedControl(self.pages.profiles,{{"none","不循环"},{"normal","普通循环"},{"target","切目标重置"},{"combat","脱战重置"}},12,-640,556,
+    self:Paint(self.readouts.overview,"SetPoint","TOPLEFT",self.pages.overview,"TOPLEFT",16,-344)
+    self:CreateSectionCard(self.pages.overview,"派发启停快捷键",0,-444,580,152)
+    self:CreateHotkeyRow(self.pages.overview,16,-484,548)
+    self:CreateHintText(self.pages.overview,"仅接纳未绑定的快捷键；不会覆盖其他技能或系统绑定。",16,-564,548)
+    self:Paint(self.pages.overview,"SetHeight",612)
+    local loopPanel=self:Frame("Frame",self.pages.profiles); self.manualLoopPanel=loopPanel
+    self:Paint(loopPanel,"SetSize",580,280); self:Paint(loopPanel,"SetPoint","TOPLEFT",self.pages.profiles,"TOPLEFT",0,-624)
+    self:CreateSectionCard(loopPanel,"循环 / 重置",0,0,580,280)
+    self.loopModeControls=self:CreateSegmentedControl(loopPanel,{{"none","不循环"},{"normal","普通循环"},{"target","切目标重置"},{"combat","脱战重置"}},16,-48,548,
         function() return e.db.loopMode end,function(v) TEF.Runtime:SetLoopMode(v) end)
-    self:CreateHintText(self.pages.profiles,"普通循环：末步完成后回首步。\n切目标重置：目标变化时回首步，次数清零。\n脱战重置：退出战斗时回首步，次数清零。\n切换循环模式会停止并重置；手动停止不会自动恢复。",12,-685,550)
-    self.testReset=button("profiles","重置并停止",12,-820,150,function() TEF.Runtime:Reset() end)
+    self:CreateHintText(loopPanel,"普通循环：末步完成后回首步。\n切目标重置：目标变化时回首步，次数清零。\n脱战重置：退出战斗时回首步，次数清零。\n切换循环模式会停止并重置；手动停止不会自动恢复。",16,-96,548)
+    self.testReset=self:CreateActionButton(loopPanel,"重置并停止",16,-224,188,function() TEF.Runtime:Reset() end)
     self:CreateSequenceEditor(self.pages.profiles)
-    self.sourceMessage=self:Text(self.pages.overview,14,-505,550,"GameFontHighlightSmall")
-    self.sourceSelect=self:CreateSegmentedControl(self.pages.overview,{{"manual","列表循环"},{"apl","优先级推荐"}},12,-421,556,
+    self.sourceMessage=self:Text(self.pages.overview,16,-400,550,"GameFontHighlightSmall")
+    self.sourceSelect=self:CreateSegmentedControl(self.pages.overview,{{"manual","列表循环"},{"apl","优先级推荐"}},16,-300,548,
         function() return TEF.Recommendation:BaseSource(e,e.scene) end,
         function(value)
             if value=="apl" and e.db.apl.template~="custom" then TEF.APL:Configure(e,"template","custom") end
             local ok,reason=TEF.Profiles:UsePlan(e,value,e.db.selectedPlans[value])
             self:Paint(self.sourceMessage,"SetText",ok and "来源已切换并停止；关闭设置后主动开启。" or ("来源未切换：" .. reason))
         end)
-    self:CreateSectionCard(self.pages.hud,"HUD缩放",0,-85,580,90)
-    self.hudSlider=self:CreateSliderRow(self.pages.hud,"缩放",14,-116,550,.6,1.8,.1,
-        function() return e.db.hud.scale end,function(value) e.db.hud.scale=value; self:Layout() end)
-    self:CreateToggleRow(self.pages.hud,"锁定位置",12,-198,556,function() return e.db.hud.locked end,function(value) e.db.hud.locked=value end)
-    self:CreateToggleRow(self.pages.hud,"显示后续预览",12,-242,556,function() return e.db.hud.preview end,function(value) e.db.hud.preview=value end)
-    button("hud","恢复位置",12,-294,140,function()
-        if self:Combat()~=false then return end
-        e.db.position=nil; self:Paint(self.frame,"ClearAllPoints"); self:Paint(self.frame,"SetPoint","CENTER",UIParent,"CENTER",0,0)
-        e.db.hud.x=nil; e.db.hud.y=nil
-        self:Paint(TEF.HUD.frame,"ClearAllPoints"); self:Paint(TEF.HUD.frame,"SetPoint","CENTER",UIParent,"CENTER",0,-155)
-    end)
-    self:CreateHintText(self.pages.hud,"左键主卡切换派发意图，右键打开设置。\n空白区域可拖动；战斗中布局变更延后。",12,-346,550)
-    self:CreateSectionCard(self.pages.hud,"技能图标与间距",0,-400,580,280)
-    local geometryRows={{"mainSize","当前技能大小",32,112},{"preview1Size","后续技能 1 大小",24,96},
-        {"preview2Size","后续技能 2 大小",24,96},{"gap1","当前与后续 1 间距",2,40},{"gap2","后续 1 与 2 间距",2,40}}
-    for i,row in ipairs(geometryRows) do
-        local field=row[1]
-        self:CreateSliderRow(self.pages.hud,row[2],14,-435-(i-1)*44,550,row[3],row[4],1,
-            function() return e.db.hud.geometry[field] end,
-            function(value) e.db.hud.geometry[field]=value; TEF.HUD:Layout() end,true)
-    end
-    self:Paint(self:Text(self.pages.hud,12,-702,550,"GameFontNormalLarge"),"SetText","标签样式")
-    local labelPanel=self:Frame("Frame",self.pages.hud)
-    self:Paint(labelPanel,"SetSize",580,450); self:Paint(labelPanel,"SetPoint","TOPLEFT",self.pages.hud,"TOPLEFT",0,-740)
+    self:Paint(self.readouts.hud,"SetText","")
+    self:CreateSectionCard(self.pages.hud,"标签样式",0,0,580,720)
+    local labelPanel=self:Frame("Frame",self.pages.hud); self.labelStylePanel=labelPanel
+    self:Paint(labelPanel,"SetSize",548,660); self:Paint(labelPanel,"SetPoint","TOPLEFT",self.pages.hud,"TOPLEFT",16,-48)
     TEF.HudStyles:BuildUI(self,labelPanel)
+    self:CreateSectionCard(self.pages.hud,"HUD位置与缩放",0,-736,580,248)
+    self.hudSlider=self:CreateSliderRow(self.pages.hud,"整体缩放",16,-784,548,.6,1.8,.1,
+        function() return e.db.hud.scale end,function(value) e.db.hud.scale=value; self:Layout() end)
+    self:CreateToggleRow(self.pages.hud,"锁定位置",16,-840,548,function() return e.db.hud.locked end,function(value) e.db.hud.locked=value end)
+    self:CreateToggleRow(self.pages.hud,"显示后续预览",16,-888,548,function() return e.db.hud.preview end,function(value) e.db.hud.preview=value end)
+    button("hud","恢复位置",16,-936,188,function()
+        self:ConfirmAction("确认将HUD恢复到默认位置？其他设置保留。",function()
+            if self:Combat()~=false then return end
+            e.db.position=nil; e.db.hud.x=nil; e.db.hud.y=nil
+            self:Paint(self.frame,"ClearAllPoints"); self:Paint(self.frame,"SetPoint","CENTER",UIParent,"CENTER",0,0)
+            self:Paint(TEF.HUD.frame,"ClearAllPoints"); self:Paint(TEF.HUD.frame,"SetPoint","CENTER",UIParent,"CENTER",0,-155)
+        end,"恢复位置")
+    end)
+    self:CreateSectionCard(self.pages.hud,"技能图标大小与间距",0,-1000,580,392)
+    local geometryRows={{"mainSize","当前技能大小",32,112},{"preview1Size","后续技能1大小",24,96},{"preview2Size","后续技能2大小",24,96},{"gap1","当前与后续1间距",2,40},{"gap2","后续1与2间距",2,40}}
+    self.hudGeometryControls={}
+    for i,row in ipairs(geometryRows) do local field=row[1]
+        local slider,input=self:CreateSliderRow(self.pages.hud,row[2],16,-1048-(i-1)*64,548,row[3],row[4],1,
+            function() return e.db.hud.geometry[field] end,function(value) e.db.hud.geometry[field]=value; TEF.HUD:Layout() end,true)
+        self.hudGeometryControls[field]={slider=slider,input=input}
+    end
+    self:CreateHintText(self.pages.hud,"左键主卡切换派发意图，右键打开设置；空白区域可拖动。战斗中布局变更延后。",16,-1416,548)
+    self:Paint(self.pages.hud,"SetHeight",1476)
     self:CreateSectionCard(self.pages.tek,"高级能力门禁",0,-138,580,238)
     self.signalToggle=self:CreateToggleRow(self.pages.tek,"TEAP输出",12,-176,556,function() return e.db.dispatch.signal end,function(v) TEF.Runtime:SetSignal(v) end)
     self.permissionToggle=self:CreateToggleRow(self.pages.tek,"TEK请求许可",12,-220,556,function() return e.db.dispatch.permission end,function(v) TEF.Runtime:SetPermission(v) end)
@@ -348,6 +373,7 @@ function UI:CreateSettings()
     button("diagnostics","旁路采样",326,-299,140,function() TEF.Research:Sample(e) end)
     self:CreateHintText(self.pages.diagnostics,"单步测试在设置打开时会被拒绝。关闭设置后 /tef dispatch。\n单步不撤销自动请求；设置内重置明确关闭用户意图。",4,-394,550)
     for _,panel in pairs(self.pageFrames or self.pages) do self:Paint(panel,"Hide") end
+    self.settingsLayoutSignature=nil
 end
 function UI:Create(engine)
     self.engine=engine; self.previews={}
