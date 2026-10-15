@@ -93,9 +93,9 @@ function U:SaveSkillGroup(draftOnly)
  if not group or #group.steps==0 then self:Paint(self.groupMessage,"SetText",why or "至少加入一个技能再保存。"); return false end
  local edit=self.groupEditing; local rows=edit.source=="manual" and self:DraftRows() or self.customDraft
  local parent=rows and rows[edit.index]; if not parent or not parent.group then return false end
- local row=G:Row(group,parent.strategies,parent.enabled)
+ local row=G:Row(group,parent.strategies,parent.enabled); row.behavior=parent.behavior
  if edit.source=="manual" then rows[edit.index]=row; self:WriteDraft(rows)
- else rows[edit.index]={group=group,spellID=row.spellID,enabled=row.enabled,strategies=row.strategies}; self.customFormIndex=nil; self:RefreshCustomAPL() end
+ else rows[edit.index]={group=group,spellID=row.spellID,enabled=row.enabled,strategies=row.strategies,behavior=row.behavior}; self.customFormIndex=nil; self:RefreshCustomAPL() end
  if draftOnly then self.groupDirty=false; self:Paint(self.groupMessage,"SetText","已暂存到父列表草稿；点击保存后生效。"); return true end
  local ok,reason
  if edit.source=="manual" then ok,reason=T.Profiles:Save(self.engine,edit.scene,rows)

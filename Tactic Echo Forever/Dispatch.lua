@@ -124,7 +124,8 @@ function D:ManualPolicy(e,step,live,groupEntry)
     if step.group and not groupEntry then return nil,"GROUP_WAIT_ENTRY" end
     if step.group and #step.group.steps==0 then return false,"GROUP_EMPTY" end
     if step.enabled==false then return false,"SEQUENCE_POLICY_DISABLED" end
-    if not step.strategies or #step.strategies==0 then
+    if e.groupPolicyBlocked then return nil,e.groupPolicyBlocked end
+    if not step.behavior and (not step.strategies or #step.strategies==0) then
         if not step.targetMode or step.targetMode=="auto" then return true end
     end
     local now=TEF.APL.State.Time(); local revision=TEF.APL.State.revision or 0
@@ -133,8 +134,8 @@ function D:ManualPolicy(e,step,live,groupEntry)
         and cached.state.revision==revision and now and cached.state.sampledAt and now>=cached.state.sampledAt and now-cached.state.sampledAt<.05 then
         return cached.allowed,cached.reason
     end
-    local row={spellID=step.spellID,enabled=true,moving="any",activity="any",distanceOp="any",cdmKind="none",strategies=step.strategies,targetMode=step.targetMode}
-    local state={generation=e.generation,receiptSerial=e.receiptSerial or 0,revision=revision,sampledAt=now,scene=e.scene,actions={},moving=TEF.APL.State.Boolean("IsPlayerMoving")}
+    local row={spellID=step.spellID,enabled=true,moving="any",activity="any",distanceOp="any",cdmKind="none",strategies=step.strategies,targetMode=step.targetMode,behavior=step.behavior}
+    local state={policyOwner=step,generation=e.generation,receiptSerial=e.receiptSerial or 0,revision=revision,sampledAt=now,scene=e.scene,actions={},moving=TEF.APL.State.Boolean("IsPlayerMoving")}
     local index=e.index
     TEF.APL.Custom:Sample(e,state,{row})
     if state.generation~=e.generation or state.receiptSerial~=(e.receiptSerial or 0) or index~=e.index or revision~=(TEF.APL.State.revision or 0) then return nil,"SEQUENCE_POLICY_STALE" end
@@ -307,6 +308,7 @@ function D:CastQueueWindow()
     -- Do not speculate across loop/completion, channel or Shoot boundaries.
     local nextStep=e.steps[nextIndex]
     if not nextStep or nextStep.group or nextStep.unverified or nextStep.spellID==5019 or nextStep.spellID==6603 or nextStep.spellID==75 or nextStep.spellID==5143 then return nil end
+    if (step.behavior and step.behavior.trigger~="continuous") or (nextStep.behavior and nextStep.behavior.trigger~="continuous") then return nil end
     if e:UsageEligibility(nextIndex)~=true then return nil end
     if generation~=e.generation or index~=e.index or serial~=(e.receiptSerial or 0)
         or self.initiation~=initiation or not self.continuous or not self.enabled
@@ -704,7 +706,7 @@ function D:Event(event,unit,id,guidRaw)
         local step=e.steps[e.index]
         local nextIndex=(e.stepCasts or 0)+1<step.repeatCount and e.index or e.index+1
         local nextStep=e.steps[nextIndex]
-        if nextStep and not nextStep.group and nextStep.spellID==spellValue and spellValue==self.initiation.spellID then
+        if nextStep and not nextStep.group and not step.behavior and not nextStep.behavior and nextStep.spellID==spellValue and spellValue==self.initiation.spellID then
             q={generation=e.generation,index=e.index,receiptSerial=e.receiptSerial or 0,
                 nextIndex=nextIndex,spellID=spellValue,originGUID=self.initiation.guid,
                 request=TEF.Runtime.requestSerial,implicitContinuous=true}
@@ -721,7 +723,8 @@ function D:Event(event,unit,id,guidRaw)
             if not q.guid then
                 if e.associationCount>=256 then runtime:Fault("CAST_QUEUE_IDENTITY_CAPACITY"); return true end
                 q.guid=guid; e.associationCount=e.associationCount+1
-                e.associations[guid]={generation=e.generation,index=q.nextIndex,spellID=q.spellID,receiptSerial=q.receiptSerial+1,usageContext=q.usageContext}
+                e.attemptSerial=(e.attemptSerial or 0)+1
+                e.associations[guid]={generation=e.generation,index=q.nextIndex,spellID=q.spellID,receiptSerial=q.receiptSerial+1,usageContext=q.usageContext,attempt=e.attemptSerial,request=q.request,policyRow=e.steps[q.nextIndex],policyStamp=TEF.APL.Custom:PolicyStamp(e,e.steps[q.nextIndex])}
             end
             self:Cancel("CAST_QUEUE_INITIATED"); return true
         elseif failure or event=="UNIT_SPELLCAST_SUCCEEDED" then

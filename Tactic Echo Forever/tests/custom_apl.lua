@@ -568,5 +568,6 @@ end)
 n=n+assert(loadfile((arg and arg[1] or ".") .. "/tests/strategy_conditions.lua"))("TEF",T,F)
 n=n+assert(loadfile((arg and arg[1] or ".") .. "/tests/skill_groups.lua"))("TEF",T,F)
 n=n+assert(loadfile((arg and arg[1] or ".") .. "/tests/public_conditions.lua"))("TEF",T,F)
+n=n+assert(loadfile((arg and arg[1] or ".") .. "/tests/strategy_lifecycle.lua"))("TEF",T,F)
 TEF_CUSTOM_APL_TEST_COUNT=n
 return n

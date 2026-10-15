@@ -20,7 +20,11 @@ function G:Clean(raw)
  if not got or not size or size>8 then return nil,"GROUP_CAPACITY" end
  for i=1,size do local _,kind=S.Field(S.Field(rows,i,"table"),"group","table"); if kind~="NO_DATA" then return nil,"GROUP_NESTED" end end
  local clean=T.Profiles:Clean(rows,8); if not clean then return nil,"GROUP_STEPS_INVALID" end
- return {name=name,rounds=rounds,steps=clean}
+ local maintain,maintainType=S.Field(record,"maintain","boolean")
+ local exit,exitType=S.Field(record,"exit","string")
+ if (maintainType~="PUBLIC" and maintainType~="NO_DATA") or (exitType~="PUBLIC" and exitType~="NO_DATA")
+  or (exit and exit~="next" and exit~="stop") then return nil,"GROUP_POLICY_INVALID" end
+ return {name=name,rounds=rounds,steps=clean,maintain=maintain==true,exit=exit or "next"}
 end
 function G:Row(group,strategies,enabled)
  local first=group.steps[1]
@@ -30,7 +34,7 @@ end
 function G:Restore(e,reason,finished)
  local run=e.groupRun; if not run then return end
  local prior=T.Runtime.internal; T.Runtime.internal=true; e:Invalidate(reason or "GROUP_RESTORED"); T.Runtime.internal=prior
- e.groupRun=nil
+ e.groupRun=nil; e.groupPolicyBlocked=nil; e.groupKeepSnapshot=nil
  e.steps,e.index,e.stepCasts,e.completed,e.running=run.steps,run.index,run.count,run.completed,run.running
  e.usageProgress,e.shootHandoff=run.usageProgress,run.shootHandoff
  e.skipStreak,e.policySkipStreak,e.attackActivationStreak=run.skipStreak,run.policySkipStreak,run.attackActivationStreak
@@ -42,18 +46,21 @@ function G:Restore(e,reason,finished)
  elseif finished then
   e.groupConsumed=e.groupConsumed or {}; e.groupConsumed[run.row]=true
  end
- e:Log("observed",reason=="GROUP_TARGET_CHANGED" and "GROUP_TARGET_ABORTED" or finished and "GROUP_COMPLETED" or "GROUP_RESTORED")
+ if reason=="GROUP_FINISHED" and run.successful and run.policyStamp==T.APL.Custom:PolicyStamp(e,run.row) then T.APL.Custom:PolicySucceeded(e,run.row) end
+ e:Log("observed",reason=="GROUP_TARGET_CHANGED" and "GROUP_TARGET_ABORTED" or reason=="GROUP_FINISHED" and "GROUP_COMPLETED" or reason or "GROUP_RESTORED")
 end
 function G:Begin(e,row,source,observedGUID)
  local combat=T.APL.State.Boolean("InCombatLockdown")
  if combat~=true and (not observedGUID or combat~=false) then return false end
  if e.groupRun or e.maintenanceActive or (not observedGUID and e:RecommendationLocked()) or not row.group or #row.group.steps==0 then return false end
  local group=self:Clean(row.group); if not group then return false end
+ for i,step in ipairs(group.steps) do T.APL.Custom.PolicyIdentities[step]=row.group.steps[i] end
  local steps=T.Engine.Validate(group.steps); if not steps then return false end
  local run={row=row,group=group,source=source,steps=e.steps,index=e.index,count=e.stepCasts,completed=e.completed,running=e.running,
   usageProgress=e.usageProgress,shootHandoff=e.shootHandoff,candidate=e.aplCandidate,round=1,
   skipStreak=e.skipStreak,policySkipStreak=e.policySkipStreak,attackActivationStreak=e.attackActivationStreak,
   target=target(),targetSerial=e.usageTargetSerial or 0}
+ run.policyStamp=T.APL.Custom:PolicyStamp(e,row)
  e.groupRun=run
  if observedGUID then
   -- 仅接续公开起始，输入仍由战斗门禁阻断；不在锁定施法中改选其他候选。
@@ -105,6 +112,17 @@ function G:Refresh(e)
   local exists=T.APL.State.Boolean("UnitExists","target")
   local dead=T.APL.State.Boolean("UnitIsDeadOrGhost","target")
   if run.targetSerial~=(e.usageTargetSerial or 0) or (run.target and identity and run.target~=identity) or exists==false or dead==true then self:Restore(e,"GROUP_TARGET_CHANGED",true); return end
+  if run.group.maintain then
+   local allowed=self:KeepAllowed(e,run)
+   e.groupPolicyBlocked=allowed==nil and "GROUP_KEEP_UNKNOWN" or nil
+   if allowed==nil then return end
+   if allowed==false then
+    local stop=run.group.exit=="stop"
+    self:Restore(e,"GROUP_KEEP_ENDED",true)
+    if stop then T.Runtime:Stop("GROUP_KEEP_STOPPED") end
+    return
+   end
+  end
   if e.completed then
    if run.round<run.group.rounds then
     if not T.Runtime:ReplaceRecommendation(run.group.steps) then return end
@@ -129,9 +147,23 @@ function G:Refresh(e)
   if row and row.group and T.APL:Allowed(e,e.aplCandidate.spellID)==true then self:Begin(e,row,"apl") end
  end
 end
+function G:KeepAllowed(e,run)
+ local now=T.APL.State.Time(); local old=e.groupKeepSnapshot
+ if old and now and old.sampledAt and now>=old.sampledAt and now-old.sampledAt<(T.APL.State.dirty and .05 or .20)
+  and old.generation==e.generation and old.receiptSerial==(e.receiptSerial or 0) and old.revision==(T.APL.State.revision or 0) then return old.result end
+ local row={spellID=run.row.spellID,enabled=true,strategies=run.row.strategies,moving="any",activity="any",cdmKind="none"}
+ local state={sampledAt=now,generation=e.generation,receiptSerial=e.receiptSerial or 0,revision=T.APL.State.revision or 0,
+  actions={},moving=T.APL.State.Boolean("IsPlayerMoving")}
+ T.APL.Custom:Sample(e,state,{row})
+ if state.generation~=e.generation or state.receiptSerial~=(e.receiptSerial or 0) or state.revision~=(T.APL.State.revision or 0) then return nil end
+ state.result=T.APL.Custom:CheckStrategies(state,row,1); e.groupKeepSnapshot=state
+ return state.result
+end
 function G:Admission(state,row,index)
+ if row.behavior then return true end
  local e=T.engine
  if not row.group or not e or not e.groupConsumed or not e.groupConsumed[row] then return true end
+ if state.readOnly then return false end
  local allowed=T.APL.Custom:CheckStrategies(state,row,index)
  if allowed==false then e.groupConsumed[row]=nil; return false end
  return false

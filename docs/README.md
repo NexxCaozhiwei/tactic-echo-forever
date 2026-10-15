@@ -10,3 +10,10 @@
 - [当前APL契约](<../Tactic Echo Forever/docs/APL_FOUNDATION_FIX_1.0.1.md>)
 - 插件历史与实机证据：`../Tactic Echo Forever/docs/`
 - TEF版本基线：`baselines/tef/`
+
+## 策略生命周期
+
+- [1.3.0基线](baselines/tef/BASELINE_1.3.0.md)。
+- [策略生命周期说明](../Tactic%20Echo%20Forever/docs/STRATEGY_LIFECYCLE.md)。
+
+- [1.3.1基线](baselines/tef/BASELINE_1.3.1.md)：策略条件滚动区边框修复。

@@ -3,6 +3,7 @@ local E,S=TEF.Engine,TEF.Safety
 
 function E:ClearUsage()
     self.usage=nil; self.usageProgress=nil; self.usageTarget=nil
+    self.policyRecords=nil; self.policyRecordCount=0; self.policyContext=nil; self.policyProgress=nil
     self.strategySuccess=nil; self.strategySuccessCount=0; self.strategySuccessSaturated=nil
 end
 function E:UsageTargetChanged()

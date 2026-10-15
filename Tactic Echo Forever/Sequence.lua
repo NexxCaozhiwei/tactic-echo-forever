@@ -13,10 +13,11 @@ local observed = {
 }
 TEF.Events = observed
 
-function Engine:Log(kind, reason, spellID, current, nextStep, event)
+function Engine:Log(kind, reason, spellID, current, nextStep, event, attempt, attemptRequest)
     local d = self.db.diagnostics
     if #d >= 128 then table.remove(d, 1); self.db.evicted = self.db.evicted + 1 end
     d[#d + 1] = { session = self.session, generation = self.generation,
+        time=TEF.APL.State.Time(),attempt=S.Public(attempt,"number"),attemptRequest=S.Public(attemptRequest,"number"),
         cycle=TEF.Runtime and TEF.Runtime.e==self and TEF.Runtime.cycle or nil,
         request=TEF.Runtime and TEF.Runtime.e==self and TEF.Runtime.requestSerial or nil,
         current = current or self.index, next = nextStep or self.index,
@@ -75,6 +76,8 @@ local function configuration(config)
             local clean=TEF.SkillGroups:Clean(group); if not clean then return nil end
             steps[i].group=clean
         end
+        if not TEF.APL.Custom:CopyBehavior(row,steps[i]) then return nil end
+        TEF.APL.Custom.PolicyIdentities[steps[i]]=TEF.APL.Custom.PolicyIdentities[row] or row
         steps[i].strategies=policies; steps[i].enabled=enabled~=false
         local mode,modeType=S.Field(row,"targetMode","string")
         if modeType~="NO_DATA" and (modeType~="PUBLIC" or not ({auto=true,self=true,friendly=true,enemy=true,ground=true})[mode]) then return nil end
@@ -120,6 +123,7 @@ function Engine.New(config, db)
                         scene=({single=true,multi=true,third=true})[S.Field(r,"scene","string")] and S.Field(r,"scene","string") or "single",
                         version=S.Field(r,"version","string"),
                         cycle=S.Field(r,"cycle","number"),request=S.Field(r,"request","number"),
+                        time=S.Field(r,"time","number"),attempt=S.ID(S.Field(r,"attempt","number")),attemptRequest=S.Field(r,"attemptRequest","number"),
                         castCount=S.Field(r,"castCount","number"),requiredCasts=S.Field(r,"requiredCasts","number"),
                         groupName=TEF.SkillGroups:LogName(r),groupRound=TEF.SkillGroups:LogNumber(r,"groupRound",99),groupIndex=TEF.SkillGroups:LogNumber(r,"groupIndex",8),
                         research=TEF.Research and TEF.Research.CleanSummary(S.Field(r,"research","table")) or nil,
@@ -299,8 +303,9 @@ function Engine:ConfirmAttackEnabled(generation,index,serial)
 end
 function Engine:Handle(generation, event, unitRaw, guidRaw, spellRaw)
     if not observed[event] then return end
+    local logAttempt,logRequest
     local function log(kind, reason, spellID, current, nextStep)
-        self:Log(kind, reason, spellID, current, nextStep, event)
+        self:Log(kind, reason, spellID, current, nextStep, event,logAttempt,logRequest)
     end
     if generation ~= self.generation then log("ignored", "STALE_GENERATION"); return end
     -- Independently classify each field. Never persist any raw argument.
@@ -312,6 +317,9 @@ function Engine:Handle(generation, event, unitRaw, guidRaw, spellRaw)
     if unit ~= "player" then return end
     if not spellID then log("unknown", "SPELL_" .. sr); return end
     if not guid then log("unknown", "IDENTITY_" .. gr, spellID); return end
+    local observedAssociation=self.associations[guid]
+    if observedAssociation then logAttempt,logRequest=observedAssociation.attempt,observedAssociation.request end
+    if TEF.Runtime and TEF.Runtime.ObserveTakeover then TEF.Runtime:ObserveTakeover(self,event,spellID) end
     if self.steps and self.steps[self.index] and self.steps[self.index].group then log("ignored","GROUP_NOT_ENTERED",spellID); return end
     if spellID==6603 or (self.steps and self.steps[self.index] and self.steps[self.index].spellID==6603) then
         log("observed","ATTACK_CAST_NOT_ACTIVATION",spellID); return
@@ -324,6 +332,8 @@ function Engine:Handle(generation, event, unitRaw, guidRaw, spellRaw)
         return
     end
     if event == "UNIT_SPELLCAST_SENT" or event == "UNIT_SPELLCAST_START" then
+        local policyRow=TEF.APL.Custom:CurrentPolicyRow(self)
+        if policyRow and policyRow.behavior and TEF.APL.Custom:PolicyAllowed(self,policyRow)~=true then log("ignored","POLICY_INITIATION_BLOCKED",spellID); return end
         if self.steps[self.index].matches[spellID] then self.shootHandoff=nil end
         local allowed,_,usageContext=self:UsageEligibility()
         if not allowed or generation~=self.generation then log("ignored","SEQUENCE_USAGE_RECEIPT_REJECTED",spellID); return end
@@ -333,7 +343,10 @@ function Engine:Handle(generation, event, unitRaw, guidRaw, spellRaw)
                 self.running=false; self:Invalidate("ASSOCIATION_CAPACITY_PAUSED"); return
             end
             self.associationCount=self.associationCount+1
-            self.associations[guid] = {generation=generation,spellID=spellID,index=self.index,receiptSerial=self.receiptSerial or 0,usageContext=usageContext}
+            self.attemptSerial=(self.attemptSerial or 0)+1
+            self.associations[guid] = {generation=generation,spellID=spellID,index=self.index,receiptSerial=self.receiptSerial or 0,usageContext=usageContext,policyRow=TEF.APL.Custom:CurrentPolicyRow(self),policyStamp=TEF.APL.Custom:PolicyStamp(self,TEF.APL.Custom:CurrentPolicyRow(self))}
+            local record=self.associations[guid]; record.attempt=self.attemptSerial; record.request=TEF.Runtime and TEF.Runtime.e==self and TEF.Runtime.requestSerial or nil
+            logAttempt,logRequest=record.attempt,record.request
             log("associated", "PUBLIC_INITIATION", spellID)
         end
         return
@@ -356,6 +369,7 @@ function Engine:Handle(generation, event, unitRaw, guidRaw, spellRaw)
         or a.receiptSerial~=(self.receiptSerial or 0) then
         log("ignored", "NO_CURRENT_INITIATION", spellID); return
     end
+    if (a.policyRow and a.policyRow.behavior and a.policyStamp==nil) or a.policyStamp~=TEF.APL.Custom:PolicyStamp(self,a.policyRow) then log("ignored","POLICY_RECEIPT_CONTEXT_CHANGED",spellID); return end
     if a.failed then log("ignored", "FAILED_INITIATION", spellID); return end
     local allowed,_,usageContext=self:UsageEligibility()
     if not allowed or generation~=self.generation or not self:SameUsageContext(a.usageContext,usageContext)
@@ -371,8 +385,10 @@ function Engine:Handle(generation, event, unitRaw, guidRaw, spellRaw)
     self.seen[guid], self.seenCount = true, self.seenCount+1
     self.receiptSerial=(self.receiptSerial or 0)+1
     self:MarkStrategySuccess(spellID)
+    if self.groupRun and not self.maintenanceActive then self.groupRun.successful=true end
     self.associations[guid]=nil; self.associationCount=self.associationCount-1
     if TEF.APL and TEF.APL:IsActive(self) then
+        TEF.APL.Custom:PolicySucceeded(self,a.policyRow)
         if self.maintenanceActive then TEF.Maintenance:Succeeded(self,spellID) end
         self.stepCasts=0
         log("match","APL_MATCH",spellID,self.index,self.index)
@@ -381,11 +397,14 @@ function Engine:Handle(generation, event, unitRaw, guidRaw, spellRaw)
     end
     self.usageProgress=usageContext
     self.stepCasts=self.stepCasts+1
+    if a.policyRow and a.policyRow.behavior and (a.policyRow.behavior.trigger=="target" or a.policyRow.behavior.trigger=="combat") then self.policyProgress={row=a.policyRow,stamp=a.policyStamp} end
     if self.stepCasts<self.steps[self.index].repeatCount then
         log("match","STEP_REPEAT_MATCH",spellID,self.index,self.index)
         if TEF.Dispatch then TEF.Dispatch:SequenceSucceeded(guid) end
         return
     end
+    TEF.APL.Custom:PolicySucceeded(self,a.policyRow)
+    self.policyProgress=nil
     self:MarkUsage(usageContext)
     local current, following = self.index, self.index+1
     if following > #self.steps then

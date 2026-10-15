@@ -292,6 +292,36 @@ function U:RefreshStrategyForm()
   self.strategyUpgrade=self:CreateActionButton(form,"替换为已学最高等级",0,y,390,function() self:UpgradeStrategySpell() end); y=y-40
   end
   self:CreateToggleRow(form,"启用当前技能",0,y,390,function() return row.enabled end,function(v) row.enabled=v end); y=y-40
+  local function behavior() if self.strategySource=="groupStep" then self.groupDirty=true end; if not row.behavior then row.behavior={trigger="continuous",scope="entry",emergency=false,after="resume"} end; return row.behavior end
+  local triggers={{"continuous","持续参与推荐"},{"edge","条件重新满足一次"},{"target","每个目标一次"},{"combat","每次战斗一次"}}
+  if row.group then table.insert(triggers,1,{"legacy","原组触发方式（完成后等待重触发）"}) end
+  self.strategyTriggerControls=self:CreateSelectRow(form,"触发方式（成功后消耗，未知不重新武装）",triggers,0,y,390,
+   function() return row.behavior and row.behavior.trigger or row.group and "legacy" or "continuous" end,function(v)
+    if v=="legacy" then row.behavior=nil; return end
+    local b=behavior(); b.trigger=v; if v=="edge" then b.scope="entry" end
+   end); y=y-68
+  self.strategyScopeControls=self:CreateSelectRow(form,"额度范围（条件触发一次仅支持本条目）",{{"entry","本条目"},{"spell","同方案同技能共享"}},0,y,390,
+   function() return row.behavior and row.behavior.scope or "entry" end,function(v)
+    if row.group and v=="entry" then return end
+    if v=="spell" and (row.group or (row.behavior and row.behavior.trigger=="edge")) then self:CustomMessage("技能组及条件重新满足一次仅支持本条目额度。"); return end
+    behavior().scope=v
+   end); y=y-68
+  self:CreateActionButton(form,"体检当前条目",0,y,390,function()
+   if not self:CommitCustomNumbers() then return end
+   local valid,errors,warnings=C:Audit({row},self.engine)
+   self:CustomMessage(not valid and errors or warnings~="" and warnings or "未发现可证明的条件矛盾。")
+  end); y=y-40
+  if self.strategySource=="maintenance" then
+   self.strategyEmergencyToggle=self:CreateToggleRow(form,"紧急规则（优先于普通维护，等待施法结束）",0,y,390,function() return row.behavior and row.behavior.emergency or false end,function(v) behavior().emergency=v end); y=y-40
+   self.strategyAfterControls=self:CreateSelectRow(form,"紧急技能成功后的原技能组",{{"resume","恢复原位置"},{"exit","结束原技能组"}},0,y,390,
+    function() return row.behavior and row.behavior.after or "resume" end,function(v) behavior().after=v end); y=y-68
+   self:CreateHintText(form,"紧急规则沿用已确认的增益／解控技能资格；不自动中断读条。",0,y,390); y=y-48
+  end
+  if row.group then
+   self:CreateToggleRow(form,"执行期间继续满足入口策略",0,y,390,function() return row.group.maintain end,function(v) row.group.maintain=v end); y=y-40
+   self:CreateSelectRow(form,"保持条件明确不满足时（未知等待）",{{"next","结束组并回到父列表"},{"stop","结束组并停止派发"}},0,y,390,
+    function() return row.group.exit or "next" end,function(v) row.group.exit=v end); y=y-68
+  end
   if not row.group then
   self:CreateSelectRow(form,"施放类型（自动无法确认时手动选择）",{{"auto","自动"},{"self","自身"},{"friendly","友方"},{"enemy","敌方"},{"ground","地面"}},0,y,390,
    function() return row.targetMode or "auto" end,function(v) row.targetMode=v end); y=y-68
@@ -399,7 +429,7 @@ end
 function U:CreateStrategyPanel()
  local panel=self:Frame("Frame",self.settings,"BackdropTemplate","TEF_StrategySettings"); self.strategyPanel=panel
  self:Paint(panel,"SetFrameStrata","DIALOG"); self:Paint(panel,"EnableMouse",true)
- self:Paint(panel,"SetPoint","TOPLEFT",self.settings,"TOPRIGHT",8,0); self:Paint(panel,"SetSize",430,720)
+ self:Paint(panel,"SetPoint","TOPLEFT",self.settings,"TOPRIGHT",8,0); self:Paint(panel,"SetSize",448,720)
  self:Paint(panel,"SetBackdrop",{bgFile="Interface\\Buttons\\WHITE8X8",edgeFile="Interface\\Buttons\\WHITE8X8",edgeSize=2})
  self:Paint(panel,"SetBackdropColor",.025,.035,.055,.98); self:Paint(panel,"SetBackdropBorderColor",.25,.45,.60,1)
  self.strategyTitle=self:Text(panel,15,-18,335,"GameFontNormal")
@@ -411,7 +441,8 @@ function U:CreateStrategyPanel()
  end) end)
  self:CreateHintText(panel,"每条策略内的条件共同满足（AND）",15,-91,335)
  self.strategyScroll=self:Frame("ScrollFrame",panel,"UIPanelScrollFrameTemplate")
- self:Paint(self.strategyScroll,"SetPoint","TOPLEFT",panel,"TOPLEFT",15,-126); self:Paint(self.strategyScroll,"SetSize",385,530)
+ -- 表单390宽，视口额外留4单位；外框再为原生滚动条保留独立通道。
+ self:Paint(self.strategyScroll,"SetPoint","TOPLEFT",panel,"TOPLEFT",16,-126); self:Paint(self.strategyScroll,"SetSize",394,530)
  self.strategySaveButton=self:CreateActionButton(panel,"保存方案",224,-675,190,function()
   if not self:CommitCustomNumbers() then return end
   if self.strategySource=="groupStep" then self:SaveSkillGroup(); return end

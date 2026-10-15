@@ -198,7 +198,15 @@ function UI:RefreshPage()
             local r=e.db.diagnostics[i]
             lines[#lines+1]=(r.event or "-") .. "\n" .. r.reason .. " · ID " .. (r.spellID or 0) .. " · " .. r.current .. "→" .. r.next .. " · 请求 " .. (r.request or 0) .. " / 轮 " .. (r.cycle or 0)
         end
-        self:Paint(self.readouts.diagnostics,"SetText",table.concat(lines,"\n"))
+        local report=self.diagnosticMode=="explain" and (self.diagnosticReport or "点击策略解释进行只读现场采样。") or TEF.APL.Custom:Timeline(e)
+        if self.diagnosticMode=="audit" then
+            local rows=TEF.Recommendation:BaseSource(e)=="manual" and e.db.profiles[e.scene] or TEF.APL.Custom:Rows(e,e.scene)
+            local valid,errors,warnings=TEF.APL.Custom:Audit(rows,e)
+            report="当前已保存方案体检\n" .. (valid and "未发现可证明的矛盾。" or errors) .. "\n" .. warnings
+        end
+        self:Paint(self.readouts.diagnostics,"SetText",report)
+        local _,lineCount=report:gsub("\n","\n")
+        self:Paint(self.pages.diagnostics,"SetHeight",math.max(600,100+(lineCount+1)*52))
     end
 end
 function UI:CreateSettings()
@@ -221,12 +229,12 @@ function UI:CreateSettings()
     end)
     self.navigation={}; self.pageTitles={}; self.pageFrames={}; self.pageScrolls={}
     self.pageHeading=self:Text(f,192,-80,592,"GameFontNormalLarge")
-    local tabs={{"overview","派发总览"},{"profiles","列表循环"},{"customapl","优先级推荐"},{"maintenance","增益维护"},{"scene","场景与验证"},{"hud","HUD外观"},{"tek","高级TEK"},{"diagnostics","诊断/测试"}}
+    local tabs={{"overview","派发总览"},{"profiles","列表循环"},{"customapl","优先级推荐"},{"maintenance","增益与紧急"},{"scene","场景与验证"},{"hud","HUD外观"},{"tek","高级TEK"},{"diagnostics","诊断/测试"}}
     local visibleIndex=0
     for i,tab in ipairs(tabs) do
         local key=tab[1]
         self.pageTitles[key]=tab[2]
-        local hidden=key=="scene" or key=="diagnostics"
+        local hidden=key=="scene"
         if not hidden then visibleIndex=visibleIndex+1 end
         self.navigation[key]=self:Button(f,tab[2],24,-80-(visibleIndex-1)*44,144,function() self:ShowPage(key) end)
         if hidden then self:Paint(self.navigation[key],"Hide") end
@@ -366,12 +374,16 @@ function UI:CreateSettings()
     self.castQueueLeadSlider=self:CreateSliderRow(self.pages.tek,"提前时间（秒，0关闭提前）",14,-306,550,0,.5,.05,
         function() return e.db.dispatch.castQueueLead end,function(v) TEF.Runtime:SetCastQueueLead(v) end)
     self:CreateHintText(self.pages.tek,"正常使用只需主卡或派发启停。以上是高级门禁。\n设置期间零Token，关闭后按模式恢复新请求。\n固定练习不保证ready。只保留一个信号源。\n提前时间0–0.5秒，0不提前；实际受客户端排队窗口上限约束。\n排队仅固定序列普通读条，不含APL或引导。\nTEK等待事件时可能重复输入；插件不证明已连接。",12,-400,550)
-    self:CreateDivider(self.pages.diagnostics,4,-277,560)
-    self.testSingle=button("diagnostics","单步派发测试",165,-299,150,function() TEF_RequestCurrent() end)
-    -- Settings always block input. Keep this developer action visibly disabled.
-    self:SetControlEnabled(self.testSingle,false)
-    button("diagnostics","旁路采样",326,-299,140,function() TEF.Research:Sample(e) end)
-    self:CreateHintText(self.pages.diagnostics,"单步测试在设置打开时会被拒绝。关闭设置后 /tef dispatch。\n单步不撤销自动请求；设置内重置明确关闭用户意图。",4,-394,550)
+    self:Paint(self.readouts.diagnostics,"ClearAllPoints"); self:Paint(self.readouts.diagnostics,"SetPoint","TOPLEFT",self.pages.diagnostics,"TOPLEFT",4,-104)
+    for i,option in ipairs({{"explain","策略解释"},{"audit","配置体检"},{"timeline","事件时间线"}}) do
+        local mode=option[1]
+        button("diagnostics",option[2],4+(i-1)*192,0,184,function() self.diagnosticMode=mode; if mode=="explain" then self.diagnosticReport=TEF.APL.Custom:Explain(e) end; self:RefreshPage() end)
+    end
+    self.testSingle=button("diagnostics","单步派发测试",4,-44,184,function() TEF_RequestCurrent() end)
+    self:SetControlEnabled(self.testSingle,false,"设置期间禁止派发；关闭设置后使用 /tef dispatch。")
+    self:CreateSelectRow(self.pages.tek,"施放非当前步骤技能后",{{"continue","保留原进度"},{"pause","暂停等待手动继续"}},12,-584,550,
+        function() return e.db.dispatch.takeover end,function(v) TEF.Runtime:Stop("TAKEOVER_SETTING_CHANGED"); e.db.dispatch.takeover=v end)
+    self:Paint(self.pages.tek,"SetHeight",680)
     for _,panel in pairs(self.pageFrames or self.pages) do self:Paint(panel,"Hide") end
     self.settingsLayoutSignature=nil
 end

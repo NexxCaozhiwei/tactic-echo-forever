@@ -1,5 +1,5 @@
 local addonName, TEF = ...
-local VERSION = "1.2.4"
+local VERSION = "1.3.1"
 local S = TEF.Safety
 local engine, frame
 
@@ -191,6 +191,14 @@ SlashCmdList.TEF=function(raw)
     elseif command=="test" then TEF.UI:Paint(TEF.UI.frame,"Show")
     elseif command=="show" or command=="hud" or command=="" then TEF.UI:Paint(TEF.HUD.frame,"Show")
     elseif command=="hide" or command=="hidehud" then TEF.UI:Paint(TEF.UI.frame,"Hide"); TEF.UI:Paint(TEF.HUD.frame,"Hide")
+    elseif command=="explain" then printSafe(TEF.APL.Custom:Explain(engine))
+    elseif command=="check" then
+        local rows=TEF.Recommendation:BaseSource(engine)=="manual" and engine.db.profiles[engine.scene] or TEF.APL.Custom:Rows(engine,engine.scene)
+        local valid,errors,warnings=TEF.APL.Custom:Audit(rows,engine)
+        printSafe((valid and "配置体检未发现可证明的矛盾。" or errors) .. "\n" .. warnings)
+    elseif command=="timeline" then printSafe(TEF.APL.Custom:Timeline(engine))
+    elseif command=="skip" or command=="endgroup" or command=="restartgroup" or command=="recheck" then
+        local _,message=TEF.Runtime:Intervene(command); printSafe(message)
     elseif command=="diag" then
         printSafe("session=" .. engine.session .. " generation=" .. engine.generation
             .. " step=" .. engine.index .. " logs=" .. #engine.db.diagnostics .. " evicted=" .. engine.db.evicted)

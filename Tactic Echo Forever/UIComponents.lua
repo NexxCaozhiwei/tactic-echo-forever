@@ -159,12 +159,17 @@ function U:LayoutSettings()
  local panelHeight=math.min(880,(height-32)/scale); self.settingsHeight=panelHeight
  local editing=false
  for _,panel in pairs({strategy=self.strategyPanel,group=self.groupPanel}) do if panel then local ok,raw=self:Invoke(panel,"IsShown"); if ok and S.Public(raw,"boolean")==true then editing=true end end end
- local side=width>=1258*scale+32; self.editorOverlay=not side
+ local editorWidth=448
+ for _,panel in pairs({strategy=self.strategyPanel,group=self.groupPanel}) do if panel then
+  local ok,raw=self:Invoke(panel,"GetWidth"); local w=ok and S.Public(raw,"number")
+  if w and w>0 then editorWidth=math.max(editorWidth,w) end
+ end end
+ local side=width>=(820+8+editorWidth)*scale+32; self.editorOverlay=not side
  local signature=width .. ":" .. height .. ":" .. tostring(editing) .. ":" .. tostring(side)
  if self.settingsLayoutSignature==signature then self.fittingSettings=false; return end
  self.settingsLayoutSignature=signature
  self:Call(self.settings,"SetScale",scale); self:Call(self.settings,"SetHeight",panelHeight)
- self:Call(self.settings,"ClearAllPoints"); self:Call(self.settings,"SetPoint","CENTER",UIParent,"CENTER",editing and side and -219*scale or 0,0)
+ self:Call(self.settings,"ClearAllPoints"); self:Call(self.settings,"SetPoint","CENTER",UIParent,"CENTER",editing and side and -(editorWidth+8)*scale/2 or 0,0)
  self:Call(self.confirmationBody,"SetScale",scale)
  for _,panel in pairs({strategy=self.strategyPanel,group=self.groupPanel}) do if panel then
   self:Call(panel,"SetHeight",panelHeight); self:Call(panel,"ClearAllPoints"); self:Call(panel,"SetPoint",side and "TOPLEFT" or "CENTER",self.settings,side and "TOPRIGHT" or "CENTER",side and 8 or 0,0)

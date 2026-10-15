@@ -74,6 +74,7 @@ function P:Clean(raw, limit)
             rows[i].targetMode=mode
         end
         end
+        if not TEF.APL.Custom:CopyBehavior(row,rows[i]) then return nil end
     end
     return rows
 end
@@ -233,6 +234,7 @@ function P:Save(e, key, rows)
     if not e.profileKey then return false,"PROFILE_IDENTITY_UNKNOWN" end
     local clean = self:Clean(rows)
     if not clean then return false,"CONFIG_INVALID" end
+    local valid,errors=TEF.APL.Custom:Audit(clean); if not valid then return false,errors end
     e:Reset()
     e.db.profiles[key] = clean
     e.db.profileMigrationConflicts[e.classToken]=nil

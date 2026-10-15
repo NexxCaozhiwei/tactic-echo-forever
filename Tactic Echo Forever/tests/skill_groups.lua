@@ -341,4 +341,22 @@ test("compact_list_controls_stay_inside_row_bounds",function()
  T.UI:CloseSkillGroup(true)
 end)
 
+test("strategy_viewport_preserves_border_and_scrollbar_gutter",function()
+ F.runtime(); T.UI:ShowPage("customapl"); T.UI:AddCustomSpell(143)
+ local viewport,form,panel=T.UI.strategyScroll,T.UI.strategyForm,T.UI.strategyPanel
+ assert(viewport.width>=form.width+4)
+ local left=viewport.point[4]; assert(left>=16)
+ assert(panel.width-left-viewport.width>=32)
+ local oldWidth,oldHeight=UIParent.GetWidth,UIParent.GetHeight
+ local oldStrategyWidth,oldGroupWidth=panel.GetWidth,T.UI.groupPanel.GetWidth
+ panel.GetWidth=function() return panel.width end; T.UI.groupPanel.GetWidth=function() return 432 end
+ UIParent.GetHeight=function() return 1000 end
+ for _,case in ipairs({{960,true},{1296,true},{1600,false}}) do
+  UIParent.GetWidth=function() return case[1] end
+  T.UI.settingsLayoutSignature=nil; T.UI:LayoutSettings(); eq(T.UI.editorOverlay,case[2])
+ end
+ UIParent.GetWidth,UIParent.GetHeight=oldWidth,oldHeight
+ panel.GetWidth,T.UI.groupPanel.GetWidth=oldStrategyWidth,oldGroupWidth
+ T.UI.settingsLayoutSignature=nil
+end)
 return n

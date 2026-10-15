@@ -1,6 +1,6 @@
 local _,T=...
 local A,S=T.APL,T.Safety
-local C={}; A.Custom=C
+local C={PolicyIdentities=setmetatable({}, {__mode="k"})}; A.Custom=C
 -- 自定义增益技能独立授权，不改变内置伤害规则或技能等级选择。
 C.AdditionalActions={arcane_intellect=true}
 function C:SupportsName(name,id)
@@ -13,6 +13,7 @@ function C:SupportsName(name,id)
  return nil
 end
 local fields={group=true,targetMode=true,strategies=true,spellID=true,enabled=true,moving=true,enemyMin=true,enemyMax=true,activity=true,experimentalEnemies=true,invalid=true,requireReady=true,
+ behavior=true,
  manaOp=true,manaValue=true,distanceOp=true,distanceValue=true,cdmKind=true,cdmState=true,cdmSpellID=true}
 local classes={"MAGE","WARRIOR","PALADIN","HUNTER","ROGUE","PRIEST","SHAMAN","WARLOCK","DRUID","DEATHKNIGHT","MONK","DEMONHUNTER","EVOKER"}
 function C:ClassSupported(class) for _,value in ipairs(classes) do if value==class then return true end end; return false end
@@ -95,6 +96,8 @@ function C.CleanRows(raw)
  if not ok or size>16 then return {{enabled=false,invalid="CUSTOM_CAPACITY"}} end
  for i=1,size do
   local r=S.Field(raw,i,"table"); local row={spellID=r and S.ID(S.Field(r,"spellID","number")),enabled=true,moving="any",activity="any",distanceOp="any",cdmKind="none",cdmState="inactive"}
+  local behavior,behaviorError=C.CleanBehavior(r); row.behavior=behavior
+  if behaviorError then row.invalid=behaviorError end
   if not r or not row.spellID then row.invalid="CUSTOM_ID_INVALID" end
   if r then
    local mode,classification=S.Field(r,"targetMode","string")
@@ -150,6 +153,7 @@ function C.CleanRows(raw)
     else row.invalid="GROUP_EMPTY" end
    end
   end
+  if behaviorError then row.invalid=behaviorError end
   rows[#rows+1]=row
  end
  return rows
@@ -190,6 +194,7 @@ end
 function C:Save(e,rows,scene,class)
  if class~=e.classToken or not self:ClassSupported(class) or (scene~="single" and scene~="multi" and scene~="third") then return false,"CUSTOM_PROFILE_UNKNOWN" end
  local clean=C.CleanRows(rows)
+ local valid,errors=self:Audit(clean); if not valid then return false,errors end
  for _,r in ipairs(clean) do if r.invalid then return false,r.invalid end end
  e:Reset(); e.db.apl.custom[class]=e.db.apl.custom[class] or {}
  e.db.apl.custom[class][scene]=clean; e.db.apl.template="custom"
@@ -236,6 +241,7 @@ function C:Read(id,requireReady,targetMode)
  return action
 end
 function C:SampleStrategies(state,rows,e)
+ state.engine=e
  local requests={}; local countNeeded=false; local distanceNeeded=false
  state.classToken=e.classToken
  state.otherKnown={}; state.succeeded={}; state.nearbyEnemies={}
@@ -420,6 +426,12 @@ function C:Check(state,row,index)
  if action.reason=="CUSTOM_TARGET_UNKNOWN" or action.reason=="CUSTOM_PASSIVE_UNKNOWN" or action.reason=="CUSTOM_METADATA_UNKNOWN" then return nil,"UNKNOWN:custom:" .. action.reason end
  if row.group and not T.SkillGroups:Admission(state,row,index) then return false,"GROUP_CONSUMED" end
  local strategies,strategyReason=self:CheckStrategies(state,row,index)
+ if row.behavior and state.engine then
+  local owner=state.policyOwner or row
+  self:ObservePolicy(state.engine,owner,state,index)
+  local allowed,why=self:PolicyAllowed(state.engine,owner,state.readOnly)
+  if allowed==false then return false,why elseif allowed==nil then return nil,why end
+ end
  if strategies==false then return false,strategyReason end
  if strategies==nil then unknown=strategyReason end
  local function require(value,wanted,why)
@@ -493,5 +505,256 @@ function C:Ledger(e)
   end
   if a and a.cdmScanReason then lines[#lines+1]="CDM扫描：跳过身份未知帧 " .. (a.cdmSkippedFrames or 0) .. "；仅精确匹配帧决定该技能状态。" end
  end
+ return table.concat(lines,"\n")
+end
+
+-- 行为只消费精确成功；诊断和未知采样均不得重新授权。
+function C.CleanBehavior(row)
+ local raw,status=S.Field(row,"behavior","table")
+ if status=="NO_DATA" then return nil end
+ if status~="PUBLIC" or not onlyFields(raw,{trigger=true,scope=true,emergency=true,after=true},4) then return nil,"BEHAVIOR_INVALID" end
+ local trigger=S.Field(raw,"trigger","string") or "continuous"
+ local scope=S.Field(raw,"scope","string") or "entry"
+ local after=S.Field(raw,"after","string") or "resume"
+ for _,field in ipairs({"trigger","scope","after"}) do local _,kind=S.Field(raw,field,"string"); if kind~="PUBLIC" and kind~="NO_DATA" then return nil,"BEHAVIOR_INVALID" end end
+ local emergency,why=S.Field(raw,"emergency","boolean")
+ local _,groupType=S.Field(row,"group","table")
+ if not ({continuous=true,edge=true,target=true,combat=true})[trigger] or not ({entry=true,spell=true})[scope]
+  or not ({resume=true,exit=true})[after] or (why~="PUBLIC" and why~="NO_DATA") or (scope=="spell" and (trigger=="edge" or groupType~="NO_DATA")) then return nil,"BEHAVIOR_INVALID" end
+ return {trigger=trigger,scope=scope,emergency=emergency==true,after=after}
+end
+function C:CopyBehavior(from,to)
+ local b,why=self.CleanBehavior(from); if why then return false,why end
+ to.behavior=b; return true
+end
+function C:LifecycleContext(e)
+ local combat=A.State.Boolean("InCombatLockdown")
+ local p=e.policyContext or {epoch=1}
+ if p.lastCombat==true and combat==false then p.epoch=p.epoch+1 end
+ -- 未知不制造战斗边界，也不清空额度。
+ if combat~=nil then p.lastCombat=combat end
+ p.combat= combat; e.policyContext=p
+ return p
+end
+function C:PolicyRecord(e,row,create)
+ local b=row.behavior; if not b then return nil end
+ local key=self.PolicyIdentities[row] or row
+ if b.scope=="spell" then key=(e.maintenanceActive and "maintenance" or e.groupRun and e.groupRun.source or T.Recommendation:BaseSource(e)) .. ":" .. (e.classToken or "?") .. ":" .. (e.scene or "?") .. ":" .. row.spellID .. ":" .. b.trigger end
+ if not e.policyRecords then if not create then return nil end; e.policyRecords={} end
+ local r=e.policyRecords[key]
+ if not r and create then
+  if (e.policyRecordCount or 0)>=256 then return nil end
+  r={}; e.policyRecords[key]=r; e.policyRecordCount=(e.policyRecordCount or 0)+1
+ end
+ return r
+end
+function C:ObservePolicy(e,row,state,index)
+ if not row.behavior or not T.Runtime or T.Runtime.e~=e or not T.Runtime.intent or (T.UI and T.UI.settingsOpen) or state.readOnly then return end
+ if state.generation and (state.generation~=e.generation or state.receiptSerial~=(e.receiptSerial or 0) or state.revision~=(A.State.revision or 0)) then return end
+ local r=self:PolicyRecord(e,row,true); if not r then return end
+ -- 仅策略明确不满足重新武装；冷却、资源和范围变化不算新触发。
+ if row.behavior.trigger=="edge" and self:CheckStrategies(state,row,index)==false then r.consumed=nil end
+end
+function C:PolicyAllowed(e,row,readOnly)
+ local b=row.behavior; if not b or b.trigger=="continuous" then return true end
+ if row.spellID==6603 then return nil,"POLICY_SUCCESS_UNSUPPORTED" end
+ local r=self:PolicyRecord(e,row,false)
+ if r and r.blocked then return nil,"POLICY_CONTEXT_LOST" end
+ if not r and (e.policyRecordCount or 0)>=256 then return nil,"POLICY_CAPACITY" end
+ if b.trigger=="edge" then return not (r and r.consumed),"POLICY_EDGE_CONSUMED" end
+ if b.trigger=="combat" then
+  local p=e.policyContext
+  if not p or p.combat~=true or A.State.Boolean("InCombatLockdown")~=true then return nil,"POLICY_COMBAT_UNKNOWN_OR_OUTSIDE" end
+  if e.policyProgress and e.policyProgress.row==row and e.policyProgress.stamp~=p.epoch then return nil,"POLICY_PROGRESS_SCOPE_CHANGED" end
+  return not (r and r.epochs and r.epochs[p.epoch]),"POLICY_COMBAT_CONSUMED"
+ end
+ local key
+ if readOnly then
+  if A.State.Boolean("UnitExists","target")==true then
+   local ok,raw=S.Call("UnitGUID","target"); local guid=ok and S.Identity(raw)
+   local cached=e.usageTarget
+   key=cached and cached.selection==(e.usageTargetSerial or 0) and cached.key or guid and "GUID:" .. guid or "SELECTION:" .. (e.usageTargetSerial or 0)
+  end
+ else key=e:UsageTargetIdentity() end
+ if not key then return nil,"POLICY_TARGET_UNKNOWN" end
+ if e.policyProgress and e.policyProgress.row==row and e.policyProgress.stamp~=key then return nil,"POLICY_PROGRESS_SCOPE_CHANGED" end
+ if r and (r.targetCount or 0)>=256 and not (r.targets and r.targets[key]) then return nil,"POLICY_TARGET_CAPACITY" end
+ return not (r and r.targets and r.targets[key]),"POLICY_TARGET_CONSUMED"
+end
+function C:ReconcilePolicyProgress(e)
+ local p=e.policyProgress
+ if not p or e.maintenanceActive then return end
+ local row=e.steps and e.steps[e.index]
+ if row~=p.row then e.policyProgress=nil; return end
+ local generation,index=e.generation,e.index
+ local stamp=self:PolicyStamp(e,row)
+ if generation~=e.generation or index~=e.index or stamp==nil or stamp==p.stamp then return end
+ local prior=T.Runtime.internal; T.Runtime.internal=true; e:Invalidate("POLICY_PROGRESS_SCOPE_CHANGED"); T.Runtime.internal=prior
+ e.stepCasts=0; e.policyProgress=nil
+end
+function C:PolicySucceeded(e,row)
+ if not row or not row.behavior or row.behavior.trigger=="continuous" then return end
+ local r=self:PolicyRecord(e,row,true); if not r then return end
+ local mode=row.behavior.trigger
+ if mode=="edge" then r.consumed=true
+ elseif mode=="combat" then
+  local p=e.policyContext; if not p or p.combat~=true then r.blocked=true; return end
+  r.epochs={[p.epoch]=true}
+ else
+  local key=e:UsageTargetIdentity(); if not key then r.blocked=true; return end
+  r.targets=r.targets or {}
+  if not r.targets[key] then
+   if (r.targetCount or 0)>=256 then r.blocked=true; return end
+   r.targets[key]=true; r.targetCount=(r.targetCount or 0)+1
+  end
+ end
+end
+function C:CurrentPolicyRow(e)
+ if e.maintenanceActive then return T.Maintenance:Rows(e)[e.aplCandidate and e.aplCandidate.customIndex or 0] end
+ if T.Recommendation:Source(e)=="apl" then return self:Rows(e)[e.aplCandidate and e.aplCandidate.customIndex or 0] end
+ return e.steps and e.steps[e.index]
+end
+function C:PolicyStamp(e,row)
+ if not row or not row.behavior then return "none" end
+ local mode=row.behavior.trigger
+ if mode=="target" then return e:UsageTargetIdentity() end
+ if mode=="combat" then local p=e.policyContext; return p and p.combat==true and A.State.Boolean("InCombatLockdown")==true and p.epoch or nil end
+ return "stable"
+end
+local conditionLabels={moving="移动",combat="战斗",usable="技能可用与资源",range="技能范围",distance="目标距离",enemies="可见敌人数",
+ nearbyEnemies="自身范围内可见敌人数",rangedEnemies="自身范围内可见敌人数",comboPoints="连击点",cdmStacks="CDM层数",
+ cdmBuff="CDM增益活动",cdmCooldown="CDM冷却活动",cooldown="技能冷却活动",learned="已学技能",succeeded="精确成功记录",targetType="目标类型",lossOfControl="失控状态"}
+local function publicText(v)
+ local n=S.Public(v,"number"); if n then return tostring(n) end
+ local b,why=S.Public(v,"boolean"); if why=="PUBLIC" then return b and "是" or "否" end
+ local s=S.Public(v,"string"); if s and #s<=96 and not s:find("[|%c]") then return s end
+ return "未知"
+end
+function C:ConditionView(state,row,index,c)
+ local a=state and state.actions and state.actions["custom_" .. index] or {}
+ local expected=c.value==nil and "" or (c.value and "是" or "否")
+ if c.min or c.max then expected=(c.min or "不限") .. "～" .. (c.max or "不限") end
+ if c.op then expected=c.op .. " " .. c.threshold end
+ if c.target then expected=c.target end
+ if c.control then expected=c.control .. " " .. expected end
+ local value
+ if state then
+  if c.kind=="moving" then value=state.moving elseif c.kind=="combat" then value=state.combat and state.combat.in_combat
+  elseif c.kind=="range" then value=a.in_range elseif c.kind=="cooldown" then value=a.active
+  elseif c.kind=="usable" then if a.usable==false or a.power_ok==false then value=false elseif a.usable==true and a.power_ok==true then value=true end
+  elseif c.kind=="distance" then value=A.PublicConditions.DistanceText(state)
+  elseif c.kind=="targetType" then value=state.targetType
+  elseif c.kind=="enemies" then value=state.enemy_count
+  elseif c.kind=="comboPoints" then value=state.comboPointProbe and state.comboPointProbe.value
+  elseif c.kind=="learned" then value=state.otherKnown and state.otherKnown[c.spellID or row.spellID]
+  elseif c.kind=="succeeded" then value=state.succeeded and state.succeeded[c.spellID or row.spellID]
+  elseif c.kind=="lossOfControl" then value=A.State.ControlMatch(state.controlProbe,c.control)
+  elseif c.kind=="nearbyEnemies" or c.kind=="rangedEnemies" then
+   local v=state.nearbyEnemies and state.nearbyEnemies[c.radius or 10]; if v and v.state=="PUBLIC_BOUNDS" then value=v.lower .. "～" .. v.upper end
+  elseif c.kind=="cdmStacks" or c.kind=="cdmBuff" or c.kind=="cdmCooldown" then
+   local v=a.strategyCDM and a.strategyCDM[(c.kind=="cdmCooldown" and "cooldown:" or "buff:") .. (c.spellID or row.spellID)]
+   if v then if c.kind=="cdmStacks" then value=v.stacks else value=v.value end end
+  end
+ end
+ local result; if state then result=self:StrategyCondition(state,row,index,c) end
+ return (conditionLabels[c.kind] or c.kind) .. "：要求 " .. expected .. "；采样 " .. publicText(value) .. "；" .. (result==nil and "未知，阻断" or result and "满足" or "不满足")
+end
+-- 体检只检查可证明的配置问题，不用瞬时资源或未知API拒绝保存。
+function C:Audit(rows,e)
+ local errors,warnings={},{}
+ local checked,budget={},0
+ local function inspect(row,path)
+  local combined={}
+  if e and row.spellID and not row.group and not checked[row.spellID] and budget<64 then
+   checked[row.spellID]=true; budget=budget+1
+   if A.State.Boolean("C_SpellBook.IsSpellKnown",row.spellID)==false then warnings[#warnings+1]=path .. "：精确技能ID当前未学，请检查技能等级或替换。" end
+  end
+  if row.spellID==6603 and row.behavior and row.behavior.trigger~="continuous" then errors[#errors+1]=path .. "：自动攻击按开启状态推进，不支持按精确施法成功计数的触发方式。" end
+  for si,strategy in ipairs(row.strategies or {}) do
+   local issues=strategy.mode=="use" and errors or warnings
+   local terms=strategy.mode=="use" and combined or {}
+   for _,c in ipairs(strategy.conditions or {}) do
+    local key=c.kind .. ":" .. (c.spellID or row.spellID or 0) .. ":" .. (c.radius or 0) .. ":" .. (c.control or "")
+    local current=terms[key] or {}; terms[key]=current
+    local fixed=c.target or c.value
+    if c.target~=nil or c.value~=nil then
+     if current.has and current.fixed~=fixed then issues[#issues+1]=path .. "：" .. (conditionLabels[c.kind] or c.kind) .. "要求互相矛盾。" end
+     current.has=true; current.fixed=fixed
+    end
+    local low,high=c.min,c.max
+    if c.op=="ge" or c.op=="gt" then low=c.threshold elseif c.op=="le" or c.op=="lt" then high=c.threshold elseif c.op=="eq" then low,high=c.threshold,c.threshold end
+    if low then
+     if not current.low or low>current.low then current.low,current.lowOpen=low,c.op=="gt"
+     elseif low==current.low and c.op=="gt" then current.lowOpen=true end
+    end
+    if high then
+     if not current.high or high<current.high then current.high,current.highOpen=high,c.op=="lt"
+     elseif high==current.high and c.op=="lt" then current.highOpen=true end
+    end
+    if c.op=="ne" then current.excluded=current.excluded or {}; current.excluded[c.threshold]=true end
+    if current.low and current.high and (current.low>current.high or (current.low==current.high and (current.lowOpen or current.highOpen or current.excluded and current.excluded[current.low]))) then
+     issues[#issues+1]=path .. "：" .. (conditionLabels[c.kind] or c.kind) .. "没有共同取值。"
+    end
+   end
+  end
+  if row.behavior and row.behavior.trigger=="edge" and #(row.strategies or {})==0 then warnings[#warnings+1]=path .. "：无条件的一次触发只能在重置后再次执行。" end
+  if row.group then for i,step in ipairs(row.group.steps) do inspect(step,path .. "/组内" .. i) end end
+ end
+ for i,row in ipairs(rows or {}) do
+  inspect(row,"第" .. i .. "项")
+  if row.enabled~=false and not row.group and #(row.strategies or {})==0 then warnings[#warnings+1]="第" .. i .. "项无策略条件，可能优先遮蔽后续条目；仍受技能资格限制。" end
+ end
+ return #errors==0,table.concat(errors,"\n"),table.concat(warnings,"\n")
+end
+function C:Explain(e)
+ local source=T.Recommendation:Source(e)
+ local rows=source=="manual" and (e.steps or {}) or self:Rows(e)
+ if source=="manual" then
+  local views={}
+  for i,row in ipairs(rows) do
+   local v={spellID=row.spellID,enabled=row.enabled~=false,group=row.group,strategies=row.strategies,behavior=row.behavior,targetMode=row.targetMode,
+    moving="any",activity="any",distanceOp="any",cdmKind="none"}
+   self.PolicyIdentities[v]=self.PolicyIdentities[row] or row; views[i]=v
+  end
+  rows=views
+ end
+ local now=A.State.Time()
+ local state={readOnly=true,generation=e.generation,receiptSerial=e.receiptSerial or 0,revision=A.State.revision or 0,
+  sampledAt=now,actions={},moving=A.State.Boolean("IsPlayerMoving")}
+ self:Sample(e,state,rows)
+ if state.generation~=e.generation or state.receiptSerial~=(e.receiptSerial or 0) or state.revision~=(A.State.revision or 0) then state=nil end
+ local lines={"策略解释（只读现场采样，不授予派发资格）", "运行：" .. (T.Runtime.reason or "未启动") .. "；来源：" .. source}
+ if not state then lines[#lines+1]="采样期间状态变化，本次结果未知。" end
+ for i,row in ipairs(rows) do
+  local sampled=state and state.actions and state.actions["custom_" .. i]
+  local matching=sampled and sampled.spellID==row.spellID
+  lines[#lines+1]=i .. ". ID " .. row.spellID .. (row.group and " 技能组" or "")
+  if state then
+   local allowed,reason=self:Check(state,row,i)
+   lines[#lines+1]=(allowed==nil and "未知，阻断" or allowed and "条件符合" or "当前不符合") .. " · " .. (reason or "UNKNOWN")
+   if source=="manual" and i~=e.index then lines[#lines+1]="当前列表尚未执行到此步。" end
+  end
+  if matching then
+   local names={known="已学",usable="可用",power_ok="资源足够",in_range="技能范围",loss_control_clear="无技能失控阻断"}
+   for _,field in ipairs({"known","usable","power_ok","in_range","loss_control_clear"}) do lines[#lines+1]=names[field] .. "=" .. publicText(sampled[field]) end
+  end
+  for _,strategy in ipairs(row.strategies or {}) do
+   lines[#lines+1]=strategy.mode=="skip" and "跳过策略（全部满足才跳过）" or "使用策略（全部满足才允许）"
+   for _,condition in ipairs(strategy.conditions) do lines[#lines+1]=self:ConditionView(matching and state or nil,row,i,condition) end
+  end
+ end
+ local _,errors,warnings=self:Audit(rows,e)
+ lines[#lines+1]="配置体检：" .. (errors~="" and errors or "未发现可证明的条件矛盾。")
+ if warnings~="" then lines[#lines+1]=warnings end
+ return table.concat(lines,"\n")
+end
+function C:Timeline(e)
+ local lines={"运行事件时间线（最近24条，输入请求不等于游戏成功）"}
+ for i=math.max(1,#e.db.diagnostics-23),#e.db.diagnostics do
+  local r=e.db.diagnostics[i]
+  lines[#lines+1]="会话 " .. publicText(r.session) .. " / 起始身份 " .. publicText(r.attempt) .. " / 起始请求 " .. publicText(r.attemptRequest) .. " / 时间 " .. publicText(r.time) .. "\n代次 " .. publicText(r.generation) .. " / 请求 " .. publicText(r.request) .. " / 轮 " .. publicText(r.cycle)
+   .. " · ID " .. publicText(r.spellID) .. " · " .. publicText(r.reason) .. " · " .. publicText(r.current) .. "→" .. publicText(r.next)
+ end
+ lines[#lines+1]="桌面端是否真正执行须结合TEK日志核对；游戏成功仅认精确回执。"
  return table.concat(lines,"\n")
 end

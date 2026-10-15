@@ -79,9 +79,14 @@ function M:Restore(e,reason)
  e.skipStreak,e.policySkipStreak,e.usageProgress,e.shootHandoff=base.skipStreak,base.policySkipStreak,base.usageProgress,base.shootHandoff
  if e.shootHandoff then e.shootHandoff.generation=e.generation end
  e.aplCandidate=base.aplCandidate; e.aplSnapshot=nil; e.aplPreviewSnapshot=nil; A:Invalidate()
+ if e.emergencyExitGroup then
+  e.emergencyExitGroup=nil
+  if e.groupRun then T.SkillGroups:Restore(e,"GROUP_EMERGENCY_EXIT",true) end
+ end
 end
 function M:Save(e,rows)
  local clean=A.Custom.CleanRows(rows); local seen={}
+ local valid,errors=A.Custom:Audit(clean); if not valid then return false,errors end
  for _,row in ipairs(clean) do
   if row.invalid or not self:BuffSpell(row.spellID) or seen[row.spellID] then return false,"仅接受可确认的增益或已支持的解控法术，且精确技能ID不得重复。" end
   seen[row.spellID]=true
@@ -96,10 +101,13 @@ function M:SetEnabled(e,value)
  e.db.maintenance[e.classToken].enabled=value==true; e.maintenanceDone={}; e.maintenanceSnapshot=nil; A:Invalidate()
 end
 function M:Succeeded(e,id)
+ local row=A.Custom:CurrentPolicyRow(e)
+ if e.maintenanceActive and row and row.behavior and row.behavior.emergency and row.behavior.after=="exit" then e.emergencyExitGroup=true end
  if e.maintenanceActive then e.maintenanceDone=e.maintenanceDone or {}; e.maintenanceDone[id]=true; e.maintenanceSnapshot=nil; e:Log("match","MAINTENANCE_SUCCEEDED",id) end
 end
 function M:Refresh(e)
  if T.UI.settingsOpen or e:RecommendationLocked() then return end
+ if e.maintenanceActive and e.emergencyExitGroup then self:Restore(e,"EMERGENCY_RETURN") end
  local combat=A.State.Boolean("InCombatLockdown")
  if not self:Enabled(e) or combat==nil or (combat==false and not T.Runtime.maintenanceManual) then
   if e.maintenanceActive then self:Restore(e) end; return
@@ -117,14 +125,17 @@ function M:Refresh(e)
  end
  local candidate
  e.maintenanceDone=e.maintenanceDone or {}
- for i,row in ipairs(self:Rows(e)) do
+ for pass=1,2 do for i,row in ipairs(self:Rows(e)) do
+  local emergency=row.behavior and row.behavior.emergency==true or false
+  if emergency==(pass==1) then
   local allowed=A.Custom:Check(state,row,i)
   if allowed==false then e.maintenanceDone[row.spellID]=nil end
   if allowed==true and not e.maintenanceDone[row.spellID] and not candidate and self:BuffSpell(row.spellID) then
    local action=state.actions["custom_" .. i]
    candidate={spellID=row.spellID,name=action.name,target=action.target,action="custom_" .. i,customIndex=i,rule="maintenance:" .. i}
   end
- end
+  end
+ end end
  if not candidate then if e.maintenanceActive then self:Restore(e) end; return end
  if not e.maintenanceActive then
   e.maintenanceBase={steps=e.steps,index=e.index,stepCasts=e.stepCasts,completed=e.completed,running=e.running,

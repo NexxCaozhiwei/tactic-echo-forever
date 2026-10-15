@@ -44,6 +44,7 @@ function U:StoreSequencePolicy()
     if self.strategySource~="manual" or not self.sequencePolicyRow then return end
     local rows=self:DraftRows() or self.sequenceDraft; local row=rows and rows[self.sequencePolicyIndex]
     if not row or row.spellID~=self.sequencePolicyRow.spellID then return end
+    row.behavior=self.sequencePolicyRow.behavior
     row.strategies=self.sequencePolicyRow.strategies; row.enabled=self.sequencePolicyRow.enabled; row.targetMode=self.sequencePolicyRow.targetMode
     self:WriteDraft(rows)
     return self:DraftRows()~=nil

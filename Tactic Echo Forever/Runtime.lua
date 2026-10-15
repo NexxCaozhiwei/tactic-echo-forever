@@ -14,6 +14,7 @@ function C.Clean(raw)
     local ordinary,ordinaryReason=S.Field(raw,"ordinaryContinuous","boolean")
     return {mode=modes[mode] and mode or "auto",autoStart=S.Field(raw,"autoStart","boolean")~=false,
         permission=S.Field(raw,"permission","boolean")~=false,signal=S.Field(raw,"signal","boolean")~=false,
+        takeover=S.Field(raw,"takeover","string")=="pause" and "pause" or "continue",
         hotkey=key and #key<=40 and key:match("^[A-Z0-9%-=]+$") and key or "",
         ordinaryContinuous=ordinary==true or ordinaryReason=="NO_DATA",
         castQueue=S.Field(raw,"castQueue","boolean")==true,
@@ -28,8 +29,10 @@ function C:ResetCycle(reason)
     -- Reset through the sole runtime owner: preserve intention, invalidate all
     -- old receipts/requests, and let live gates decide when execution resumes.
     local usage=self.e.usage
+    local records,count,context=self.e.policyRecords,self.e.policyRecordCount,self.e.policyContext
     if not self:EngineCall("Reset") then return false end
     self.e.usage,self.e.usageProgress=usage,nil
+    self.e.policyRecords,self.e.policyRecordCount,self.e.policyContext=records,count,context
     self:Changed("paused",reason); return true
 end
 function C:Changed(state,reason)
@@ -86,7 +89,7 @@ end
 function C:Stop(reason,state)
     self.maintenanceManual=false
     if self.e.maintenanceActive then TEF.Maintenance:Restore(self.e,"MAINTENANCE_STOPPED") end
-    if self.e.groupRun and reason~=nil and reason~="USER_TOGGLE_DISPATCH" and reason~="RUNTIME_MANUAL_PAUSE" then TEF.SkillGroups:Restore(self.e,"GROUP_STOPPED") end
+    if self.e.groupRun and reason~=nil and reason~="USER_TOGGLE_DISPATCH" and reason~="RUNTIME_MANUAL_PAUSE" and reason~="MANUAL_TAKEOVER_PAUSED" then TEF.SkillGroups:Restore(self.e,"GROUP_STOPPED") end
     self.e.groupConsumed={}
     local wasEnabled=self.intent
     self.intent=false
@@ -124,7 +127,7 @@ function C:SetIntent(enabled,reason)
     if self.e.identitySaturated then self:Fault("RUNTIME_IDENTITY_CAPACITY_RELOAD_REQUIRED"); return false end
     if self.e.clientValidated==false then self:Fault("RUNTIME_CLIENT_UNVERIFIED"); return false end
     if not TEF.Recommendation:Configured(self.e) and not TEF.Maintenance:Enabled(self.e) then self:Stop("RUNTIME_PROFILE_UNCONFIGURED"); return false end
-    if self.e.completed and not self:EngineCall("Reset") then return false end
+    if self.e.completed and not self:ResetCycle("RUNTIME_COMPLETION_RESTART") then return false end
     self.intent=true
     if self.e.db.dispatch.signal and not TEF.Transport.enabled then
         if not TEF.Transport:SetEnabled(true) then self:Fault("RUNTIME_SIGNAL_FAILED"); return false end
@@ -135,6 +138,51 @@ function C:SetIntent(enabled,reason)
     return self.intent
 end
 function C:ToggleIntent(reason) return self:SetIntent(not self.intent,reason) end
+-- 人工操作通过Runtime撤销旧身份；跳过不等于成功，不写成功额度。
+function C:Intervene(action)
+ local e=self.e
+ if not e or TEF.UI.settingsOpen or e:RecommendationLocked() or e.maintenanceActive then return false,"请关闭设置，并等待当前施法及回执结束。" end
+ if action=="endgroup" then
+  if not e.groupRun then return false,"当前没有活动技能组。" end
+  TEF.SkillGroups:Restore(e,"GROUP_USER_ENDED",true)
+ elseif action=="restartgroup" then
+  local run=e.groupRun; if not run then return false,"当前没有活动技能组。" end
+  if not self.intent then return false,"派发已暂停；请先继续，再重新开始技能组。" end
+  local row=run.row
+  local probe={spellID=row.spellID,group=row.group,enabled=row.enabled~=false,strategies=row.strategies,behavior=row.behavior,targetMode=row.targetMode,
+   moving=row.moving or "any",activity=row.activity or "any",distanceOp=row.distanceOp or "any",distanceValue=row.distanceValue,cdmKind=row.cdmKind or "none",cdmState=row.cdmState,cdmSpellID=row.cdmSpellID}
+  local state={readOnly=true,policyOwner=row,generation=e.generation,receiptSerial=e.receiptSerial or 0,revision=TEF.APL.State.revision or 0,
+   actions={},moving=TEF.APL.State.Boolean("IsPlayerMoving")}
+  TEF.APL.Custom:Sample(e,state,{probe})
+  if state.combat.in_combat~=true or TEF.APL.Custom:Check(state,probe,1)~=true then return false,"当前组入口条件未满足或未知。" end
+  if e.groupRun~=run or e.generation~=state.generation or (e.receiptSerial or 0)~=state.receiptSerial or (TEF.APL.State.revision or 0)~=state.revision or e:RecommendationLocked() then return false,"状态已变化，请重新操作。" end
+  if not self:ReplaceRecommendation(run.group.steps) then return false,"无法重新开始当前组。" end
+  run.round=1; run.successful=nil; run.policyStamp=TEF.APL.Custom:PolicyStamp(e,row)
+  local ok,raw=TEF.Safety.Call("UnitGUID","target"); run.target=ok and TEF.Safety.Identity(raw) or nil; run.targetSerial=e.usageTargetSerial or 0
+  e.groupKeepSnapshot=nil; e.groupPolicyBlocked=nil; e.skipStreak=0; e.policySkipStreak=0; e.attackActivationStreak=0
+  e:Log("observed","GROUP_USER_RESTARTED")
+ elseif action=="skip" then
+  if TEF.Recommendation:Source(e)~="manual" or not e.steps or not e.steps[e.index] or e.steps[e.index].group then return false,"仅支持跳过当前普通列表步骤；技能组请使用结束组。" end
+  self.internal=true
+  local ok,result=pcall(e.SkipUnavailable,e,"STRATEGY_STEP_SKIPPED")
+  self.internal=false
+  if not ok then self:Fault("RUNTIME_INTERVENTION_FAILED"); return false,"人工操作失败，已停止。" end
+  if not result then return false,"当前步骤无法跳过。" end
+  e:Log("observed","USER_STEP_SKIPPED")
+ elseif action=="recheck" then
+  if e.groupRun then TEF.SkillGroups:Restore(e,"GROUP_USER_RECHECK",true) end
+  if TEF.Recommendation:Source(e)=="manual" then
+   self.internal=true; e:Invalidate("USER_RECHECK"); self.internal=false
+  elseif not self:ReplaceRecommendation(nil) then return false,"重新判断失败。" end
+  TEF.APL:Invalidate(); e.aplSnapshot=nil
+ else return false,"未知人工操作。" end
+ self:Reconcile(); return true,"操作完成；未记作技能成功。"
+end
+function C:ObserveTakeover(e,event,id)
+ if self.e~=e or not self.intent or event~="UNIT_SPELLCAST_SENT" or not e.steps or not e.steps[e.index] or e.steps[e.index].matches[id] then return end
+ e:Log("observed","MANUAL_OTHER_SPELL_OBSERVED",id)
+ if e.db.dispatch.takeover=="pause" then self:Stop("MANUAL_TAKEOVER_PAUSED") end
+end
 function C:Start(reset)
     if reset then self:Stop("RUNTIME_RESTART"); if not self:EngineCall("Reset") then return false end end
     return self:SetIntent(true)
@@ -209,8 +257,10 @@ function C:Reconcile()
     self.cycle=self.cycle+1
     TEF.APL.State.SampleResources(self.e)
     self.e:ObserveUsageCombat()
+    TEF.APL.Custom:LifecycleContext(self.e)
     if not self.intent then return end
     local e=self.e
+    TEF.APL.Custom:ReconcilePolicyProgress(e)
     TEF.SkillGroups:Refresh(e)
     TEF.Maintenance:Refresh(e)
     if e.identitySaturated then self:Fault("RUNTIME_IDENTITY_CAPACITY_RELOAD_REQUIRED"); return end
