@@ -91,6 +91,36 @@ end
 local function panel(parent)
  local f=U:Frame("Frame",parent,"BackdropTemplate"); U:Paint(f,"EnableMouse",false); return f
 end
+function H:SetMode(mode)
+ mode=S.Public(mode,"string")
+ if (mode~="standard" and mode~="mini") or U:Combat()~=false or not self.engine then return false end
+ self.engine.db.hud.mode=mode
+ self:Layout(); self:Refresh()
+ return true
+end
+function H:CreateModeButton()
+ local button=U:Frame("Button",self.frame)
+ self.modeButton=button
+ U:Paint(button,"SetFrameLevel",self.baseLevel+20)
+ U:Paint(button,"RegisterForClicks","LeftButtonUp")
+ U:Paint(button,"SetScript","OnClick",function(_,rawButton)
+  if S.Public(rawButton,"string")=="LeftButton" then
+   U:Guard(function() self:SetMode(self.displayMode=="mini" and "standard" or "mini") end)
+   U:Call(GameTooltip,"Hide")
+  end
+ end)
+ U:Paint(button,"SetScript","OnEnter",function()
+  U:Call(GameTooltip,"SetOwner",button,"ANCHOR_RIGHT")
+  U:Call(GameTooltip,"AddLine",self.displayMode=="mini" and "切换为标准HUD" or "切换为迷你HUD")
+  U:Call(GameTooltip,"AddLine","脱战可用；保留派发意图与列表进度。",.7,.8,.9,true)
+  U:Call(GameTooltip,"Show")
+ end)
+ U:Paint(button,"SetScript","OnLeave",function() U:Call(GameTooltip,"Hide") end)
+ for i=1,2 do
+  local line=texture(button,"ARTWORK"); anchor(line,button,2,-(i*2+1),4,1)
+  U:Paint(line,"SetColorTexture",.65,.88,1,1)
+ end
+end
 function H:CreateChrome()
  local ok,raw=U:Invoke(self.frame,"GetFrameLevel"); self.baseLevel=(ok and S.Public(raw,"number") or 1)
  self.chrome=panel(self.frame); U:Paint(self.chrome,"SetAllPoints",self.frame)
@@ -239,6 +269,14 @@ function H:TooltipDetails(card)
  if card.fullKeyText then U:Call(GameTooltip,"AddLine","键位：" .. card.fullKeyText,.7,.8,.9) end
 end
 function H:CompactVisibility()
+ local mini=self.displayMode=="mini"
+ local styles=self.engine.db.hud.styles.global
+ U:Paint(self.name,not mini and styles.name.enabled and "Show" or "Hide")
+ U:Paint(self.status,not mini and styles.status.enabled and "Show" or "Hide")
+ U:Paint(self.badge,mini and "Hide" or "Show")
+ local count=styles.status.enabled and (not mini or TEF.Recommendation:Source(self.engine)~="apl")
+ U:Paint(self.countText,count and "Show" or "Hide")
+ U:Paint(self.miniCountChip,mini and count and "Show" or "Hide")
  for _,field in ipairs({self.sourceText,self.role,self.spellID,self.previewTitle,self.previewHint,self.divider,self.castText,self.castTime,self.hint,self.rangeText}) do U:Paint(field,"Hide") end
  for _,segment in ipairs(self.stepSegments or {}) do U:Paint(segment,"Hide") end
  for i,card in ipairs(self.cards or {}) do
@@ -249,23 +287,27 @@ end
 function H:Layout()
  if not self.frame then return end
  if U:Combat()~=false then self.pending=true; return end
- self.pending=false; self.layoutWidth=260; self.layoutHeight=88; self.textShift=0
+ self.pending=false; self.displayMode=self.engine.db.hud.mode=="mini" and "mini" or "standard"
+ local mini=self.displayMode=="mini"
+ local width,height=mini and 156 or 260,mini and 60 or 88
+ self.layoutWidth=width; self.layoutHeight=height; self.textShift=0
  local g=self.engine.db.hud.geometry
- local sizes={math.min(44,g.mainSize),math.min(28,g.preview1Size),math.min(28,g.preview2Size)}
+ local sizes=mini and {44,36,36} or {math.min(44,g.mainSize),math.min(28,g.preview1Size),math.min(28,g.preview2Size)}
  local gap=math.min(4,g.gap2); local previewX=254-sizes[2]-sizes[3]-gap
  local nameX=6+sizes[1]+math.min(6,g.gap1)
  local scale=math.min(1,self.engine.db.hud.scale)
- for _,axis in ipairs({{"GetWidth",260},{"GetHeight",88}}) do
+ for _,axis in ipairs({{"GetWidth",width},{"GetHeight",height}}) do
   local ok,raw=U:Invoke(UIParent,axis[1]); local available=ok and S.Public(raw,"number")
   if available and available>16 then scale=math.min(scale,(available-16)/axis[2]) end
  end
- U:Paint(self.frame,"SetScale",scale); U:Paint(self.frame,"SetSize",260,88)
- self:RoundSurface(self.chrome,260,88,8,true,true)
+ U:Paint(self.frame,"SetScale",scale); U:Paint(self.frame,"SetSize",width,height)
+ self:RoundSurface(self.chrome,width,height,8,true,true)
  self:SurfaceColor(self.chrome,"fill",.025,.045,.075,.94); self:SurfaceColor(self.chrome,"border",.30,.62,.88,1)
- self:RoundSurface(self.chromeInner,258,86,7,false,true); self:SurfaceColor(self.chromeInner,"border",.13,.30,.47,.65)
- local xs={6,previewX,previewX+sizes[2]+gap}
+ anchor(self.chromeInner,self.frame,1,-1,width-2,height-2)
+ self:RoundSurface(self.chromeInner,width-2,height-2,7,false,true); self:SurfaceColor(self.chromeInner,"border",.13,.30,.47,.65)
+ local xs=mini and {6,62,108} or {6,previewX,previewX+sizes[2]+gap}
  for i,card in ipairs(self.cards or {}) do
-  card.size=sizes[i]; anchor(card.frame,self.frame,xs[i],i==1 and -8 or -12,sizes[i],sizes[i])
+  card.size=sizes[i]; anchor(card.frame,self.frame,xs[i],mini and (i==1 and -6 or -10) or (i==1 and -8 or -12),sizes[i],sizes[i])
   self:RoundSurface(card.frame,sizes[i],sizes[i],i==1 and 6 or 4,true,false)
   self:SurfaceColor(card.frame,"fill",.025,.045,.07,1)
   self:RoundSurface(card.border,sizes[i],sizes[i],i==1 and 6 or 4,false,true)
@@ -279,6 +321,21 @@ function H:Layout()
  anchor(self.countText,self.content,132,-68,122,16)
  local slots={name={nameX,-10,previewX-nameX-8,20},status={6,-68,120,16},rangeText={6,-68,120,16}}
  for key,values in pairs(slots) do local slot=self.textSlots[key]; slot.width=values[3]; anchor(slot.frame,self.content,unpack(values)) end
+ local top=self.cards[1].textParent
+ U:Paint(self.statusDot,"SetParent",mini and top or self.content)
+ U:Paint(self.countText,"SetParent",mini and top or self.content)
+ if mini then
+  anchor(self.statusDot,top,5,-34,6,6)
+  anchor(self.countText,top,11,-29,32,14)
+  anchor(self.castBar,self.content,8,-54,140,2); anchor(self.castTrack,self.content,8,-54,140,2)
+ end
+ anchor(self.miniCountChip,self.cards[1].frame,11,-29,32,14)
+ self:RoundSurface(self.miniCountChip,32,14,3,true,false)
+ self:SurfaceColor(self.miniCountChip,"fill",.015,.03,.055,.96)
+ anchor(self.modeButton,self.frame,width-10,-2,8,8)
+ self:RoundSurface(self.modeButton,8,8,2,true,true)
+ self:SurfaceColor(self.modeButton,"fill",.035,.10,.16,1)
+ self:SurfaceColor(self.modeButton,"border",.3,.62,.88,1)
  TEF.HudStyles:Apply(self); self:RefreshState()
 end
 function H:Create(e)
@@ -306,6 +363,8 @@ function H:Create(e)
     end)
     self:CreateChrome()
     self.cards={self:Card(8,64,true),self:Card(84,44),self:Card(140,44)}
+    self.miniCountChip=panel(self.cards[1].frame); U:Paint(self.miniCountChip,"SetFrameLevel",self.baseLevel+9)
+    self:CreateModeButton()
     self.name=U:Text(self.textSlots.name.frame,0,0,230,"GameFontHighlightSmall")
     self.status=U:Text(self.textSlots.status.frame,0,0,230,"GameFontHighlightSmall")
     self.rangeText=U:Text(self.textSlots.rangeText.frame,0,0,230,"GameFontHighlightSmall")
@@ -387,7 +446,7 @@ function H:RefreshState()
         U:Paint(self.countText,"SetText","候选预览")
     else
         U:Paint(self.status,"SetText",(e.groupRun and "组内 " or "步骤 ") .. e.index .. "/" .. (e.steps and #e.steps or 0))
-        U:Paint(self.countText,"SetText","本步 " .. (e.stepCasts or 0) .. "/" .. (step and step.repeatCount or 1))
+        U:Paint(self.countText,"SetText",(self.displayMode=="mini" and "" or "本步 ") .. (e.stepCasts or 0) .. "/" .. (step and step.repeatCount or 1))
     end
     local keyOK,keyRaw=U:Invoke(primary.key,"GetText"); local key=keyOK and S.Public(keyRaw,"string")
     if key and key~="" and key~="未解析" and key~="—" then

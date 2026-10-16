@@ -5,6 +5,7 @@ local function setup()
  F.deliveryFixture("manual")
  InCombatLockdown=function() return false end
  local e=T.engine
+ e.db.hud.mode="standard"
  e.db.hud.styles=T.HudStyles.Clean(nil); e.db.hud.geometry=T.HudStyles.CleanGeometry(nil)
  UnitCastingInfo=function() return nil end; UnitChannelInfo=function() return nil end
  GetTime=function() return 10 end
@@ -111,4 +112,56 @@ test("hud_compact_round_surfaces_reuse_their_texture_pieces",function()
  for i=1,5 do H:Layout(); H:RefreshState() end
  eq(H.roundSurfaces[H.chrome].fill[1],fill); eq(H.roundSurfaces[H.chrome].border[9],border)
  eq(#surface.fill,9); eq(#surface.border,9)
+end)
+
+
+test("hud_mini_switch_preserves_runtime_and_restores_standard",function()
+ local e=setup(); local generation,index,serial=e.generation,e.index,e.receiptSerial
+ local intent=T.Runtime.intent; local pending=T.Dispatch.pending
+ local fill=H.roundSurfaces[H.chrome].fill[1]
+ for i=1,5 do
+  assert(H:SetMode("mini")); eq(e.db.hud.mode,"mini")
+  eq(H.layoutWidth,156); eq(H.layoutHeight,60); eq(H.cards[2].size,36)
+  eq(H.cards[1].frame.point[5],-6); eq(H.cards[2].frame.point[4],62)
+  eq(H.name.shown,false); eq(H.status.shown,false); eq(H.badge.shown,false)
+  eq(H.countText.text,"0/1"); eq(H.countText.parent,H.cards[1].textParent)
+  eq(H.statusDot.parent,H.cards[1].textParent); eq(H.castBar.height,2)
+  eq(H.modeButton.width,8); eq(H.modeButton.height,8); eq(H.modeButton.point[4],146)
+  assert(H:SetMode("standard")); eq(H.layoutWidth,260); eq(H.layoutHeight,88)
+  eq(H.countText.text,"本步 0/1"); eq(H.countText.parent,H.content)
+  eq(H.badge.shown,true); eq(H.name.shown,true); eq(H.status.shown,true)
+  eq(H.modeButton.point[4],250); eq(H.chromeInner.width,258)
+ end
+ eq(H.roundSurfaces[H.chrome].fill[1],fill)
+ eq(e.generation,generation); eq(e.index,index); eq(e.receiptSerial,serial)
+ eq(T.Runtime.intent,intent); eq(T.Dispatch.pending,pending)
+end)
+
+test("hud_mode_button_requires_public_peace_and_left_click",function()
+ local e=setup(); local click=H.modeButton:GetScript("OnClick")
+ click(nil,"RightButton"); eq(e.db.hud.mode,"standard")
+ InCombatLockdown=function() return true end
+ click(nil,"LeftButton"); eq(e.db.hud.mode,"standard"); eq(H.layoutWidth,260)
+ InCombatLockdown=function() return F.secret end
+ assert(not H:SetMode("mini")); eq(e.db.hud.mode,"standard")
+ InCombatLockdown=function() return false end
+ click(nil,"LeftButton"); eq(e.db.hud.mode,"mini"); eq(H.layoutWidth,156)
+ assert(not H:SetMode(F.secret)); assert(not H:SetMode("bad"))
+ e.db.hud.styles.global.status.enabled=false; H:Layout()
+ eq(H.countText.shown,false); eq(H.miniCountChip.shown,false)
+ e.db.hud.preview=false; H:Refresh(); eq(H.cards[2].frame.shown,false)
+ H:SetMode("standard")
+end)
+
+
+test("hud_mini_saved_mode_is_whitelisted_and_apl_has_no_repeat_chip",function()
+ local e=setup(); H:SetMode("mini")
+ local copy=T.Engine.New(T.Config,e.db); eq(copy.db.hud.mode,"mini")
+ for _,bad in ipairs({F.secret,"other",42}) do
+  e.db.hud.mode=bad; copy=T.Engine.New(T.Config,e.db); eq(copy.db.hud.mode,"standard")
+ end
+ e.db.hud.mode="mini"; H:Layout()
+ assert(T.Recommendation:SetSource(e,"apl")); H:Refresh()
+ eq(H.countText.shown,false); eq(H.miniCountChip.shown,false)
+ H:SetMode("standard"); eq(H.countText.text,"候选预览"); eq(H.countText.shown,true)
 end)

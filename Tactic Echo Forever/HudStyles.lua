@@ -59,7 +59,7 @@ function A:ApplyCompact(hud)
  end
  U:ApplyControlFont(hud.badgeText,false,12)
  local progress=styles.global.status
- U:ApplyControlFont(hud.countText,false,math.min(12,progress.fontSize*progress.scale))
+ U:ApplyControlFont(hud.countText,false,math.min(hud.displayMode=="mini" and 10 or 12,progress.fontSize*progress.scale))
  U:Paint(hud.countText,"SetTextColor",progress.color.r,progress.color.g,progress.color.b,progress.color.a)
  U:Paint(hud.countText,progress.enabled and "Show" or "Hide")
  hud:CompactVisibility()
@@ -128,5 +128,5 @@ function A:BuildUI(U,parent)
     U:CreateActionButton(parent,"重置当前标签",360,-552,188,function()
         U:ConfirmAction("确认恢复当前标签的默认样式？其他标签保留。",function() U.engine.db.hud.styles[module][key]=A.Clean(nil)[module][key]; changed() end,"恢复标签")
     end)
-    U:CreateHintText(parent,"精简HUD固定260×88及锚点；名称最多14、进度12、角标10。旧字号、偏移与缩放值保留，实际显示受限；更多信息在悬停中查看。",0,-600,548)
+    U:CreateHintText(parent,"标准HUD为260×88，迷你HUD为156×60；右上角8×8按钮脱战切换。名称最多14、进度12、角标10。旧字号、偏移与缩放值保留，实际显示受限；更多信息在悬停中查看。",0,-600,548)
 end

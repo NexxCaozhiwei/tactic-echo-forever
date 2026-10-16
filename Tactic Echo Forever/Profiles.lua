@@ -207,8 +207,9 @@ function P:Initialize(e, old)
     local scale = hud and S.Field(hud,"scale","number")
     local locked = hud and S.Field(hud,"locked","boolean")
     local preview = hud and S.Field(hud,"preview","boolean")
+    local mode = hud and S.Field(hud,"mode","string")
     e.db.hud = {scale=scale and scale>=0.6 and scale<=1.8 and scale or 1,
-        locked=locked==true, preview=preview~=false}
+        locked=locked==true, preview=preview~=false, mode=mode=="mini" and "mini" or "standard"}
     e.db.hud.geometry=TEF.HudStyles.CleanGeometry(hud and S.Field(hud,"geometry","table"))
     e.db.hud.styles=TEF.HudStyles.Clean(hud and S.Field(hud,"styles","table"))
     local x=hud and S.Field(hud,"x","number"); local y=hud and S.Field(hud,"y","number")
