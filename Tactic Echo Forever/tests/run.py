@@ -10,10 +10,10 @@ def main():
 
     toc = (ROOT / "Tactic Echo Forever.toc").read_text(encoding="utf-8")
     entries = [line.strip() for line in toc.splitlines() if line.strip() and not line.startswith("#")]
-    assert entries == ["Config.lua", "Safety.lua", "ActionSources.lua", "APL/Packs/Mage/Abilities.lua", "APL/Packs/Mage/Talents.lua", "APL/TalentState.lua", "APL/Registry.lua", "APL/PublicConditions.lua", "APL/Custom.lua", "APL/RankResolver.lua", "APL/Packs/Mage/BuildSelector.lua", "APL/State.lua", "APL/Conditions.lua", "APL/Trace.lua", "APL/Packs/Mage/Mage60.lua", "APL/Packs/Mage/Rules.lua", "APL/Engine.lua", "SkillGroups.lua", "Sequence.lua", "SequenceUsage.lua", "HudStyles.lua", "Profiles.lua", "Recommendation.lua", "Maintenance.lua", "Research.lua", "UI.lua", "UIComponents.lua", "SequenceEditor.lua", "CustomAPLEditor.lua", "SkillGroupEditor.lua", "HUD.lua", "Dispatch.lua", "Presentation.lua", "Transport.lua", "Runtime.lua", "Hotkeys.lua", "Core/Bootstrap.lua"]
+    assert entries == ["Config.lua", "Safety.lua", "ActionSources.lua", "APL/Packs/Mage/Abilities.lua", "APL/Packs/Mage/Talents.lua", "APL/TalentState.lua", "APL/Registry.lua", "APL/PublicConditions.lua", "APL/Custom.lua", "APL/RankResolver.lua", "APL/Packs/Mage/BuildSelector.lua", "APL/State.lua", "APL/Conditions.lua", "APL/Trace.lua", "APL/Packs/Mage/Mage60.lua", "APL/Packs/Mage/Rules.lua", "APL/Engine.lua", "SkillGroups.lua", "Sequence.lua", "SequenceUsage.lua", "HudStyles.lua", "Profiles.lua", "Recommendation.lua", "Maintenance.lua", "Research.lua", "UI.lua", "UIComponents.lua", "Studio.lua", "StudioWorkbench.lua", "StudioTools.lua", "SequenceEditor.lua", "CustomAPLEditor.lua", "SkillGroupEditor.lua", "HUD.lua", "Dispatch.lua", "Presentation.lua", "Transport.lua", "Runtime.lua", "Hotkeys.lua", "Core/Bootstrap.lua"]
     assert "## Interface: 16001" in toc and "## SavedVariables: TEF_DB" in toc
     version = (ROOT / "VERSION").read_text().strip()
-    assert version == "1.3.1" and f"## Version: {version}" in toc
+    assert version == "2.0.0" and f"## Version: {version}" in toc
     assert f'local VERSION = "{version}"' in (ROOT / "Core/Bootstrap.lua").read_text(encoding="utf-8")
     baseline = ROOT / f"docs/baselines/BASELINE_{version}.md"
     if not baseline.is_file():
@@ -40,7 +40,7 @@ def main():
         code = (ROOT / entry).read_text(encoding="utf-8")
         # Forbidden runtime dependencies/inputs and asynchronous advancement.
         assert not re.search(r"TacticEchoDB|TEProbeDB|C_Timer|CastSpell|RunMacro|SetCVar|TargetUnit|SendInput", code)
-        if entry in ("UI.lua","UIComponents.lua","SequenceEditor.lua", "CustomAPLEditor.lua","HUD.lua","Dispatch.lua","Transport.lua","Core/Bootstrap.lua"):
+        if entry in ("UI.lua","UIComponents.lua", "Studio.lua", "StudioWorkbench.lua", "StudioTools.lua","SequenceEditor.lua", "CustomAPLEditor.lua","HUD.lua","Dispatch.lua","Transport.lua","Core/Bootstrap.lua"):
             assert not re.search(r"(?:engine|self\.e|e)\.running\s*=", code)
             assert not re.search(r"Runtime\.intent\s*=", code)
         if entry=="HUD.lua":

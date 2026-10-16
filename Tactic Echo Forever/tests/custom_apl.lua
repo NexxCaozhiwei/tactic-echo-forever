@@ -293,7 +293,7 @@ test("strategy_drag_reorders_and_keeps_conditions",function()
  T.UI:ChangeCustomStrategy(function(r) r.strategies={{mode="skip",conditions={{kind="moving",value=true}}}} end)
  local original=MouseIsOver; MouseIsOver=function(frame) return frame==T.UI.customWidgets[3].frame end
  T.UI.customWidgets[1].frame.scripts.OnDragStart(); T.UI.customWidgets[1].frame.scripts.OnDragStop()
- eq(T.UI.customDraft[3].spellID,143); eq(T.UI.customDraft[3].strategies[1].mode,"skip")
+ eq(T.UI.customDraft[2].spellID,143); eq(T.UI.customDraft[2].strategies[1].mode,"skip")
  eq(C:Rows(e)[1].spellID,143); MouseIsOver=original
 end)
 test("strategy_saved_slots_independent_and_reorder_keeps_conditions",function()
@@ -423,7 +423,7 @@ test("manual_editor_policy_save_drag_and_plan_switch_preserve",function()
  T.UI.editScene="single"; T.UI:ShowPage("profiles"); T.UI:OpenSequencePolicy(1)
  T.UI:ChangeCustomStrategy(function(r) r.strategies={{mode="use",conditions={{kind="distance",min=20,max=30}}}} end)
  local rows=T.UI:DraftRows(); eq(rows[1].strategies[1].conditions[1].max,30)
- local original=MouseIsOver; MouseIsOver=function(frame) return frame==T.UI.sequenceRows[2].frame end
+ local original=MouseIsOver; MouseIsOver=function(frame) return frame==T.UI.sequenceScroll end
  T.UI.sequenceRows[1].frame.scripts.OnDragStart(); T.UI.sequenceRows[1].frame.scripts.OnDragStop()
  rows=T.UI:DraftRows(); eq(rows[2].spellID,143); eq(rows[2].strategies[1].conditions[1].min,20); MouseIsOver=original
  assert(T.Profiles:Save(e,"single",rows)); T.UI:ShowPage("customapl"); T.UI:ShowPage("profiles")
@@ -569,5 +569,6 @@ n=n+assert(loadfile((arg and arg[1] or ".") .. "/tests/strategy_conditions.lua")
 n=n+assert(loadfile((arg and arg[1] or ".") .. "/tests/skill_groups.lua"))("TEF",T,F)
 n=n+assert(loadfile((arg and arg[1] or ".") .. "/tests/public_conditions.lua"))("TEF",T,F)
 n=n+assert(loadfile((arg and arg[1] or ".") .. "/tests/strategy_lifecycle.lua"))("TEF",T,F)
+n=n+assert(loadfile((arg and arg[1] or ".") .. "/tests/studio_workbench.lua"))("TEF",T,F)
 TEF_CUSTOM_APL_TEST_COUNT=n
 return n

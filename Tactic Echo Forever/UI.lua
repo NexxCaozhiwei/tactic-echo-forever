@@ -112,6 +112,7 @@ function UI:CloseSettings()
     if self.groupEditing and not self:CloseSkillGroup(false,function() self:CloseSettings() end) then return end
     if not self:CommitCustomNumbers() then return end
     self:CancelConfirmation()
+    self:HideStudioInsertion(); self.studioDragging=nil
     self.captureHotkey=false; self.settingsOpen=false
     self:Paint(self.settings,"Hide")
     TEF.Runtime:Reconcile("SETTINGS_CLOSED")
@@ -135,6 +136,9 @@ function UI:ShowPage(key)
         local draft=ok and S.Public(raw,"string")
         if draft and #draft<=4096 then self.drafts[(self.loadedProfile or "unknown") .. ":" .. self.loadedScene]=draft end
     end
+    self.studioSelected=nil; self.studioPlanOpen=false; self.studioInspectorRequested=false; self.studioWorkspaceOpen=false
+    if self.CloseStudioLibrary then self:CloseStudioLibrary() end
+    self.settingsLayoutSignature=nil
     self.page=key
     for parent,footer in pairs(self.pageFooters or {}) do self:Paint(footer,self.pages[key]==parent and "Show" or "Hide") end
     self.strategySource=key=="maintenance" and "maintenance" or key=="customapl" and "apl" or nil; self.sequencePolicyRow=nil; self.strategyInputs={}; self.customFormIndex=nil
@@ -208,8 +212,10 @@ function UI:RefreshPage()
         local _,lineCount=report:gsub("\n","\n")
         self:Paint(self.pages.diagnostics,"SetHeight",math.max(600,100+(lineCount+1)*52))
     end
+    self:RefreshStudio()
 end
 function UI:CreateSettings()
+    self.studio=false
     local e=self.engine
     local f=self:Frame("Frame",UIParent,"BackdropTemplate","TEF_Settings")
     self.settings=f; self.pages={}; self.readouts={}
@@ -220,9 +226,9 @@ function UI:CreateSettings()
     self:Paint(f,"SetMovable",true); self:Paint(f,"EnableMouse",true); self:Paint(f,"RegisterForDrag","LeftButton")
     self:Paint(f,"SetScript","OnDragStart",function() if self:Combat()==false then self:Call(f,"StartMoving") end end)
     self:Paint(f,"SetScript","OnDragStop",function() self:Call(f,"StopMovingOrSizing") end)
-    local title=self:Text(f,24,-20,600,"GameFontNormalLarge"); self:ApplyControlFont(title,false,self.theme.fontTitle); self:Paint(title,"SetText","战术回响 · FOREVER")
+    local title=self:Text(f,24,-20,280,"GameFontNormalLarge"); self:ApplyControlFont(title,false,self.theme.fontTitle); self:Paint(title,"SetText","TEF Studio · 战术回响")
     self:Paint(self:Text(f,24,-48,640,"GameFontHighlightSmall"),"SetText","TEF " .. TEF.Version .. " · 设置期间派发阻断，运行意图由启停控制")
-    self:Button(f,"关闭",722,-16,75,function() self:CloseSettings() end)
+    self.studioClose=self:CreateActionButton(f,"关闭",722,-16,75,function() self:CloseSettings() end)
     self:Paint(f,"SetScript","OnHide",function()
         self:CancelConfirmation()
         if self.settingsOpen then self.settingsOpen=false; self.captureHotkey=false; TEF.Runtime:Reconcile("SETTINGS_CLOSED") end
@@ -385,6 +391,7 @@ function UI:CreateSettings()
         function() return e.db.dispatch.takeover end,function(v) TEF.Runtime:Stop("TAKEOVER_SETTING_CHANGED"); e.db.dispatch.takeover=v end)
     self:Paint(self.pages.tek,"SetHeight",680)
     for _,panel in pairs(self.pageFrames or self.pages) do self:Paint(panel,"Hide") end
+    self:CreateStudio()
     self.settingsLayoutSignature=nil
 end
 function UI:Create(engine)

@@ -18,6 +18,7 @@ function U:OpenSkillGroup(source,index)
  local rows=source=="manual" and self:DraftRows() or self.customDraft
  local row=rows and rows[index]; if not row or not row.group then return end
  local clean=G:Clean(row.group); if not clean then return end
+ self.studioSelected=nil; self.studioPlanOpen=false; self.studioInspectorRequested=true; self.settingsLayoutSignature=nil
  self.groupEditing={source=source,index=index,scene=source=="manual" and self.editScene or self.customLoadedScene}
  self.groupDirty=false; self.groupDraft=clean; self.groupSelected=1; self.strategySource=nil; self.sequencePolicyRow=nil; self.strategyInputs={}
  self:Paint(self.strategyPanel,"Hide"); self:Paint(self.groupPanel,"Show"); self:RefreshSkillGroup()
@@ -51,7 +52,7 @@ function U:RefreshSkillGroup()
    self:SetInputValue(w.count,tostring(row.repeatCount)); self:Paint(w.skip,"SetText",row.skipUnavailable and "不可用跳过：开" or "不可用跳过：关")
   end
  end
- self:Paint(self.groupChild,"SetHeight",math.max(120,#self.groupDraft.steps*88)); self:LayoutSettings()
+ self:Paint(self.groupChild,"SetHeight",math.max(120,#self.groupDraft.steps*88)); self:RefreshStudio(); self:LayoutSettings()
 end
 function U:GroupAdd(id,index)
  if not self:CommitGroupFields() then return false end
@@ -63,8 +64,17 @@ function U:GroupAdd(id,index)
  return true
 end
 function U:GroupMove(index,destination)
- if not self:CommitGroupFields() or not self.groupDraft.steps[destination] then return end
- local row=table.remove(self.groupDraft.steps,index); table.insert(self.groupDraft.steps,destination,row); self.groupDirty=true; self:RefreshSkillGroup()
+ if not self:CommitCustomNumbers() or not self:CommitGroupFields() or not self.groupDraft.steps[index] or not self.groupDraft.steps[destination] then return end
+ local selected=self.groupSelected
+ if selected==index then selected=destination
+ elseif selected and index<selected and destination>=selected then selected=selected-1
+ elseif selected and index>selected and destination<=selected then selected=selected+1 end
+ local row=table.remove(self.groupDraft.steps,index); table.insert(self.groupDraft.steps,destination,row)
+ self.groupDirty=true; self.groupSelected=selected
+ if self.strategySource=="groupStep" then
+  self.customSelected=selected; self.customFormIndex=nil; self.studioSelected={source="group",index=selected}; self:RefreshStrategyForm()
+ end
+ self:RefreshSkillGroup()
 end
 function U:GroupReceive(index)
  local id,reason=T.ActionSources:Cursor()
@@ -128,9 +138,9 @@ function U:CreateSkillGroupEditor()
 
  self.groupDrop=self:CreateActionButton(panel,"拖入技能",16,-184,120,function() self:GroupReceive() end)
  self:BindGroupDrop(self.groupDrop); self:Paint(self.groupDrop,"RegisterForDrag","LeftButton"); self:Paint(self.groupDrop,"RegisterForClicks","LeftButtonUp")
- self:CreateHintText(panel,"精确技能ID",152,-160,112)
+ self.groupIDLabel=self:CreateHintText(panel,"精确技能ID",152,-160,112)
  self.groupID=self:SequenceInput(panel,152,-184,112)
- self:CreateActionButton(panel,"ID新增",280,-184,120,function() local ok,v=self:Invoke(self.groupID,"GetText"); local raw=ok and S.Public(v,"string"); self:GroupAdd(raw and raw:match("^%d+$") and tonumber(raw)) end)
+ self.groupAddButton=self:CreateActionButton(panel,"ID新增",280,-184,120,function() local ok,v=self:Invoke(self.groupID,"GetText"); local raw=ok and S.Public(v,"string"); self:GroupAdd(raw and raw:match("^%d+$") and tonumber(raw)) end)
  self:BindGroupDrop(panel)
  self.groupListBox=self:Frame("Frame",panel,"BackdropTemplate")
  self:Paint(self.groupListBox,"SetPoint","TOPLEFT",panel,"TOPLEFT",16,-232); self:Paint(self.groupListBox,"SetSize",400,435)
@@ -145,9 +155,8 @@ function U:CreateSkillGroupEditor()
  self:BindGroupDrop(scroll,nil,true); self:BindGroupDrop(self.groupChild,nil,true)
  self.groupWidgets={}
  for i=1,8 do
-  local index=i; local frame=self:Frame("Frame",self.groupChild,"BackdropTemplate")
-  self:Paint(frame,"SetPoint","TOPLEFT",self.groupChild,"TOPLEFT",0,-(i-1)*88); self:Paint(frame,"SetSize",380,80)
-  self:Paint(frame,"SetBackdrop",{bgFile="Interface\\Buttons\\WHITE8X8",edgeFile="Interface\\Buttons\\WHITE8X8",edgeSize=1})
+  local index=i; local frame=self:CreateRuleRow(self.groupChild,i)
+  self:Paint(frame,"SetPoint","TOPLEFT",self.groupChild,"TOPLEFT",0,-(i-1)*88); self:Paint(frame,"SetSize",530,80)
   self:Paint(frame,"SetBackdropColor",.05,.08,.12,1); self:Paint(frame,"SetBackdropBorderColor",.25,.42,.58,1)
   self:BindGroupDrop(frame,index,true)
   self:BindControlTooltip(frame,"组内技能","精确成功回执推进组内步骤。")

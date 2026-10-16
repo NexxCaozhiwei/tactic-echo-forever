@@ -216,7 +216,7 @@ test("策略编辑可设置触发额度且保存重载保留技能替换入口",
  assert(C:Save(e,T.UI.customDraft,T.UI.customLoadedScene,T.UI.customClass))
  local reload=T.Engine.New(T.Config,e.db); eq(C:Rows(reload,"single")[1].behavior.trigger,"combat")
  assert(T.UI.strategyReplaceID.shown); assert(T.UI.strategyUpgrade.shown)
- T.UI:ShowPage("diagnostics"); assert(T.UI.navigation.diagnostics.shown~=false)
+ T.UI:ShowPage("diagnostics"); assert(T.UI.studioActivities.diagnostics.shown~=false)
  eq(T.UI.readouts.diagnostics.point[5],-104)
 end)
 test("重新开始组的拒绝操作保留原进度",function()

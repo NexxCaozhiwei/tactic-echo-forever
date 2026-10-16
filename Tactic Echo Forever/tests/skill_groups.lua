@@ -193,12 +193,14 @@ test("strategy_pool_is_bounded_after_warmup",function()
  CreateFrame=create
 end)
 test("settings_fit_small_viewport_and_use_side_editor_when_room_exists",function()
+ local combat=InCombatLockdown; InCombatLockdown=function() return false end
  local parent=UIParent; UIParent={GetWidth=function() return 1000 end,GetHeight=function() return 600 end}
  T.UI.strategyPanel.IsShown=function() return true end; T.UI.groupPanel.IsShown=function() return false end
  T.UI:LayoutSettings(); eq(T.UI.settingsFitScale,1); eq(T.UI.settingsHeight,568); eq(T.UI.editorOverlay,true)
  UIParent.GetWidth=function() return 1920 end; UIParent.GetHeight=function() return 1080 end
  T.UI:LayoutSettings(); eq(T.UI.settingsFitScale,1); eq(T.UI.editorOverlay,false)
  UIParent=parent; T.UI.strategyPanel.IsShown=nil; T.UI.groupPanel.IsShown=nil
+ InCombatLockdown=combat
 end)
 test("attack_skip_hidden_and_slider_submit_once",function()
  F.runtime(); T.UI:ShowPage("profiles"); T.UI:WriteDraft({spell(6603)}); T.UI:RefreshSequenceEditor(true)
@@ -265,15 +267,17 @@ test("overview_sections_order_and_class_label",function()
  T.UI:ShowPage("profiles"); assert(T.UI.readouts.profiles.text:find("法师",1,true)); assert(not T.UI.readouts.profiles.text:find(":base",1,true))
 end)
 test("matching_plan_toolbar_and_visible_list_bottom",function()
- F.runtime(); T.UI:ShowPage("profiles"); T.UI:WriteDraft({spell(143)})
+ local combat=InCombatLockdown; InCombatLockdown=function() return false end
+ F.runtime(); InCombatLockdown=function() return false end; T.UI:ShowPage("profiles"); T.UI:WriteDraft({spell(143)})
  local parent=UIParent; UIParent={GetWidth=function() return 1920 end,GetHeight=function() return 1080 end}; T.UI.settingsLayoutSignature=nil; T.UI:LayoutSettings()
  eq(T.UI.manualSave.text,"保存配置"); eq(T.UI.customSave.text,"保存配置")
  eq(T.UI.manualSave.point[4],T.UI.customSave.point[4]); eq(T.UI.manualSave.point[5],T.UI.customSave.point[5]); eq(T.UI.manualSave.width,T.UI.customSave.width)
  local a,b=T.UI.sequenceRows[1].policy,T.UI.customWidgets[1].policy; eq(a.point[4],b.point[4]); eq(a.point[5],b.point[5]); eq(a.width,b.width)
- assert(228+T.UI.customListCard.height<=T.UI.pageScrolls.customapl.height)
- assert(272+T.UI.customScroll.height<228+T.UI.customListCard.height)
- assert(252+T.UI.sequenceListCard.height<=T.UI.pageScrolls.profiles.height)
+ eq(T.UI.customScroll.parent,T.UI.studioEditor); eq(T.UI.sequenceScroll.parent,T.UI.studioEditor)
+ assert(T.UI.studioListHeight>=200)
+ assert(-T.UI.sequenceScroll.point[5]+T.UI.sequenceScroll.height<T.UI.studioEditor.height)
  UIParent=parent
+ InCombatLockdown=combat
 end)
 test("hud_slider_columns_do_not_overlap_and_accept_signed_decimal",function()
  F.runtime(); T.UI:ShowPage("hud"); eq(T.UI.labelStylePanel.point[5],-48)
@@ -335,14 +339,15 @@ test("compact_list_controls_stay_inside_row_bounds",function()
  end
  for _,w in ipairs(T.UI.sequenceRows) do inside(w.frame,{w.count,w.groupEdit,w.policy,w.up,w.down,w.delete,w.skip,w.usage}); eq(w.frame.height,80) end
  T.UI:ShowPage("customapl"); T.UI:AddCustomSpell(143)
- for _,w in ipairs(T.UI.customWidgets) do if w.frame.shown then inside(w.frame,{w.policy,w.up,w.down,w.delete}); eq(w.frame.height,44) end end
+ for _,w in ipairs(T.UI.customWidgets) do if w.frame.shown then inside(w.frame,{w.policy,w.up,w.down,w.delete}); eq(w.frame.height,80) end end
  T.UI:AddSkillGroup("apl"); T.UI:GroupAdd(143)
  for _,w in ipairs(T.UI.groupWidgets) do inside(w.frame,{w.count,w.policy,w.up,w.down,w.delete,w.skip}); eq(w.frame.height,80) end
  T.UI:CloseSkillGroup(true)
 end)
 
 test("strategy_viewport_preserves_border_and_scrollbar_gutter",function()
- F.runtime(); T.UI:ShowPage("customapl"); T.UI:AddCustomSpell(143)
+ local combat=InCombatLockdown; InCombatLockdown=function() return false end
+ F.runtime(); InCombatLockdown=function() return false end; T.UI:ShowPage("customapl"); T.UI:AddCustomSpell(143)
  local viewport,form,panel=T.UI.strategyScroll,T.UI.strategyForm,T.UI.strategyPanel
  assert(viewport.width>=form.width+4)
  local left=viewport.point[4]; assert(left>=16)
@@ -351,12 +356,99 @@ test("strategy_viewport_preserves_border_and_scrollbar_gutter",function()
  local oldStrategyWidth,oldGroupWidth=panel.GetWidth,T.UI.groupPanel.GetWidth
  panel.GetWidth=function() return panel.width end; T.UI.groupPanel.GetWidth=function() return 432 end
  UIParent.GetHeight=function() return 1000 end
- for _,case in ipairs({{960,true},{1296,true},{1600,false}}) do
+ for _,case in ipairs({{960,true},{1296,false},{1920,false}}) do
   UIParent.GetWidth=function() return case[1] end
   T.UI.settingsLayoutSignature=nil; T.UI:LayoutSettings(); eq(T.UI.editorOverlay,case[2])
  end
  UIParent.GetWidth,UIParent.GetHeight=oldWidth,oldHeight
  panel.GetWidth,T.UI.groupPanel.GetWidth=oldStrategyWidth,oldGroupWidth
  T.UI.settingsLayoutSignature=nil
+ InCombatLockdown=combat
+end)
+test("studio_shell_preserves_intent_and_workspace_keeps_drafts",function()
+ local e=F.runtime(); T.Runtime:SetIntent(true); local intent=T.Runtime.intent
+ InCombatLockdown=function() return false end
+ T.UI:OpenSettings(); eq(T.UI.studio,true); eq(T.Runtime.intent,intent); eq(T.Dispatch.pending,nil)
+ T.UI:ShowPage("profiles"); T.UI:WriteDraft({spell(143,3,true)})
+ T.UI:RefreshStudio(); assert(T.UI.studioSequenceTab.text:find("*",1,true))
+ T.UI.studioNodes.customapl.scripts.OnClick(); T.UI.studioNodes.profiles.scripts.OnClick()
+ local rows=T.UI:DraftRows(); eq(rows[1].spellID,143); eq(rows[1].repeatCount,3); eq(rows[1].skipUnavailable,true)
+ T.UI:CloseSettings(); eq(T.UI.settingsOpen,false); eq(T.Runtime.intent,intent)
+end)
+test("studio_selection_uses_original_strategy_and_unknown_is_display_only",function()
+ local e=F.runtime(); T.UI:ShowPage("profiles"); T.UI:WriteDraft({spell(143,3,true)})
+ assert(T.UI:SelectStudioRule("manual",1)); eq(T.UI:CustomRow().spellID,143); eq(T.UI.strategyPanel.parent,T.UI.studioInspector)
+ T.UI:OpenSequencePolicy(1); eq(T.UI:CustomRow().spellID,143)
+ T.UI:ChangeCustomStrategy(function(r) r.strategies={{mode="skip",conditions={{kind="moving",value=true}}}} end)
+ eq(T.UI:DraftRows()[1].strategies[1].mode,"skip")
+ T.UI:ShowPage("customapl"); assert(T.UI:AddCustomSpell(205)); T.UI:RefreshStudio()
+ local before=e.generation; eq(T.UI.customWidgets[1].frame.studioBadge.text,"UNKNOWN")
+ T.UI:RefreshStudio(); eq(e.generation,before); eq(T.Dispatch.pending,nil)
+ assert(T.UI.studioStatus.text:find("TEK连接：未确认",1,true))
+end)
+test("studio_apl_cursor_inserts_before_target_and_failure_preserves_cursor",function()
+ local e=F.runtime(); T.UI:ShowPage("customapl"); T.UI.customDraft={}; T.UI:AddCustomSpell(143); T.UI:AddCustomSpell(205)
+ local cursor,clear=GetCursorInfo,ClearCursor; local cleared=0
+ GetCursorInfo=function() return "spell",0,"spell",2136 end; ClearCursor=function() cleared=cleared+1 end
+ assert(T.UI:ReceiveCustomSpell(2)); eq(T.UI.customDraft[2].spellID,2136); eq(T.UI.customDraft[3].spellID,205); eq(cleared,1)
+ GetCursorInfo=function() return "spell",0,"spell",nil end
+ eq(T.UI:ReceiveCustomSpell(1),false); eq(cleared,1); eq(T.UI.customDraft[1].spellID,143)
+ GetCursorInfo,ClearCursor=cursor,clear
+end)
+test("studio_drag_cancel_and_drop_before_keep_strategy_identity",function()
+ F.runtime(); T.UI:ShowPage("customapl"); T.UI.customDraft={}; T.UI:AddCustomSpell(143); T.UI:AddCustomSpell(205); T.UI:AddCustomSpell(2136)
+ T.UI.customDraft[1].strategies={{mode="skip",conditions={{kind="moving",value=true}}}}
+ local over=MouseIsOver; MouseIsOver=function() return false end
+ local row=T.UI.customDraft[1]; T.UI.customWidgets[1].frame.scripts.OnDragStart(); T.UI.customWidgets[1].frame.scripts.OnDragStop()
+ eq(T.UI.customDraft[1],row)
+ MouseIsOver=function(frame) return frame==T.UI.customWidgets[3].frame end
+ T.UI.customWidgets[1].frame.scripts.OnDragStart(); T.UI:RefreshStudio(); eq(T.UI.studioInsertion.shown,true)
+ T.UI.customWidgets[1].frame.scripts.OnDragStop(); eq(T.UI.customDraft[2],row); eq(row.strategies[1].mode,"skip"); eq(T.UI.studioInsertion.shown,false)
+ MouseIsOver=over
+end)
+test("studio_layout_collapses_panels_without_mutating_draft_and_reuses_frames",function()
+ F.runtime(); InCombatLockdown=function() return false end
+ T.UI:ShowPage("profiles"); T.UI:WriteDraft({spell(143,3,true)})
+ local parent=UIParent; UIParent={GetWidth=function() return 1920 end,GetHeight=function() return 1080 end}
+ T.UI:LayoutSettings(); eq(T.UI.studioInspector.shown,true); eq(T.UI.studioWorkspace.shown,true)
+ UIParent.GetWidth=function() return 1000 end; UIParent.GetHeight=function() return 720 end
+ T.UI:LayoutSettings(); eq(T.UI.studioInspector.shown,false); eq(T.UI.studioWorkspace.shown,false)
+ UIParent.GetWidth=function() return 900 end; T.UI:LayoutSettings(); eq(T.UI.studioWorkspace.shown,false)
+ eq(T.UI:DraftRows()[1].repeatCount,3)
+ local create=CreateFrame; local made=0; CreateFrame=function(...) made=made+1; return create(...) end
+ for i=1,25 do T.UI:RefreshStudio(); T.UI:LayoutSettings() end
+ eq(made,0); CreateFrame=create
+ local h=T.UI.settingsHeight; InCombatLockdown=function() return true end; UIParent.GetHeight=function() return 500 end
+ T.UI:LayoutSettings(); eq(T.UI.settingsHeight,h)
+ UIParent=parent
+end)
+test("studio_saved_draft_marker_clears_and_inactive_tab_keeps_marker",function()
+ local e=F.runtime(); T.UI:ShowPage("customapl"); T.UI.customDraft={}; T.UI:AddCustomSpell(143)
+ assert(T.UI:StudioDirty("apl","single",T.UI.customDraft))
+ T.UI.studioSave.scripts.OnClick(); eq(T.UI:StudioDirty("apl","single",T.UI.customDraft),false)
+ T.UI:ShowPage("profiles"); T.UI:WriteDraft({spell(205,3,true)}); T.UI:ShowPage("customapl")
+ assert(T.UI.studioSequenceTab.text:find("*",1,true))
+end)
+test("studio_viewport_matrix_keeps_editor_and_footer_reachable",function()
+ F.runtime(); InCombatLockdown=function() return false end; T.UI:ShowPage("profiles")
+ local parent=UIParent
+ for _,size in ipairs({{1920,1080},{2560,1440},{3440,1440},{1280,720}}) do
+  for _,scale in ipairs({.75,1,1.25}) do
+   UIParent={GetWidth=function() return size[1]/scale end,GetHeight=function() return size[2]/scale end}
+   T.UI:LayoutSettings()
+   assert(T.UI.studioWidth*T.UI.settingsFitScale<=size[1]/scale-31)
+   assert(T.UI.settingsHeight*T.UI.settingsFitScale<=size[2]/scale-31)
+   local x=T.UI.studioEditor.point[4]; assert(x+T.UI.studioEditorWidth<=T.UI.studioWidth)
+   local footer=T.UI.pageFooters[T.UI.pages.profiles]; eq(footer.point[4],x); assert(-footer.point[5]+88<=T.UI.settingsHeight-28)
+  end
+ end
+ UIParent=parent
+end)
+test("studio_global_save_commits_open_group_through_existing_save",function()
+ local e=F.runtime(); T.UI.editScene="single"; T.UI:ShowPage("profiles")
+ T.UI:WriteDraft({T.SkillGroups:Row(group())}); T.UI:OpenSkillGroup("manual",1)
+ T.UI.groupRounds.text="3"; T.UI.studioSave.scripts.OnClick()
+ eq(e.db.profiles.single[1].group.rounds,3); eq(T.Runtime.intent,false)
+ T.UI:CloseSkillGroup(true)
 end)
 return n

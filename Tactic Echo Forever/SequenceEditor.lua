@@ -54,7 +54,7 @@ function U:ReorderSequenceRow(index,destination)
     local rows=self:DraftRows(); if not rows or not rows[index] or not rows[destination] then return end
     if not self:CommitCustomNumbers() then return end
     rows=self:DraftRows(); local row=table.remove(rows,index); table.insert(rows,destination,row)
-    self:Paint(self.strategyPanel,"Hide"); self.sequencePolicyRow=nil; self:WriteDraft(rows)
+    self.studioSelected=nil; self:Paint(self.strategyPanel,"Hide"); self.sequencePolicyRow=nil; self:WriteDraft(rows)
 end
 function U:AddSequenceSpell(rawID,index)
     if not self:CommitSequenceCounts() then return false end
@@ -97,8 +97,11 @@ function U:EditSequenceRow(index,operation,value)
         if rows[index].repeatCount==n then return true end
         rows[index].repeatCount=n
     else return false end
-    self.sequencePolicyRow=nil; self:Paint(self.strategyPanel,"Hide")
-    self:WriteDraft(rows); self:SequenceMessage(operation=="usage" and value=="target"
+    local keep=self.studioIntegrated and self.studioSelected and self.studioSelected.source=="manual" and self.studioSelected.index==index
+    self.studioSelected=nil; self.sequencePolicyRow=nil; self:Paint(self.strategyPanel,"Hide")
+    self:WriteDraft(rows)
+    if keep then self:SelectStudioRule("manual",operation=="move" and index+value or index) end
+    self:SequenceMessage(operation=="usage" and value=="target"
         and "草稿已调整；目标GUID受限时按本次目标选择计一次，重新选中算新选择。点击保存生效。"
         or "草稿已调整，点击保存生效。")
     return true
@@ -167,6 +170,7 @@ function U:RefreshSequenceEditor(force)
         end
     end
     self:Paint(self.sequenceChild,"SetHeight",math.max(355,rows and math.min(#rows,16)*88 or 355))
+    self:RefreshStudio()
 end
 function U:CreateSequenceEditor(parent)
     self.sequenceAdvanced=false
@@ -196,11 +200,10 @@ function U:CreateSequenceEditor(parent)
     self.sequenceRows={}
     for i=1,16 do
         local index=i
-        local row=self:Frame("Frame",child,"BackdropTemplate")
+        local row=self:CreateRuleRow(child,i)
         self:Paint(row,"SetPoint","TOPLEFT",child,"TOPLEFT",0,-(i-1)*88); self:Paint(row,"SetSize",530,80)
         self:BindSequenceDrop(row,index,true)
         self:BindControlTooltip(row,"技能条目","可拖入插入，或使用上下箭头排序。")
-        self:Paint(row,"SetBackdrop",{bgFile="Interface\\Buttons\\WHITE8X8",edgeFile="Interface\\Buttons\\WHITE8X8",edgeSize=1})
         self:Paint(row,"SetBackdropColor",.05,.08,.12,1); self:Paint(row,"SetBackdropBorderColor",.25,.42,.58,1)
         self:Paint(row,"RegisterForDrag","LeftButton")
         self:Paint(row,"SetScript","OnDragStart",function() self:Guard(function() if self:CommitCustomNumbers() then self.sequenceDragging=index; self:Paint(row,"SetAlpha",.5) end end) end)
@@ -211,8 +214,7 @@ function U:CreateSequenceEditor(parent)
                 if ok and S.Public(value,"boolean")==true then self:ReorderSequenceRow(source,target); break end
             end
         end) end)
-        local made,icon=self:Invoke(row,"CreateTexture",nil,"ARTWORK")
-        if made then self:Paint(icon,"Hide") end
+        local icon=row.studioIcon
         local widgets={frame=row,icon=icon,name=self:Text(row,8,-10,232),count=self:SequenceInput(row,48,-44,64)}
         self:Paint(widgets.name,"SetWordWrap",false)
         self:BindSequenceDrop(widgets.count,index)

@@ -413,6 +413,8 @@ local function object(name)
     setmetatable(o,{__index=function(_,method)
         return function(self,...)
             if method=="SetScript" then local key,fn=...; self.scripts[key]=fn
+            elseif method=="GetParent" then return self.parent
+            elseif method=="GetScript" then return self.scripts[(...)]
             elseif method=="RegisterEvent" then self.events[(...)]=true
             elseif method=="CreateFontString" or method=="CreateTexture" then
                 local child=object(); child.parent=self; child.kind=method=="CreateTexture" and "Texture" or "FontString"
@@ -454,7 +456,7 @@ GetCurrentKeyBoardFocus=function() return nil end
 UnitExists=function() return true end; UnitCanAttack=function() return true end
 UnitIsDeadOrGhost=function() return false end; IsPlayerMoving=function() return false end
 UnitCastingInfo=function() return nil end; UnitChannelInfo=function() return nil end
-load("UI.lua"); load("UIComponents.lua"); load("SequenceEditor.lua"); load("CustomAPLEditor.lua"); load("SkillGroupEditor.lua"); load("HUD.lua"); load("Dispatch.lua"); load("Presentation.lua"); load("Transport.lua"); load("Runtime.lua"); load("Hotkeys.lua"); load("Core/Bootstrap.lua")
+load("UI.lua"); load("UIComponents.lua"); load("Studio.lua"); load("StudioWorkbench.lua"); load("StudioTools.lua"); load("SequenceEditor.lua"); load("CustomAPLEditor.lua"); load("SkillGroupEditor.lua"); load("HUD.lua"); load("Dispatch.lua"); load("Presentation.lua"); load("Transport.lua"); load("Runtime.lua"); load("Hotkeys.lua"); load("Core/Bootstrap.lua")
 local realprint=io.write
 test("toc_bootstrap_independent_namespace_sent_payload",function()
     local ef=allFrames.TEF_EventFrame
@@ -1261,7 +1263,7 @@ end)
 test("hidden_auxiliary_pages_and_manual_loop_parent",function()
     deliveryFixture()
     T.UI:ShowPage("profiles")
-    eq(T.UI.navigation.scene.shown,false); assert(T.UI.navigation.diagnostics.shown~=false)
+    eq(T.UI.navigation.scene.shown,false); assert(T.UI.studioActivities.diagnostics.shown~=false)
     eq(T.UI.testReset.parent,T.UI.manualLoopPanel)
     eq(T.UI.loopModeControls.normal.parent,T.UI.manualLoopPanel)
     eq(T.UI.sourceSelect.manual.parent,T.UI.pages.overview)
@@ -1959,7 +1961,7 @@ test("loop_selection_survives_hover_leave_and_page_refresh",function()
         eq(T.engine.db.loopMode,mode); eq(selected.tefControlSelected,true)
         selected.scripts.OnEnter(); selected.scripts.OnLeave()
         eq(selected.backdropBorderColor[2],.85); eq(selected.backdropColor[2],.23)
-        assert(selected.text:find("●",1,true)); eq(T.UI.page,"overview")
+        assert(selected.text:find(({none="不循环",normal="普通循环",target="切目标重置",combat="脱战重置"})[mode],1,true)); eq(T.UI.page,"overview")
         for key,b in pairs(T.UI.loopModeControls) do eq(b.tefControlSelected,key==mode) end
         T.UI:ShowPage("hud"); T.UI:ShowPage("looping"); eq(selected.tefControlSelected,true)
         eq(T.Runtime.intent,false)

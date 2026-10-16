@@ -3,8 +3,10 @@ local U,S=TEF.UI,TEF.Safety
 -- Independent TEUI-style components. Presentation holds no input authority.
 U.controls={}
 U.theme={fontBody=14,fontHint=12,fontSection=16,fontPage=18,fontTitle=20,controlHeight=32,spaceInline=8,spaceSection=24,
+ panel={.086,.102,.133,1},border={.204,.251,.322,1},
  colorText={.94,.96,1,1},colorHint={.70,.76,.84,1},colorBorder={.34,.44,.58,1},colorFocus={.35,.85,1,1}}
 U.controlHeight=U.theme.controlHeight
+U.theme.statusColors={READY={.35,.82,.55,1},UNKNOWN={.96,.76,.36,1},BLOCKED={.94,.40,.42,1},DISABLED={.70,.76,.84,1}}
 U.controlFontSize=U.theme.fontBody
 function U:ApplyControlFont(control,isButton,size)
     local target=control
@@ -75,6 +77,9 @@ function U:DeleteDraft(source,index,confirmed)
  end
  if source=="group" and not self:CommitGroupFields() then return false end
  table.remove(rows,index)
+ self.studioSelected=nil; self:Paint(self.strategyPanel,"Hide")
+ self.strategyInputs={}; self.sequencePolicyRow=nil; self.customFormIndex=nil
+ if source=="group" then self.strategySource=nil; self:Paint(self.groupPanel,"Show") end
  self.undoDelete={source=source,index=index,row=row,engine=self.engine,scene=source=="manual" and self.editScene or self.customLoadedScene,group=self.groupDraft}
  if source=="manual" then self.sequencePolicyRow=nil; self:Paint(self.strategyPanel,"Hide"); self:WriteDraft(rows); self:SequenceMessage("已删除草稿条目，可撤销；保存后生效。")
  elseif source=="group" then self.groupDirty=true; self:RefreshSkillGroup()
@@ -100,6 +105,8 @@ function U:UndoDelete(source)
  local rows=source=="manual" and self:DraftRows() or source=="group" and self.groupDraft.steps or self.customDraft
  if not rows or #rows>=(source=="group" and 8 or 16) or not self:CommitCustomNumbers() then return false end
  table.insert(rows,math.min(undo.index,#rows+1),undo.row); self.undoDelete=nil
+ self.studioSelected=nil; self:Paint(self.strategyPanel,"Hide"); self.sequencePolicyRow=nil; self.strategyInputs={}; self.customFormIndex=nil
+ if source=="group" then self.strategySource=nil; self:Paint(self.groupPanel,"Show") end
  if source=="manual" then self:WriteDraft(rows); self:SequenceMessage("已撤销最近一次删除；保存后生效。")
  elseif source=="group" then self.groupDirty=true; self:RefreshSkillGroup()
  else self.customFormIndex=nil; self:RefreshCustomAPL(); self:CustomMessage("已撤销最近一次删除；保存后生效。") end
@@ -154,6 +161,7 @@ function U:LayoutSettings()
  local widthOK,rawWidth=self:Invoke(UIParent,"GetWidth"); local heightOK,rawHeight=self:Invoke(UIParent,"GetHeight")
  local width=widthOK and S.Public(rawWidth,"number"); local height=heightOK and S.Public(rawHeight,"number")
  if not width or not height or width<=32 or height<=32 then return end
+ if self.studio then if self:Combat()==false then self:LayoutStudioSettings(width,height) end; return end
  self.fittingSettings=true
  local scale=math.max(.85,math.min(1,(width-32)/820)); self.settingsFitScale=scale
  local panelHeight=math.min(880,(height-32)/scale); self.settingsHeight=panelHeight
@@ -321,16 +329,20 @@ function U:CompactControl(control,width)
  self:Paint(control,"SetSize",width,28)
  self:ApplyControlFont(control,control.tefCaption~=nil,12)
 end
+function U:PaintListRow(frame,hover)
+ if hover~=nil then frame.tefRowHovered=hover end
+ local alternate=(frame.tefRowIndex or 1)%2==0
+ local selected=frame.tefRowSelected==true
+ local active=selected or frame.tefRowHovered
+ self:Call(frame,"SetBackdropColor",active and .07 or alternate and .04 or .03,active and .12 or alternate and .065 or .05,active and .18 or alternate and .10 or .08,1)
+ if selected then self:Call(frame,"SetBackdropBorderColor",unpack(self.theme.colorFocus))
+ else self:Call(frame,"SetBackdropBorderColor",.13,.20,.28,1) end
+end
 function U:StyleListRow(frame,index)
  frame.tefRowIndex=index
- local function paint(hover)
-  local alternate=index%2==0
-  self:Call(frame,"SetBackdropColor",hover and .07 or alternate and .04 or .03,hover and .12 or alternate and .065 or .05,hover and .18 or alternate and .10 or .08,1)
-  self:Call(frame,"SetBackdropBorderColor",.13,.20,.28,1)
- end
- self:Paint(frame,"SetScript","OnEnter",function() paint(true); self:ShowControlTooltip(frame) end)
- self:Paint(frame,"SetScript","OnLeave",function() paint(false); self:HideControlTooltip(frame) end)
- paint(false)
+ self:Paint(frame,"SetScript","OnEnter",function() self:PaintListRow(frame,true); self:ShowControlTooltip(frame) end)
+ self:Paint(frame,"SetScript","OnLeave",function() self:PaintListRow(frame,false); self:HideControlTooltip(frame) end)
+ self:PaintListRow(frame,false)
 end
 function U:CreateSectionCard(parent,title,x,y,width,height)
     -- Page text must be above its decoration. A child backdrop Frame has a
@@ -398,7 +410,7 @@ function U:CreateSegmentedControl(parent,choices,x,y,width,getter,setter)
         for i,choice in ipairs(choices) do local value,label=choice[1],choice[2]
             out[value]=self:CreateActionButton(child,label,0,-(i-1)*40,width-32,function() if self.strategySource=="groupStep" then self.groupDirty=true end; setter(value); self:Paint(menu,"Hide") end)
         end
-        local function sync() local value=getter(); for _,choice in ipairs(choices) do if value==choice[1] then self:Paint(toggle,"SetText",choice[2] .. " ▾") end; out[choice[1]].tefControlSelected=value==choice[1]; self:SetControlEnabled(out[choice[1]],out[choice[1]].tefControlEnabled) end end
+        local function sync() local value=getter(); for _,choice in ipairs(choices) do if value==choice[1] then self:Paint(toggle,"SetText",choice[2] .. " v") end; out[choice[1]].tefControlSelected=value==choice[1]; self:SetControlEnabled(out[choice[1]],out[choice[1]].tefControlEnabled) end end
         self:AddControlSync(sync,toggle); sync(); self:Paint(menu,"Hide"); return out
     end
     for i,choice in ipairs(choices) do
@@ -408,7 +420,7 @@ function U:CreateSegmentedControl(parent,choices,x,y,width,getter,setter)
         local function sync()
             local active=getter()==value
             b.tefControlSelected=active
-            self:Paint(b,"SetText",active and ("|cff80ffcc● " .. label .. "|r") or label)
+            self:Paint(b,"SetText",active and ("|cff80ffcc" .. label .. "|r") or label)
             self:SetControlEnabled(b,b.tefControlEnabled)
         end
         self:AddControlSync(sync,b)

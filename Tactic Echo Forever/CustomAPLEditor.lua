@@ -1,6 +1,6 @@
 local _,T=...
 local U,S,C=T.UI,T.Safety,T.APL.Custom
-function U:CustomMessage(text) self:Paint(self.strategyMessage,"SetText",text); if self.strategySource=="manual" then self:SequenceMessage(text) else self:Paint(self.customMessage,"SetText",text) end end
+function U:CustomMessage(text) self:Paint(self.strategyMessage,"SetText",text); if self.groupEditing then self:Paint(self.groupMessage,"SetText",text) elseif self.strategySource=="manual" or self.page=="profiles" then self:SequenceMessage(text) else self:Paint(self.customMessage,"SetText",text) end end
 function U:CustomRow() if self.strategySource=="groupStep" then return self.groupDraft and self.groupDraft.steps[self.groupSelected or 1] end; if self.strategySource=="manual" then return self.sequencePolicyRow end; return self.customDraft and self.customDraft[self.customSelected or 1] end
 function U:CommitCustomNumbers()
  local pending={}
@@ -55,7 +55,7 @@ function U:RefreshCustomAPL()
  for i,w in ipairs(self.customWidgets) do
   local row=self.customDraft[i]; self:Paint(w.frame,row and "Show" or "Hide")
   if row then
-   local height=row.group and 76 or 44
+   local height=80
    self:Paint(w.frame,"ClearAllPoints"); self:Paint(w.frame,"SetPoint","TOPLEFT",self.customChild,"TOPLEFT",0,-listHeight); self:Paint(w.frame,"SetHeight",height); listHeight=listHeight+height+8
    self:Paint(w.groupEdit,row.group and "Show" or "Hide"); self:Paint(w.name,"SetWidth",232)
    local view=S.Spell(row.spellID,tostring(row.spellID or "未解析")); if row.group then view.name="【" .. row.group.name .. "】" end
@@ -73,8 +73,9 @@ function U:RefreshCustomAPL()
  self:Paint(self.maintenanceHint,maintenance and "Show" or "Hide")
  self:Paint(self.customEnableLabel,"SetText",maintenance and "启用增益维护" or "启用本方案")
  self:Paint(self.customNewGroup,maintenance and "Hide" or "Show")
+ self:RefreshStudio()
 end
-function U:AddCustomSpell(id)
+function U:AddCustomSpell(id,index)
  if not self.customDraft then self:RefreshCustomAPL() end
  id=S.ID(id); if not id then self:CustomMessage("请输入公开合法技能ID。"); return false end
  if self.page=="maintenance" and not T.Maintenance:BuffSpell(id) then self:CustomMessage("仅支持可确认的增益或已支持的解控法术；治疗、伤害、造物和位移不能加入。"); return false end
@@ -85,13 +86,14 @@ function U:AddCustomSpell(id)
   local condition=T.Maintenance.ControlBreakers[id] and {kind="lossOfControl",control="stun",value=true} or {kind="cdmBuff",value=false,spellID=id}
   self.customDraft[#self.customDraft].strategies={{mode="use",conditions={condition}}}
  end
- self.customSelected=#self.customDraft; self.customFormIndex=nil; self:RefreshCustomAPL(); self:CustomMessage("已加入草稿；保存后生效。自动无法识别目标类型时，请编辑施放类型。"); return true
+ if index and index<#self.customDraft then local added=table.remove(self.customDraft); table.insert(self.customDraft,index,added) end
+ self.customSelected=index or #self.customDraft; self.customFormIndex=nil; self:RefreshCustomAPL(); self:CustomMessage("已加入草稿；保存后生效。自动无法识别目标类型时，请编辑施放类型。"); return true
 end
-function U:ReceiveCustomSpell()
+function U:ReceiveCustomSpell(index)
  local id,why=T.ActionSources:Cursor()
  if why=="NO_DATA" then return false end
  if not id then self.engine:Log("display",why or "CUSTOM_CURSOR_ID_UNVERIFIED"); self:CustomMessage("技能或宏ID未确认：" .. (why or "UNKNOWN") .. "；可手输精确ID。"); return false end
- if not self:AddCustomSpell(id) then return false end
+ if not self:AddCustomSpell(id,index) then return false end
  S.Call("ClearCursor"); self:Refresh(); return true
 end
 function U:CreateCustomAPLEditor(parent)
@@ -143,11 +145,10 @@ function U:CreateCustomAPLEditor(parent)
  local child=self:Frame("Frame",scroll); self.customChild=child; self:Paint(child,"SetSize",530,108); self:Paint(scroll,"SetScrollChild",child)
  self.customWidgets={}
  for i=1,16 do
-  local index=i; local frame=self:Frame("Frame",child,"BackdropTemplate")
+  local index=i; local frame=self:CreateRuleRow(child,i)
   self:Paint(frame,"SetPoint","TOPLEFT",child,"TOPLEFT",0,-(i-1)*80); self:Paint(frame,"SetSize",530,72)
   self:Paint(frame,"EnableMouse",true)
-  self:Paint(frame,"SetScript","OnReceiveDrag",function() self:Guard(function() self:ReceiveCustomSpell() end) end)
-  self:Paint(frame,"SetBackdrop",{bgFile="Interface\\Buttons\\WHITE8X8",edgeFile="Interface\\Buttons\\WHITE8X8",edgeSize=1})
+  self:Paint(frame,"SetScript","OnReceiveDrag",function() self:Guard(function() self:ReceiveCustomSpell(index) end) end)
   self:Paint(frame,"SetBackdropColor",.05,.08,.12,1); self:Paint(frame,"SetBackdropBorderColor",.25,.42,.58,1)
   self:Paint(frame,"RegisterForDrag","LeftButton")
   self:Paint(frame,"SetScript","OnDragStart",function() self:Guard(function()
@@ -183,23 +184,26 @@ function U:MoveCustomRule(index,direction)
  local other=index+direction
  if other<1 or other>#self.customDraft then return end
  self.customDraft[index],self.customDraft[other]=self.customDraft[other],self.customDraft[index]
- self.customSelected=other; self.customFormIndex=nil; self:RefreshCustomAPL()
+ self.customSelected=other; self.studioSelected={source="apl",index=other}; self.customFormIndex=nil; self:RefreshCustomAPL()
 end
 
 function U:ReorderCustomRule(index,other)
  if not self:CommitCustomNumbers() or not self.customDraft[index] or not self.customDraft[other] then return end
  local row=table.remove(self.customDraft,index); table.insert(self.customDraft,other,row)
- self.customSelected=other; self.customFormIndex=nil; self:RefreshCustomAPL()
+ self.customSelected=other; self.studioSelected={source="apl",index=other}; self.customFormIndex=nil; self:RefreshCustomAPL()
 end
 local strategyKinds={"comboPoints","lossOfControl","usable","range","distance","moving","enemies","cdmCooldown","cdmBuff","cooldown","combat","targetType","learned","succeeded","nearbyEnemies"}
 local strategyNames={comboPoints="连击点数",lossOfControl="自身失控类型",usable="技能可用性",range="技能范围",distance="目标距离",moving="移动状态",enemies="可见敌人数",cdmCooldown="CDM冷却状态",cdmBuff="CDM增益状态",cooldown="技能是否CD",combat="战斗状态",targetType="当前目标类型",learned="指定技能已学",succeeded="精确成功使用记录",cdmStacks="已移除：CDM增益层数",rangedEnemies="自身范围内可见敌人数",nearbyEnemies="自身范围内可见敌人数"}
+U.conditionNames=strategyNames; U.conditionKinds=strategyKinds
 function U:RefreshStrategyKinds()
  local count=0
  for _,kind in ipairs(strategyKinds) do
   local button=self.strategyKindButtons and self.strategyKindButtons[kind]
   if button then
-   if kind=="comboPoints" and self.engine.classToken~="ROGUE" then self:Paint(button,"Hide")
-   else self:Paint(button,"Show"); self:Paint(button,"ClearAllPoints"); self:Paint(button,"SetPoint","TOPLEFT",self.strategyKindChild,"TOPLEFT",0,-count*40); count=count+1 end
+   local filter=(self.studioConditionFilter or ""):lower()
+   local category=self.ConditionCategory and self:ConditionCategory(kind) or ""
+   if (kind=="comboPoints" and self.engine.classToken~="ROGUE") or (filter~="" and not (strategyNames[kind] .. kind .. category):lower():find(filter,1,true)) then self:Paint(button,"Hide")
+   else self:Paint(button,"SetText",category .. " · " .. strategyNames[kind]); self:Paint(button,"Show"); self:Paint(button,"ClearAllPoints"); self:Paint(button,"SetPoint","TOPLEFT",self.strategyKindChild,"TOPLEFT",0,-count*40); count=count+1 end
   end
  end
  self:Paint(self.strategyKindChild,"SetHeight",math.max(30,count*40))
@@ -336,11 +340,11 @@ function U:RefreshStrategyForm()
    self:Paint(card,"SetPoint","TOPLEFT",form,"TOPLEFT",0,y); self:Paint(card,"SetSize",390,height)
    self:Paint(card,"SetBackdrop",{bgFile="Interface\\Buttons\\WHITE8X8",edgeFile="Interface\\Buttons\\WHITE8X8",edgeSize=1})
    self:Paint(card,"SetBackdropColor",.045,.075,.11,1); self:Paint(card,"SetBackdropBorderColor",.25,.45,.60,1)
-   self:CreateSegmentedControl(card,{{"use","使用"},{"skip","跳过"}},8,-8,160,function() return strategy.mode end,function(v) strategy.mode=v end)
-   self:CreateActionButton(card,"+ 条件",176,-8,95,function() self:ChangeCustomStrategy(function()
+   self:CreateSegmentedControl(card,{{"use","满足时"},{"skip","除非"}},8,-8,160,function() return strategy.mode end,function(v) strategy.mode=v end)
+   self:CreateActionButton(card,"+ 条件",176,-8,95,function() self.strategyKindTarget=nil; self:ChangeCustomStrategy(function()
     if #strategy.conditions>=8 then self:CustomMessage("每条策略最多8个条件。"); return end
-    strategy.conditions[#strategy.conditions+1]={kind="usable",value=true}
-   end) end)
+    local added={kind="usable",value=true}; strategy.conditions[#strategy.conditions+1]=added; self.strategyKindTarget=added
+   end); if self.OpenStudioConditionPicker then self:OpenStudioConditionPicker() end end)
    self:CreateActionButton(card,"删除策略",279,-8,102,function() self:ConfirmAction("确认删除这条策略及全部条件？保存后生效。",function() self:ChangeCustomStrategy(function(r) table.remove(r.strategies,index) end) end,"删除策略") end)
    for ci,condition in ipairs(strategy.conditions) do
     local conditionIndex=ci; local cy=-56-(ci-1)*192
@@ -348,6 +352,12 @@ function U:RefreshStrategyForm()
     self:Paint(typeButton,"SetScript","OnClick",function() self:Guard(function()
      self:Paint(self.strategyKindMenu,"ClearAllPoints"); self:Paint(self.strategyKindMenu,"SetPoint","TOPLEFT",typeButton,"BOTTOMLEFT",0,-2)
      self.strategyKindTarget=condition; self:RefreshStrategyKinds(); self:Paint(self.strategyKindMenu,"Show")
+    end) end)
+    self:CreateActionButton(card,"↑",204,cy,32,function() self:ChangeCustomStrategy(function()
+     if conditionIndex>1 then strategy.conditions[conditionIndex],strategy.conditions[conditionIndex-1]=strategy.conditions[conditionIndex-1],strategy.conditions[conditionIndex] end
+    end) end)
+    self:CreateActionButton(card,"↓",244,cy,32,function() self:ChangeCustomStrategy(function()
+     if conditionIndex<#strategy.conditions then strategy.conditions[conditionIndex],strategy.conditions[conditionIndex+1]=strategy.conditions[conditionIndex+1],strategy.conditions[conditionIndex] end
     end) end)
     self:CreateActionButton(card,"删除条件",282,cy,99,function() self:ConfirmAction("确认删除这条条件？保存后生效。",function() self:ChangeCustomStrategy(function()
      table.remove(strategy.conditions,conditionIndex); if #strategy.conditions==0 then table.remove(row.strategies,index) end
@@ -435,8 +445,8 @@ function U:CreateStrategyPanel()
  self:Paint(panel,"SetBackdrop",{bgFile="Interface\\Buttons\\WHITE8X8",edgeFile="Interface\\Buttons\\WHITE8X8",edgeSize=2})
  self:Paint(panel,"SetBackdropColor",.025,.035,.055,.98); self:Paint(panel,"SetBackdropBorderColor",.25,.45,.60,1)
  self.strategyTitle=self:Text(panel,15,-18,335,"GameFontNormal")
- self:CreateActionButton(panel,"关闭",365,-12,52,function() if not self:CommitCustomNumbers() then return end; if self.strategySource=="groupStep" then self.strategySource=nil; self.strategyInputs={}; self.customFormIndex=nil; self:RefreshSkillGroup(); self:Paint(self.groupPanel,"Show") end; self:Paint(panel,"Hide"); self:LayoutSettings() end)
- self:CreateHintText(panel,"使用条件全部满足；任一跳过策略满足则跳过。未知不授权使用。",15,-51,395)
+ self.strategyCloseButton=self:CreateActionButton(panel,"关闭",365,-12,52,function() if not self:CommitCustomNumbers() then return end; self.studioSelected=nil; self.studioInspectorRequested=self.groupEditing~=nil; if self.strategySource=="groupStep" then self.strategySource=nil; self.strategyInputs={}; self.customFormIndex=nil; self:RefreshSkillGroup(); self:Paint(self.groupPanel,"Show") end; self:Paint(panel,"Hide"); self:LayoutSettings() end)
+ self:CreateHintText(panel,"使用条件全部满足；任一跳过策略全部满足则跳过。\n未知不授权使用。",15,-51,395)
  self:CreateActionButton(panel,"+",365,-84,50,function() self:ChangeCustomStrategy(function(r)
   if #r.strategies>=8 then self:CustomMessage("每个技能最多8条策略。"); return end
   r.strategies[#r.strategies+1]={mode="use",conditions={{kind="usable",value=true}}}
