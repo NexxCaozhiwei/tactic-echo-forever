@@ -1,2 +1,3 @@
 -r requirements-windows.txt
 lupa>=2.0
+Pillow>=10

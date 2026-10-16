@@ -351,8 +351,8 @@ function UI:CreateSettings()
     self:Paint(labelPanel,"SetSize",548,660); self:Paint(labelPanel,"SetPoint","TOPLEFT",self.pages.hud,"TOPLEFT",16,-48)
     TEF.HudStyles:BuildUI(self,labelPanel)
     self:CreateSectionCard(self.pages.hud,"HUD位置与缩放",0,-736,580,248)
-    self.hudSlider=self:CreateSliderRow(self.pages.hud,"整体缩放",16,-784,548,.6,1.8,.1,
-        function() return e.db.hud.scale end,function(value) e.db.hud.scale=value; self:Layout() end)
+    self.hudSlider=self:CreateSliderRow(self.pages.hud,"整体缩放",16,-784,548,.6,1,.1,
+        function() return math.min(1,e.db.hud.scale) end,function(value) e.db.hud.scale=value; self:Layout() end)
     self:CreateToggleRow(self.pages.hud,"锁定位置",16,-840,548,function() return e.db.hud.locked end,function(value) e.db.hud.locked=value end)
     self:CreateToggleRow(self.pages.hud,"显示后续预览",16,-888,548,function() return e.db.hud.preview end,function(value) e.db.hud.preview=value end)
     button("hud","恢复位置",16,-936,188,function()
@@ -364,11 +364,11 @@ function UI:CreateSettings()
         end,"恢复位置")
     end)
     self:CreateSectionCard(self.pages.hud,"技能图标大小与间距",0,-1000,580,392)
-    local geometryRows={{"mainSize","当前技能大小",32,112},{"preview1Size","后续技能1大小",24,96},{"preview2Size","后续技能2大小",24,96},{"gap1","当前与后续1间距",2,40},{"gap2","后续1与2间距",2,40}}
+    local geometryRows={{"mainSize","当前技能大小",32,44},{"preview1Size","后续技能1大小",24,28},{"preview2Size","后续技能2大小",24,28},{"gap1","主图标与文字间距",2,6},{"gap2","后续1与2间距",2,4}}
     self.hudGeometryControls={}
     for i,row in ipairs(geometryRows) do local field=row[1]
         local slider,input=self:CreateSliderRow(self.pages.hud,row[2],16,-1048-(i-1)*64,548,row[3],row[4],1,
-            function() return e.db.hud.geometry[field] end,function(value) e.db.hud.geometry[field]=value; TEF.HUD:Layout() end,true)
+            function() return math.min(row[4],e.db.hud.geometry[field]) end,function(value) e.db.hud.geometry[field]=value; TEF.HUD:Layout() end,true)
         self.hudGeometryControls[field]={slider=slider,input=input}
     end
     self:CreateHintText(self.pages.hud,"左键主卡切换派发意图，右键打开设置；空白区域可拖动。战斗中布局变更延后。",16,-1416,548)

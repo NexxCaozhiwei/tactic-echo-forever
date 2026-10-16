@@ -39,17 +39,48 @@ function A.Clean(raw)
     end
     return out
 end
+function A:ApplyCompact(hud)
+ local U=TEF.UI; local styles=hud.engine.db.hud.styles
+ local function paint(text,parent,v,width,cap,point,x,y)
+  U:Paint(text,"SetFont",STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF",math.min(cap,v.fontSize*v.scale),v.fontPreset=="disable" and "" or "OUTLINE")
+  U:Paint(text,"SetTextColor",v.color.r,v.color.g,v.color.b,v.color.a)
+  U:Paint(text,"SetScale",1); U:Paint(text,"ClearAllPoints"); U:Paint(text,"SetWidth",width)
+  U:Paint(text,"SetPoint",point or "TOPLEFT",parent,point or "TOPLEFT",x or 0,y or 0)
+  U:Paint(text,"SetJustifyH",point=="TOPRIGHT" and "RIGHT" or "LEFT")
+  U:Paint(text,"SetWordWrap",false); U:Paint(text,"SetMaxLines",1)
+  U:Paint(text,v.enabled and "Show" or "Hide")
+ end
+ for i,card in ipairs(hud.cards) do
+  local group=styles[i==1 and "main" or "preview"]
+  paint(card.key,card.textParent,group.key,card.size-8,10,"TOPRIGHT",-4,-4)
+ end
+ for _,key in ipairs({"name","status","rangeText"}) do
+  local slot=hud.textSlots[key]; paint(hud[key],slot.frame,styles.global[key],slot.width,key=="name" and 14 or 12)
+ end
+ U:ApplyControlFont(hud.badgeText,false,12)
+ local progress=styles.global.status
+ U:ApplyControlFont(hud.countText,false,math.min(12,progress.fontSize*progress.scale))
+ U:Paint(hud.countText,"SetTextColor",progress.color.r,progress.color.g,progress.color.b,progress.color.a)
+ U:Paint(hud.countText,progress.enabled and "Show" or "Hide")
+ hud:CompactVisibility()
+ for _,card in ipairs(hud.cards) do TEF.Presentation:PaintRange(card,card.displayStep) end
+end
 function A:Apply(hud)
     local U=TEF.UI
     if U:Combat()~=false then hud.pending=true; return end
+    if hud.compact then return self:ApplyCompact(hud) end
     local styles=hud.engine.db.hud.styles
-    local function paint(text,parent,v,width)
+    local function paint(text,parent,v,width,slotKey)
         -- Each UI operation is independently contained by UI:Paint.
         U:Paint(text,"SetFont",STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF",v.fontSize,v.fontPreset=="disable" and "" or "OUTLINE")
         U:Paint(text,"SetTextColor",v.color.r,v.color.g,v.color.b,v.color.a)
         U:Paint(text,"SetScale",v.scale); U:Paint(text,"ClearAllPoints")
-        U:Paint(text,"SetWidth",width)
-        U:Paint(text,"SetPoint",v.point,parent,v.point,v.offsetX,v.offsetY-(parent==hud.frame and (hud.textShift or 0) or 0))
+        U:Paint(text,"SetWidth",width/v.scale)
+        local x,y=v.offsetX,v.offsetY
+        -- 保留旧配置数值，将整体文字偏移解释为新语义区域内的相对位移。
+        if slotKey then x=x-defaults[slotKey][3]; y=y-defaults[slotKey][4] end
+        U:Paint(text,"SetPoint",v.point,parent,v.point,x,y-(parent==hud.frame and (hud.textShift or 0) or 0))
+        U:Paint(text,"SetWordWrap",false); U:Paint(text,"SetMaxLines",1)
         local align=v.point:find("RIGHT",1,true) and "RIGHT" or v.point:find("LEFT",1,true) and "LEFT" or "CENTER"
         U:Paint(text,"SetJustifyH",align); U:Paint(text,v.enabled and "Show" or "Hide")
     end
@@ -61,9 +92,10 @@ function A:Apply(hud)
             paint(card[key],card.textParent,group[key],key=="label" and 28 or card.size-6)
         end
     end
-    paint(hud.name,hud.frame,styles.global.name,(hud.layoutWidth or 244)-16)
-    paint(hud.status,hud.frame,styles.global.status,(hud.layoutWidth or 244)-16)
-    paint(hud.rangeText,hud.frame,styles.global.rangeText,(hud.layoutWidth or 244)-16)
+    for _,key in ipairs({"name","status","rangeText"}) do
+        local slot=hud.textSlots and hud.textSlots[key]
+        paint(hud[key],slot and slot.frame or hud.frame,styles.global[key],slot and slot.width or (hud.layoutWidth or 244)-16,slot and key)
+    end
     for _,card in ipairs(hud.cards or {}) do TEF.Presentation:PaintRange(card,card.displayStep) end
 end
 function A:BuildUI(U,parent)
@@ -75,11 +107,11 @@ function A:BuildUI(U,parent)
         function() return module end,function(v) module=v; key=v=="global" and "name" or "key" end)
     local choices={{"key","键位"},{"chargeText","充能"},{"cooldownText","冷却"},{"state","状态"},{"label","卡片标题"},{"name","技能名称"},{"status","进度行"},{"rangeText","目标距离"}}
     local buttons=U:CreateSegmentedControl(parent,choices,0,-48,548,function() return key end,function(v)
-        if (module=="global")==globalKey(v) then key=v end
+        if (module=="global")==globalKey(v) and (not TEF.HUD.compact or (module=="main" and v=="key") or (module=="global" and (v=="name" or v=="status"))) then key=v end
     end)
     U.labelStyleButtons=buttons
     U:AddControlSync(function()
-        for _,v in ipairs(choices) do U:SetControlEnabled(buttons[v[1]],(module=="global")==globalKey(v[1]),"请先选择标签所属的主卡、预览卡或整体文字分组。") end
+        for _,v in ipairs(choices) do U:SetControlEnabled(buttons[v[1]],(module=="global")==globalKey(v[1]) and (not TEF.HUD.compact or (module=="main" and v[1]=="key") or (module=="global" and (v[1]=="name" or v[1]=="status"))),"精简HUD仅显示主卡键位、名称和进度；其余信息移入悬停。") end
     end,parent)
     U.labelEnabledButton=U:CreateToggleRow(parent,"显示当前标签",0,-96,548,function() return current().enabled end,function(v) current().enabled=v; changed() end)
     U:CreateSegmentedControl(parent,{{"normal","普通描边"},{"highlight","高亮描边"},{"disable","无描边"}},0,-144,548,
@@ -96,5 +128,5 @@ function A:BuildUI(U,parent)
     U:CreateActionButton(parent,"重置当前标签",360,-552,188,function()
         U:ConfirmAction("确认恢复当前标签的默认样式？其他标签保留。",function() U.engine.db.hud.styles[module][key]=A.Clean(nil)[module][key]; changed() end,"恢复标签")
     end)
-    U:CreateHintText(parent,"目标距离属于整体文字，可独立调节字号、颜色、位置与显示。主卡和预览卡分别保存；战斗中布局变更延后。",0,-600,548)
+    U:CreateHintText(parent,"精简HUD固定260×88及锚点；名称最多14、进度12、角标10。旧字号、偏移与缩放值保留，实际显示受限；更多信息在悬停中查看。",0,-600,548)
 end

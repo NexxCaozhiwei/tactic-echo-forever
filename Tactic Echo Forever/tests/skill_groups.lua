@@ -289,10 +289,10 @@ test("hud_slider_columns_do_not_overlap_and_accept_signed_decimal",function()
 end)
 test("distance_style_controls_apply_and_survive_reload",function()
  local e=F.runtime(); local combat,hudEngine=InCombatLockdown,T.HUD.engine; T.HUD.engine=e; InCombatLockdown=function() return false end; T.UI:ShowPage("hud"); assert(e.db.hud.styles.global.rangeText)
- T.UI.labelModuleButtons.global.scripts.OnClick(); T.UI:RefreshControls(); assert(T.UI.labelStyleButtons.rangeText.tefControlEnabled)
- T.UI.labelStyleButtons.rangeText.scripts.OnClick(); T.UI.labelEnabledButton.scripts.OnClick(); eq(e.db.hud.styles.global.rangeText.enabled,false)
+ T.UI.labelModuleButtons.global.scripts.OnClick(); T.UI:RefreshControls(); eq(T.UI.labelStyleButtons.rangeText.tefControlEnabled,false)
+ e.db.hud.styles.global.rangeText.enabled=false; eq(e.db.hud.styles.global.rangeText.enabled,false)
  e.db.hud.styles.global.rangeText.fontSize=18; e.db.hud.styles.global.rangeText.offsetX=25
- T.HudStyles:Apply(T.HUD); eq(T.HUD.rangeText.shown,false); eq(T.HUD.rangeText.point[4],25)
+ T.HudStyles:Apply(T.HUD); eq(T.HUD.rangeText.shown,false); eq(T.HUD.rangeText.point[4],0)
  T.Presentation:UpdateRange(T.HUD); eq(T.HUD.rangeText.shown,false)
  local copy=T.Engine.New(T.Config,e.db); eq(copy.db.hud.styles.global.rangeText.fontSize,18); eq(copy.db.hud.styles.global.rangeText.enabled,false); InCombatLockdown=combat; T.HUD.engine=hudEngine
 end)

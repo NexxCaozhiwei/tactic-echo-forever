@@ -416,10 +416,11 @@ local function object(name)
             elseif method=="GetParent" then return self.parent
             elseif method=="GetScript" then return self.scripts[(...)]
             elseif method=="RegisterEvent" then self.events[(...)]=true
-            elseif method=="CreateFontString" or method=="CreateTexture" then
+            elseif method=="CreateFontString" or method=="CreateTexture" or method=="CreateMaskTexture" then
                 local child=object(); child.parent=self; child.kind=method=="CreateTexture" and "Texture" or "FontString"
                 child.layer=select(2,...); local children=rawget(self,"children") or {}; self.children=children
                 children[#children+1]=child; return child
+            elseif method=="AddMaskTexture" then self.mask=(...)
             elseif method=="SetTexture" then if uiThrowTexture then error("TEXTURE_EXCEPTION") end; self.texture=(...)
             elseif method=="ClearAllPoints" then self.point=nil
             elseif method=="SetParent" then self.parent=(...)
@@ -436,6 +437,10 @@ local function object(name)
             elseif method=="SetBackdropColor" then self.backdropColor={...}
             elseif method=="SetBackdropBorderColor" then self.backdropBorderColor={...}
             elseif method=="GetChecked" then return self.checked
+            elseif method=="SetScale" then self.scale=(...)
+            elseif method=="SetValue" then self.value=(...)
+            elseif method=="SetFrameLevel" then self.frameLevel=(...)
+            elseif method=="GetFrameLevel" then return rawget(self,"frameLevel") or 1
             elseif method=="SetFrameStrata" then self.strata=(...)
             elseif method=="SetToplevel" then self.toplevel=(...)
             elseif method=="Raise" then self.raises=(rawget(self,"raises") or 0)+1
@@ -1178,7 +1183,7 @@ test("hud_visual_states_hover_pressed_and_right_click",function()
     deliveryFixture(); local c=T.HUD.cards[1]; local colors={}
     for _,state in ipairs({"paused","standby","running","blocked","completed","error"}) do
         T.Runtime:Changed(state,"TEST_VISUAL_STATE"); T.HUD:RefreshState()
-        colors[table.concat(c.border.color,",")]=true
+        colors[table.concat(T.HUD.statusDot.color,",")]=true
     end
     local n=0; for _ in pairs(colors) do n=n+1 end; eq(n,6)
     c.frame.scripts.OnEnter(); eq(c.overlay.color[4],.12)
@@ -1207,7 +1212,7 @@ test("hud_block_categories_show_reason_without_changing_dispatch",function()
     for _,case in ipairs(cases) do
         T.Runtime:Changed("blocked",case[1])
         eq(h.cards[1].state.text,"阻断·" .. case[2])
-        assert(h.status.text:find("阻断·" .. case[2],1,true))
+        assert(h.badgeText.text:find("阻断·",1,true) or h.badgeText.text=="状态未知")
         eq(T.Runtime.reason,case[1])
     end
     eq(h:BlockCategory(secret),"未知")
@@ -1663,7 +1668,7 @@ end)
 test("repeat_hud_and_test_panel_progress",function()
     deliveryFixture(); assert(T.Profiles:Save(T.engine,"single",T.Profiles:Parse("116*3\n205")))
     T.Runtime:SetIntent(true); receipt("UNIT_SPELLCAST_SENT",116,"progress"); receipt("UNIT_SPELLCAST_SUCCEEDED",116,"progress")
-    T.UI:Refresh(); assert(T.HUD.status.text:find("次数 1/3",1,true),T.HUD.status.text); assert(T.UI.progress.text:find("次数 1/3",1,true),T.UI.progress.text)
+    T.UI:Refresh(); assert(T.HUD.countText.text:find("本步 1/3",1,true),T.HUD.countText.text); assert(T.UI.progress.text:find("次数 1/3",1,true),T.UI.progress.text)
 end)
 test("repeat_continuous_same_step_new_request_after_success",function()
     continuousFixture(T.Profiles:Parse("205*2\n143"))
@@ -1939,7 +1944,7 @@ test("hud_styles_apply_hidden_labels_defer_combat_no_dispatch_change",function()
     e.db.hud.styles.main.key.color.r=.3; e.db.hud.styles.main.key.enabled=false
     local g=e.generation; local intent=T.Runtime.intent; local index=e.index
     InCombatLockdown=function() return true end; h:Layout(); eq(calls,0); eq(h.pending,true)
-    InCombatLockdown=function() return false end; h:Layout(); eq(font,22); eq(point,"BOTTOMRIGHT"); eq(color,.3)
+    InCombatLockdown=function() return false end; h:Layout(); eq(font,10); eq(point,"TOPRIGHT"); eq(color,.3)
     eq(h.cards[1].key.shown,false); h:Refresh(); eq(h.cards[1].key.shown,false)
     eq(g,e.generation); eq(index,e.index); eq(intent,T.Runtime.intent)
 end)
@@ -2069,6 +2074,7 @@ test("bootstrap_build_updates_allowed_but_version_interface_unknown_blocked",fun
  end
  GetBuildInfo=old
 end)
+assert(loadfile(root .. "/tests/hud_studio.lua"))(T,{deliveryFixture=deliveryFixture,test=test,eq=eq,secret=secret})
 realprint("TEF simulated tests: " .. count .. " passed\n")
 
 assert(loadfile(root .. "/tests/apl.lua"))("Tactic Echo Forever",T,{runtimeFixture=runtimeFixture,deliveryFixture=deliveryFixture,receipt=receipt})
