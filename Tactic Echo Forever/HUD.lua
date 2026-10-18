@@ -1,5 +1,5 @@
 local _, TEF = ...
-local H, U, S = {compact=true}, TEF.UI, TEF.Safety
+local H, U, S = {}, TEF.UI, TEF.Safety
 TEF.HUD = H
 -- Presentation only: retain the Runtime reason as the diagnostic source.
 local blockReasons={
@@ -44,6 +44,56 @@ function H:BlockCategory(reason)
     if code:match("^CONTINUOUS_") or code:match("^TEK_") then return "输入", "派发输入条件未满足" end
     if code:match("^RUNTIME_") then return "模式", "派发运行条件未满足" end
     return "其他", "请查看诊断页中的原因码"
+end
+-- 文案只解释运行状态；公开施法显示不授予输入资格。
+local statusReasons={
+ RUNTIME_SETTINGS_STANDBY={"设置中","关闭设置后重新确认派发"},
+ RUNTIME_COMBAT_UNKNOWN={"战斗状态未知","暂不派发，等待公开战斗状态"},
+ RUNTIME_PROFILE_UNCONFIGURED={"方案未配置","请选择有效方案"},
+ RUNTIME_AUTO_STANDBY={"自动待命","等待进入战斗"},
+ RUNTIME_OUT_OF_COMBAT_STOP={"脱战待命","战斗来源等待进入战斗"},
+ MAINTENANCE_IDLE={"增益已维护","当前没有需要补充的增益"},
+ MANUAL_TAKEOVER_PAUSED={"手动接管","等待手动接管结束"},
+ CONTINUOUS_TEXT_FOCUS_OR_UNKNOWN={"输入受阻","输入焦点被占用或状态未知"},
+ CONTINUOUS_TARGET_UNKNOWN_OR_BLOCKED={"目标受阻","目标无效、死亡或状态未知"},
+ CONTINUOUS_RANGE_UNKNOWN_OR_BLOCKED={"距离受阻","超出技能范围或距离未知"},
+ CONTINUOUS_USABLE_UNKNOWN_OR_BLOCKED={"技能受阻","技能不可用、资源不足或状态未知"},
+ TEK_EXACT_DIRECT_BINDING_UNAVAILABLE={"缺少键位","未找到已核对的技能或宏按键"},
+ APL_NO_CANDIDATE={"无符合技能","当前策略没有符合条件的技能"},
+ SEQUENCE_POLICY_ALL_BLOCKED={"条件未满足","等待列表技能策略条件满足"},
+ SEQUENCE_POLICY_UNKNOWN={"条件未知","无法确认策略条件，暂不派发"},
+ SKIP_ALL_UNAVAILABLE={"暂无可用技能","列表技能均不可用，等待恢复"},
+}
+function H:StatusText(v)
+ local reason=S.Public(v.reason,"string") or ""
+ if v.state=="paused" then return "已暂停","派发已关闭，显示默认推荐",false end
+ if v.state=="completed" then return "已完成","当前列表已执行完成",false end
+ if v.state=="error" then return "运行异常","派发已停止，请查看诊断",false end
+ local castGate=reason=="CONTINUOUS_CAST_PRESENT_OR_UNKNOWN" or reason=="TEK_CAST_PRESENT_OR_UNKNOWN"
+ if castGate or v.state=="running" then
+  local cast=self.castVisual
+  if cast and not cast.unknown and cast.engine==self.engine and cast.generation==self.engine.generation then
+   local ok,raw=S.Call("GetTime"); local now=ok and S.Public(raw,"number")
+   if now and now>=cast.start and now<cast.finish then
+    return cast.label=="引导" and "正在引导" or "正在施法","等待当前技能的精确成功回执",false
+   end
+  end
+  if castGate then
+   if cast and cast.unknown then return "施法状态未知","无法公开确认施法信息，暂不派发",true end
+   return "等待施法结束","施法门禁尚未解除，等待重新确认",false
+  end
+ end
+ local entry=statusReasons[reason]
+ if entry then return entry[1],entry[2],reason=="RUNTIME_COMBAT_UNKNOWN" or reason=="SEQUENCE_POLICY_UNKNOWN" end
+ if v.state=="blocked" then
+  if reason:find("WAIT_CURRENT_RECEIPT",1,true) or reason=="GROUP_WAIT_STEP_FINISH" or reason=="SEQUENCE_POLICY_WAIT_RECEIPT" then
+   return "等待回执","等待当前技能的精确成功回执",false
+  end
+  local category,description=self:BlockCategory(reason)
+  return category .. "受阻",description,false
+ end
+ if v.state=="standby" then return "待命中","等待运行条件满足",false end
+ return "运行中","按当前方案派发，成功回执后推进",false
 end
 -- Visual-only, unprotected frames. No secure click proxy or input authority.
 local function texture(parent, layer)
@@ -91,6 +141,82 @@ end
 local function panel(parent)
  local f=U:Frame("Frame",parent,"BackdropTemplate"); U:Paint(f,"EnableMouse",false); return f
 end
+local quickRows={{source="apl",label="[A]",name="优先级推荐",color={.25,.85,1}},
+ {source="manual",label="[S]",name="列表循环",color={.7,.45,1}}}
+local quickSlots={"single","multi","third"}
+function H:SelectQuickPlan(source,slot)
+ source=S.Public(source,"string"); slot=S.Public(slot,"string")
+ local e=self.engine
+ if not e or not ({apl=true,manual=true})[source] or not ({single=true,multi=true,third=true})[slot] then return false end
+ if not e.db.enabledPlans[source] or e.db.enabledPlans[source][slot]~=true then return false end
+ if TEF.Recommendation:BaseSource(e)==source and e.scene==slot then return true end
+ local ok=TEF.Profiles:UsePlan(e,source,slot)
+ if ok then U:Refresh() end
+ return ok
+end
+function H:CreateQuickPlans()
+ self.quickPlans=U:Frame("Frame",self.frame)
+ U:Paint(self.quickPlans,"SetFrameLevel",self.baseLevel+20)
+ self.quickPlanRows={}
+ for rowIndex,spec in ipairs(quickRows) do
+  local row={label=U:Text(self.quickPlans,0,-(rowIndex-1)*13,14,"GameFontHighlightSmall"),buttons={}}
+  U:ApplyControlFont(row.label,false,8); U:Paint(row.label,"SetText",spec.label)
+  U:Paint(row.label,"SetTextColor",spec.color[1],spec.color[2],spec.color[3],1)
+  self.quickPlanRows[rowIndex]=row
+  for index,slot in ipairs(quickSlots) do
+   local source,plan=spec.source,slot
+   local button=U:Frame("Button",self.quickPlans,"BackdropTemplate")
+   row.buttons[index]=button
+   anchor(button,self.quickPlans,16+(index-1)*13,-(rowIndex-1)*13,10,10)
+   U:Paint(button,"RegisterForClicks","LeftButtonUp")
+   self:RoundSurface(button,10,10,1,true,true)
+   U:Paint(button,"SetScript","OnClick",function(_,rawButton)
+    if S.Public(rawButton,"string")=="LeftButton" then U:Guard(function() self:SelectQuickPlan(source,plan) end) end
+   end)
+   U:Paint(button,"SetScript","OnEnter",function()
+    button.quickHover=true; self:RefreshQuickPlans()
+    local e=self.engine; local enabled=e.db.enabledPlans[source][plan]==true
+    local selected=TEF.Recommendation:BaseSource(e)==source and e.scene==plan
+    U:Call(GameTooltip,"SetOwner",button,"ANCHOR_RIGHT")
+    U:Call(GameTooltip,"AddLine",spec.name .. " / " .. TEF.Profiles:PlanName(plan,e,source))
+    U:Call(GameTooltip,"AddLine",not enabled and "方案未启用，请在设置中启用" or selected and "当前使用的方案" or "点击切换方案；切换后停止派发，需手动开启",.75,.85,.95,true)
+    U:Call(GameTooltip,"Show")
+   end)
+   U:Paint(button,"SetScript","OnLeave",function()
+    button.quickHover=false; self:RefreshQuickPlans()
+    local ok,owner=U:Invoke(GameTooltip,"GetOwner")
+    if ok and owner==button then U:Call(GameTooltip,"Hide") end
+   end)
+   U:Paint(button,"SetScript","OnHide",function()
+    button.quickHover=false
+    local ok,owner=U:Invoke(GameTooltip,"GetOwner")
+    if ok and owner==button then U:Call(GameTooltip,"Hide") end
+   end)
+  end
+ end
+end
+function H:RefreshQuickPlans()
+ if not self.quickPlans then return end
+ U:Paint(self.quickPlans,self.displayMode=="mini" and "Hide" or "Show")
+ local e=self.engine; local source=TEF.Recommendation:BaseSource(e)
+ for rowIndex,spec in ipairs(quickRows) do
+  for index,slot in ipairs(quickSlots) do
+   local button=self.quickPlanRows[rowIndex].buttons[index]
+   local enabled=e.db.enabledPlans[spec.source][slot]==true
+   local selected=enabled and source==spec.source and e.scene==slot
+   button.quickSelected=selected; button.quickEnabled=enabled
+   local c=enabled and spec.color or {.25,.3,.36}
+   local fill=selected and .8 or button.quickHover and .24 or .09
+   local border=selected and 1 or button.quickHover and .8 or .35
+   if spec.source=="manual" and not selected then
+    fill=enabled and (button.quickHover and .44 or .30) or .15
+    border=enabled and (button.quickHover and 1 or .8) or .55
+   end
+   self:SurfaceColor(button,"fill",c[1]*fill,c[2]*fill,c[3]*fill,1)
+   self:SurfaceColor(button,"border",c[1]*border,c[2]*border,c[3]*border,1)
+  end
+ end
+end
 function H:SetMode(mode)
  mode=S.Public(mode,"string")
  if (mode~="standard" and mode~="mini") or U:Combat()~=false or not self.engine then return false end
@@ -129,16 +255,11 @@ function H:CreateChrome()
  U:Paint(self.chromeInner,"SetFrameLevel",self.baseLevel+1)
  self.content=U:Frame("Frame",self.frame); U:Paint(self.content,"SetAllPoints",self.frame)
  U:Paint(self.content,"SetFrameLevel",self.baseLevel+3); U:Paint(self.content,"EnableMouse",false); U:Paint(self.content,"SetClipsChildren",true)
- self.sourceText=U:Text(self.content,16,-14,300,"GameFontHighlightSmall")
  self.badge=panel(self.content); self.badgeText=U:Text(self.badge,8,-7,88,"GameFontHighlightSmall")
  U:Paint(self.badgeText,"SetJustifyH","LEFT")
  self.statusDot=texture(self.content,"ARTWORK"); U:Paint(self.statusDot,"SetTexture",media .. "HUDStatusDot.tga")
  self.countText=U:Text(self.content,170,-68,114,"GameFontHighlightSmall"); U:Paint(self.countText,"SetJustifyH","RIGHT")
  self.role=U:Text(self.content,100,-86,176,"GameFontHighlightSmall")
- self.spellID=U:Text(self.content,100,-108,176,"GameFontHighlightSmall")
- self.previewTitle=U:Text(self.content,300,-48,140,"GameFontHighlightSmall")
- self.previewHint=U:Text(self.content,300,-120,140,"GameFontHighlightSmall")
- self.divider=texture(self.content,"BACKGROUND"); U:Paint(self.divider,"SetColorTexture",.20,.35,.48,.8)
  self.castBar=U:Frame("StatusBar",self.content,"BackdropTemplate")
  U:Paint(self.castBar,"SetStatusBarTexture","Interface\\Buttons\\WHITE8X8")
  U:Paint(self.castBar,"SetStatusBarColor",.25,.8,1,.95); U:Paint(self.castBar,"SetMinMaxValues",0,1)
@@ -146,14 +267,11 @@ function H:CreateChrome()
  U:Paint(self.castBar,"EnableMouse",false)
  self.castText=U:Text(self.castBar,8,-4,250,"GameFontHighlightSmall")
  self.castTime=U:Text(self.castBar,300,-4,100,"GameFontHighlightSmall"); U:Paint(self.castTime,"SetJustifyH","RIGHT")
- self.hint=U:Text(self.content,16,-204,428,"GameFontHighlightSmall"); U:Paint(self.hint,"SetJustifyH","RIGHT")
  self.textSlots={}
- for _,key in ipairs({"name","status","rangeText"}) do
+ for _,key in ipairs({"name","status"}) do
   local f=U:Frame("Frame",self.content); U:Paint(f,"EnableMouse",false); self.textSlots[key]={frame=f}
  end
- self.stepSegments={}; self.segmentLayoutKey=nil
- for i=1,16 do self.stepSegments[i]=texture(self.content,"ARTWORK") end
- for _,text in ipairs({self.sourceText,self.badgeText,self.role,self.spellID,self.previewTitle,self.previewHint,self.castText,self.castTime,self.hint,self.countText}) do
+ for _,text in ipairs({self.badgeText,self.role,self.castText,self.castTime,self.countText}) do
   U:Paint(text,"SetWordWrap",false); U:Paint(text,"SetMaxLines",1)
  end
 end
@@ -176,7 +294,7 @@ function H:ReadCastVisual()
  if unknown then self.castVisual={unknown=true,label=label} end
  return label
 end
-function H:PaintCastVisual()
+function H:PaintCastVisual(progressOnly)
  if not self.castBar then return end
  local data=self.castVisual; local value,time,text=0,"",self.idleCastText or "等待施法信息"
  if data and data.unknown then text=(data.label or "施法") .. "信息未知"
@@ -189,18 +307,20 @@ function H:PaintCastVisual()
   else
    local duration=data.finish-data.start; local elapsed=now-data.start
    value=data.label=="引导" and 1-elapsed/duration or elapsed/duration
-   time=string.format("%.1f / %.1f秒",data.label=="引导" and duration-elapsed or elapsed,duration)
-   text=data.label .. "中 · " .. U:ShortLabel(data.name,8)
+   if not progressOnly then
+    time=string.format("%.1f / %.1f秒",data.label=="引导" and duration-elapsed or elapsed,duration)
+    text=data.label .. "中 · " .. U:ShortLabel(data.name,8)
+   end
   end
  end
- U:Paint(self.castBar,"SetValue",value); U:Paint(self.castText,"SetText",text); U:Paint(self.castTime,"SetText",time)
+ U:Paint(self.castBar,"SetValue",value)
+ if progressOnly then return end
+ U:Paint(self.castText,"SetText",text); U:Paint(self.castTime,"SetText",time)
 end
 function H:Card(x,size,primary)
     local f=U:Frame(primary and "Button" or "Frame",self.content or self.frame,nil)
     U:Paint(f,"SetFrameLevel",self.baseLevel+4)
     U:Paint(f,"SetSize",size,size); U:Paint(f,"SetPoint","TOPLEFT",self.frame,"TOPLEFT",x,-8)
-    local bg=texture(f,"BACKGROUND"); U:Paint(bg,"SetAllPoints",f)
-    U:Paint(bg,"Hide")
     local icon=texture(f); U:Paint(icon,"SetPoint","TOPLEFT",f,"TOPLEFT",3,-3)
     U:Paint(icon,"SetPoint","BOTTOMRIGHT",f,"BOTTOMRIGHT",-3,3); U:Paint(icon,"SetTexCoord",.08,.92,.08,.92); mask(icon,f)
     local borderFrame=U:Frame("Frame",f,"BackdropTemplate"); U:Call(borderFrame,"SetAllPoints",f)
@@ -213,15 +333,10 @@ function H:Card(x,size,primary)
     local texts=U:Frame("Frame",f); U:Call(texts,"SetAllPoints",f)
     U:Call(clipped,"SetFrameLevel",self.baseLevel+5); U:Call(cooldown,"SetFrameLevel",self.baseLevel+6)
     U:Call(borderFrame,"SetFrameLevel",self.baseLevel+8); U:Call(texts,"SetFrameLevel",self.baseLevel+10)
-    local key=U:Text(texts,3,-3,size-6,"GameFontNormalSmall"); U:Call(key,"SetJustifyH","RIGHT")
-    local charge=U:Text(texts,3,-size+17,size-6,"GameFontNormalSmall"); U:Call(charge,"SetJustifyH","RIGHT")
-    local cd=U:Text(texts,3,-size/2+6,size-6,"GameFontNormalSmall"); U:Call(cd,"SetJustifyH","CENTER")
+    local key=primary and U:Text(texts,3,-3,size-6,"GameFontNormalSmall") or nil
     local overlay=texture(texts,"OVERLAY"); U:Call(overlay,"SetAllPoints",icon); U:Call(overlay,"SetColorTexture",1,1,1,0); mask(overlay,texts)
     U:Call(borderFrame,"EnableMouse",false); U:Call(clipped,"EnableMouse",false); U:Call(texts,"EnableMouse",false)
-    local card={frame=f,textParent=texts,size=size,icon=icon,border=border,overlay=overlay,cooldown=cooldown,key=key,chargeText=charge,cooldownText=cd,
-        state=U:Text(texts,4,-size+17,size-8,"GameFontNormalSmall"),
-        meta=U:Text(f,0,-size-20,size+10,"GameFontHighlightSmall"),
-        label=U:Text(texts,4,-4,size-8,"GameFontDisableSmall")}
+    local card={frame=f,textParent=texts,size=size,icon=icon,border=border,overlay=overlay,cooldown=cooldown,key=key}
     if primary then
         card.keycap=panel(f); U:Paint(card.keycap,"SetFrameLevel",self.baseLevel+9)
         U:Call(f,"RegisterForClicks","LeftButtonUp","RightButtonUp")
@@ -258,11 +373,16 @@ end
 function H:TooltipDetails(card)
  local step=card.displayStep
  if step then U:Call(GameTooltip,"AddLine","SpellID " .. step.spellID,.7,.8,.9) end
- for _,field in ipairs({self.sourceText,self.rangeText,self.castText,self.castTime}) do
+ local e=self.engine
+ local source=e.maintenanceActive and "增益维护" or e.groupRun and "技能组" or TEF.Recommendation:Source(e)=="apl" and "优先级推荐" or "固定序列"
+ local plan=e.maintenanceActive and "全局列表" or TEF.Profiles:PlanName(e.scene,e,TEF.Recommendation:BaseSource(e))
+ U:Call(GameTooltip,"AddLine",source .. " / " .. plan,.7,.8,.9,true)
+ if self.rangeDescription then U:Call(GameTooltip,"AddLine",self.rangeDescription,.7,.8,.9,true) end
+ for _,field in ipairs({self.castText,self.castTime}) do
   local ok,raw=U:Invoke(field,"GetText"); local text=ok and S.Public(raw,"string")
   if text and text~="" then U:Call(GameTooltip,"AddLine",text,.7,.8,.9,true) end
  end
- local e=self.engine; local group=e.groupRun
+ local group=e.groupRun
  if group then U:Call(GameTooltip,"AddLine",group.group.name .. " · 第" .. group.round .. "/" .. group.group.rounds .. "轮",.7,.8,.9,true) end
  if TEF.Recommendation:Source(e)=="apl" then U:Call(GameTooltip,"AddLine","只读候选预览，不代表施放顺序。",.7,.8,.9,true) end
  if step then U:Call(GameTooltip,"AddLine","本步成功 " .. (e.stepCasts or 0) .. "/" .. (step.repeatCount or 1) .. "次",.7,.8,.9) end
@@ -272,27 +392,22 @@ function H:CompactVisibility()
  local mini=self.displayMode=="mini"
  local styles=self.engine.db.hud.styles.global
  U:Paint(self.name,not mini and styles.name.enabled and "Show" or "Hide")
- U:Paint(self.status,not mini and styles.status.enabled and "Show" or "Hide")
+ U:Paint(self.status,not mini and "Show" or "Hide")
  U:Paint(self.badge,mini and "Hide" or "Show")
- local count=styles.status.enabled and (not mini or TEF.Recommendation:Source(self.engine)~="apl")
+ local count=not mini or (styles.status.enabled and TEF.Recommendation:Source(self.engine)~="apl")
  U:Paint(self.countText,count and "Show" or "Hide")
  U:Paint(self.miniCountChip,mini and count and "Show" or "Hide")
- for _,field in ipairs({self.sourceText,self.role,self.spellID,self.previewTitle,self.previewHint,self.divider,self.castText,self.castTime,self.hint,self.rangeText}) do U:Paint(field,"Hide") end
- for _,segment in ipairs(self.stepSegments or {}) do U:Paint(segment,"Hide") end
- for i,card in ipairs(self.cards or {}) do
-  for _,key in ipairs({"state","label","chargeText","cooldownText","meta"}) do U:Paint(card[key],"Hide") end
-  if i>1 then U:Paint(card.key,"Hide") end
- end
+ for _,field in ipairs({self.role,self.castText,self.castTime}) do U:Paint(field,mini and "Hide" or "Show") end
 end
 function H:Layout()
  if not self.frame then return end
  if U:Combat()~=false then self.pending=true; return end
  self.pending=false; self.displayMode=self.engine.db.hud.mode=="mini" and "mini" or "standard"
  local mini=self.displayMode=="mini"
- local width,height=mini and 156 or 260,mini and 60 or 88
- self.layoutWidth=width; self.layoutHeight=height; self.textShift=0
+ local width,height=mini and 156 or 260,mini and 60 or 108
+ self.layoutWidth=width; self.layoutHeight=height
  local g=self.engine.db.hud.geometry
- local sizes=mini and {44,36,36} or {math.min(44,g.mainSize),math.min(28,g.preview1Size),math.min(28,g.preview2Size)}
+ local sizes=mini and {44,36,36} or {math.min(44,g.mainSize),math.min(36,g.preview1Size),math.min(36,g.preview2Size)}
  local gap=math.min(4,g.gap2); local previewX=254-sizes[2]-sizes[3]-gap
  local nameX=6+sizes[1]+math.min(6,g.gap1)
  local scale=math.min(1,self.engine.db.hud.scale)
@@ -313,17 +428,25 @@ function H:Layout()
   self:RoundSurface(card.border,sizes[i],sizes[i],i==1 and 6 or 4,false,true)
   self:SurfaceColor(card.border,"border",i==1 and .3 or .25,i==1 and .8 or .4,i==1 and 1 or .55,1)
  end
- anchor(self.badge,self.content,nameX+14,-30,previewX-nameX-20,18)
- anchor(self.badgeText,self.badge,0,0,previewX-nameX-20,18)
+ local badgeWidth=math.max(32,previewX-nameX-74)
+ anchor(self.badge,self.content,nameX+14,-30,badgeWidth,18)
+ anchor(self.badgeText,self.badge,0,0,badgeWidth,18)
+ -- 两排总高23，以预览图标的水平中轴线居中。
+ anchor(self.quickPlans,self.frame,previewX-58,-(12+sizes[2]/2-23/2),58,23)
  anchor(self.statusDot,self.content,nameX,-34,8,8)
- anchor(self.castBar,self.content,nameX,-54,254-nameX,3)
- anchor(self.castTrack,self.content,nameX,-54,254-nameX,3)
- anchor(self.countText,self.content,132,-68,122,16)
- local slots={name={nameX,-10,previewX-nameX-8,20},status={6,-68,120,16},rangeText={6,-68,120,16}}
+ anchor(self.castBar,self.content,6,-54,248,3)
+ anchor(self.castTrack,self.content,6,-54,248,3)
+ anchor(self.castText,self.content,6,-58,142,16)
+ anchor(self.castTime,self.content,152,-58,102,16)
+ anchor(self.role,self.content,6,-90,248,16)
+ for _,field in ipairs({self.castText,self.castTime,self.role}) do U:ApplyControlFont(field,false,12) end
+ anchor(self.countText,self.content,132,-74,122,16)
+ local slots={name={nameX,-10,previewX-nameX-62,20},status={6,-74,120,16}}
  for key,values in pairs(slots) do local slot=self.textSlots[key]; slot.width=values[3]; anchor(slot.frame,self.content,unpack(values)) end
  local top=self.cards[1].textParent
  U:Paint(self.statusDot,"SetParent",mini and top or self.content)
  U:Paint(self.countText,"SetParent",mini and top or self.content)
+ self.countTextParent=mini and top or self.content
  if mini then
   anchor(self.statusDot,top,5,-34,6,6)
   anchor(self.countText,top,11,-29,32,14)
@@ -365,12 +488,14 @@ function H:Create(e)
     self.cards={self:Card(8,64,true),self:Card(84,44),self:Card(140,44)}
     self.miniCountChip=panel(self.cards[1].frame); U:Paint(self.miniCountChip,"SetFrameLevel",self.baseLevel+9)
     self:CreateModeButton()
+    self:CreateQuickPlans()
     self.name=U:Text(self.textSlots.name.frame,0,0,230,"GameFontHighlightSmall")
     self.status=U:Text(self.textSlots.status.frame,0,0,230,"GameFontHighlightSmall")
-    self.rangeText=U:Text(self.textSlots.rangeText.frame,0,0,230,"GameFontHighlightSmall")
     U:Call(self.frame,"SetScript","OnUpdate",function(_,rawElapsed)
         local elapsed=S.Public(rawElapsed,"number")
         if not elapsed or elapsed<0 then return end
+        -- 每帧只插值缓存的公开施法时间；其他显示查询仍保持原节拍。
+        self:PaintCastVisual(true)
         self.elapsed=(self.elapsed or 0)+elapsed
         if self.elapsed>=.25 then self.elapsed=self.elapsed%.25; self:VisualTick() end
     end)
@@ -385,23 +510,23 @@ function H:Refresh(cooldownEvent)
         if e.db.loop and e.steps and index>#e.steps then index=(index-1)%#e.steps+1 end
         local step=e.steps and e.steps[index]
         if display then step=display[i] end
-        if i>1 and (e.completed or not e.db.hud.preview or (TEF.APL:IsActive(e) and not display)) then step=nil end
+        if i>1 and ((e.completed and not e.groupRun) or not e.db.hud.preview or (TEF.APL:IsActive(e) and not display)) then step=nil end
         local key=step and (step.spellID .. ":" .. step.name)
         local view=key and self.metadata[key]
         if step and not view then view=S.Spell(step.spellID,step.name); self.metadata[key]=view end
         if not U:Paint(card.icon,"SetTexture",view and view.icon or TEF.Placeholder) then U:Call(card.icon,"SetTexture",TEF.Placeholder) end
-        U:Paint(card.label,"SetText","")
         card.displayStep=step
         if TEF.Presentation then TEF.Presentation:Paint(card,step,cooldownEvent) end
         if i==1 then local ok,raw=U:Invoke(card.key,"GetText"); card.fullKeyText=ok and S.Public(raw,"string") or nil end
     end
     local step=display and display[1] or (e.steps and e.steps[e.index])
     local view=step and self.metadata[step.spellID .. ":" .. step.name]
-    self.primaryFullName=e.completed and "完成" or (view and view.name or (TEF.APL:IsActive(e) and TEF.APL.Trace:Waiting(e) or "未配置推荐序列"))
+    self.primaryFullName=(e.completed and not e.groupRun) and "完成" or (view and view.name or (TEF.APL:IsActive(e) and TEF.APL.Trace:Waiting(e) or "未配置推荐序列"))
     local style=e.db.hud.styles.global.name
     local limit=math.max(3,math.floor((self.textSlots.name.width or 140)/math.min(14,style.fontSize*style.scale))-1)
-    U:Paint(self.name,"SetText",U:ShortLabel(self.primaryFullName,limit))
-    U:Paint(self.spellID,"SetText",step and ("SpellID " .. step.spellID) or "尚无推荐技能")
+    local name=U:ShortLabel(self.primaryFullName,limit+1)
+    if name~=self.primaryFullName then name=U:ShortLabel(self.primaryFullName,limit) end
+    U:Paint(self.name,"SetText",name)
     self:RefreshState()
 end
 H.colors={paused={.48,.52,.60},standby={.36,.78,.90},running={.22,.96,.56},blocked={.96,.72,.18},completed={.96,.83,.45},error={1,.25,.25}}
@@ -410,36 +535,26 @@ function H:RefreshState()
     local e=self.engine; local v=TEF.Runtime:GetViewState()
     local step=e.steps and e.steps[e.index]
     if TEF.Runtime.e~=e then v={state=e.running and "running" or "paused",label=e.running and "推荐" or "暂停"} end
-    if e.completed then v.state="completed"; v.label="完成" end
-    local displayLabel=v.label
-    if v.state=="blocked" then displayLabel=v.label .. "·" .. self:BlockCategory(v.reason) end
+    if e.completed and not e.groupRun then v.state="completed"; v.label="完成" end
     local c=self.colors[v.state] or self.colors.paused
     local primary=self.cards[1]
     self:SurfaceColor(primary.border,"border",.3,.8,1,1)
     U:Paint(primary.overlay,"SetColorTexture",c[1],c[2],c[3],primary.pressed and .22 or primary.hover and .12 or .025)
-    local castLabel=self:ReadCastVisual()
+    self:ReadCastVisual()
     for i,card in ipairs(self.cards) do
-        U:Paint(card.state,"SetText",card.displayStep and (i==1 and (castLabel or displayLabel) or "随后") or "")
         if i>1 then U:Paint(card.frame,card.displayStep and e.db.hud.preview and "Show" or "Hide") end
     end
     local apl=TEF.Recommendation:Source(e)=="apl"
-    local source=e.maintenanceActive and "增益维护" or e.groupRun and "技能组" or apl and "优先级推荐" or "固定序列"
-    local plan=e.maintenanceActive and "全局列表" or TEF.Profiles:PlanName(e.scene,e,TEF.Recommendation:BaseSource(e))
-    U:Paint(self.sourceText,"SetText",source .. " / " .. plan)
-    U:Paint(self.previewTitle,"SetText",apl and "候选预览" or "后续步骤")
-    U:Paint(self.previewHint,"SetText",not e.db.hud.preview and "预览已关闭" or apl and "非施放顺序" or "列表预览")
-    local description=v.state=="blocked" and select(2,self:BlockCategory(v.reason)) or "当前推荐"
-    local reason=S.Public(v.reason,"string") or ""
-    local unknown=v.state=="blocked" and reason:find("UNKNOWN",1,true) and not reason:find("OR_BLOCKED",1,true)
+    local badge,description,unknown=self:StatusText(v)
     local tint=unknown and {.72,.62,.96} or c
-    local badge=unknown and "状态未知" or v.state=="paused" and "已停止" or v.state=="running" and "运行中" or displayLabel
-    U:Paint(self.badgeText,"SetText",U:ShortLabel(badge,7))
+    local shortBadge=({["等待施法结束"]="施法收尾",["施法状态未知"]="施法未知",["战斗状态未知"]="战斗未知",
+        ["暂无可用技能"]="暂无可用",["无符合技能"]="暂无推荐",["方案未配置"]="方案缺失"})[badge] or U:ShortLabel(badge,4)
+    U:Paint(self.badgeText,"SetText",shortBadge)
     U:Paint(self.badgeText,"SetTextColor",tint[1],tint[2],tint[3],1)
     U:Paint(self.statusDot,"SetVertexColor",tint[1],tint[2],tint[3],1)
-    U:Paint(self.role,"SetText",U:ShortLabel(description,math.max(5,math.floor((self.textSlots.name.width or 152)/12)-1)))
+    U:Paint(self.role,"SetText",U:ShortLabel(description,20))
     U:Paint(self.role,"SetTextColor",v.state=="blocked" and tint[1] or .45,v.state=="blocked" and tint[2] or .8,v.state=="blocked" and tint[3] or 1,1)
-    U:Paint(self.hint,"SetText",(e.db.hud.locked and "已锁定" or "可拖动") .. " · 左键启停 / 右键设置")
-    self.idleCastText=v.state=="blocked" and U:ShortLabel(description,18) or displayLabel .. " · 等待施法或回执"
+    self.idleCastText=badge
     self:PaintCastVisual()
     if apl then
         U:Paint(self.status,"SetText",e.maintenanceActive and "增益维护" or "优先级推荐")
@@ -460,13 +575,17 @@ function H:RefreshState()
         self:RoundSurface(primary.keycap,capWidth,18,4,true,true)
         self:SurfaceColor(primary.keycap,"fill",.015,.03,.055,.96); self:SurfaceColor(primary.keycap,"border",.22,.5,.72,1)
         U:Paint(primary.key,"SetWidth",capWidth-4)
+        U:Paint(primary.key,"SetHeight",18)
+        U:Paint(primary.key,"ClearAllPoints")
+        U:Paint(primary.key,"SetPoint","CENTER",primary.keycap,"CENTER",0,0)
+        U:Paint(primary.key,"SetJustifyH","CENTER"); U:Paint(primary.key,"SetJustifyV","MIDDLE")
         U:Paint(primary.keycap,self.engine.db.hud.styles.main.key.enabled and "Show" or "Hide")
     else U:Paint(primary.keycap,"Hide"); U:Paint(primary.key,"SetText","") end
     self:CompactVisibility()
+    self:RefreshQuickPlans()
 end
 function H:VisualTick()
     -- 复用显示节拍，距离及变色只读，不参与派发。
     self:PaintCastVisual()
     TEF.Presentation:UpdateRange(self)
-    for _,card in ipairs(self.cards or {}) do TEF.Presentation:Tick(card) end
 end

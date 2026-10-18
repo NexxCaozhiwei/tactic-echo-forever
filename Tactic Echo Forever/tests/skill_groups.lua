@@ -287,14 +287,15 @@ test("hud_slider_columns_do_not_overlap_and_accept_signed_decimal",function()
  local scale=1; local _,decimal=T.UI:CreateSliderRow(T.UI.settings,"缩放",0,0,548,.6,2,.1,function() return scale end,function(v) scale=v end,true)
  decimal.text="1.2"; decimal.scripts.OnEnterPressed(); eq(scale,1.2)
 end)
-test("distance_style_controls_apply_and_survive_reload",function()
- local e=F.runtime(); local combat,hudEngine=InCombatLockdown,T.HUD.engine; T.HUD.engine=e; InCombatLockdown=function() return false end; T.UI:ShowPage("hud"); assert(e.db.hud.styles.global.rangeText)
- T.UI.labelModuleButtons.global.scripts.OnClick(); T.UI:RefreshControls(); eq(T.UI.labelStyleButtons.rangeText.tefControlEnabled,false)
- e.db.hud.styles.global.rangeText.enabled=false; eq(e.db.hud.styles.global.rangeText.enabled,false)
- e.db.hud.styles.global.rangeText.fontSize=18; e.db.hud.styles.global.rangeText.offsetX=25
- T.HudStyles:Apply(T.HUD); eq(T.HUD.rangeText.shown,false); eq(T.HUD.rangeText.point[4],0)
- T.Presentation:UpdateRange(T.HUD); eq(T.HUD.rangeText.shown,false)
- local copy=T.Engine.New(T.Config,e.db); eq(copy.db.hud.styles.global.rangeText.fontSize,18); eq(copy.db.hud.styles.global.rangeText.enabled,false); InCombatLockdown=combat; T.HUD.engine=hudEngine
+test("hud_style_controls_only_expose_supported_labels",function()
+ local e=F.runtime(); local combat,hudEngine=InCombatLockdown,T.HUD.engine; T.HUD.engine=e
+ InCombatLockdown=function() return false end; T.UI:ShowPage("hud")
+ eq(T.UI.labelStyleButtons.rangeText,nil); eq(T.UI.labelStyleButtons.state,nil); eq(T.UI.labelModuleButtons,nil)
+ assert(T.UI.labelStyleButtons.key); assert(T.UI.labelStyleButtons.name); assert(T.UI.labelStyleButtons.status)
+ eq(e.db.hud.styles.global.rangeText,nil)
+ T.Presentation:UpdateRange(T.HUD); assert(type(T.HUD.rangeDescription)=="string"); eq(T.HUD.rangeText,nil)
+ local copy=T.Engine.New(T.Config,e.db); eq(copy.db.hud.styles.global.rangeText,nil)
+ InCombatLockdown=combat; T.HUD.engine=hudEngine
 end)
 
 test("reused_strategy_scroll_child_keeps_anchor_and_skill_controls",function()

@@ -84,11 +84,66 @@ test("技能库缓存不在普通刷新中反复扫描",function()
  for i=1,25 do U:RefreshStudioLibrary(false); U:RefreshStudio() end
  eq(calls,0); C_SpellBook.GetNumSpellBookSkillLines=fn
 end)
+
+test("HUD页旧摘要隐藏且技能库与条目背景分层",function()
+ setup(); U:ShowPage("hud"); U:RefreshPage()
+ eq(U.readouts.hud.text,""); eq(U.readouts.hud.shown,false)
+ eq(U.studioLibrary.backdropColor[4],1)
+ assert(U.studioLibrary.backdropColor[1]~=U.theme.panel[1])
+ assert(U.studioLibraryWidgets[1].frame.backdropColor[1]~=U.studioLibrary.backdropColor[1])
+ U:LayoutStudioLibrary(0,480)
+ eq(U.studioLibraryChild.point[5],-180); eq(U.studioLibraryVisible,3)
+ assert(180+U.studioLibraryVisible*56<=U.studioLibrary.height)
+end)
+
+test("动作条筛选匹配精确ID且搜索不反复扫描",function()
+ local e=setup(); local actionBar,actionInfo=C_ActionBar,GetActionInfo
+ C_ActionBar=nil
+ local calls=0
+ GetActionInfo=function(slot)
+  calls=calls+1
+  if slot==1 or slot==2 then return "spell",143 end
+  if slot==3 then return "spell",F.secret end
+  if slot==4 then return "item",145 end
+  if slot==5 then return "spell",999 end
+ end
+ U.studioLibraryCatalog={{spellID=143,name="同名技能"},{spellID=145,name="同名技能"},{spellID=205,name="其他技能"}}
+ U.studioLibraryEngine=e; U.studioLibraryOnlyBar=false; U.studioLibrarySearch.text=""
+ local generation,serial,intent=e.generation,e.receiptSerial,T.Runtime.intent
+ local strategySource,dirty=U.strategySource,U.groupDirty; U.strategySource="groupStep"; U.groupDirty=false
+ U:RefreshStudioLibrary(false); eq(#U.studioLibraryMatches,3); eq(calls,0)
+ U.studioLibraryBarToggle.scripts.OnClick(); eq(U.studioLibraryOnlyBar,true)
+ eq(U.groupDirty,false); U.strategySource=strategySource; U.groupDirty=dirty
+ eq(#U.studioLibraryMatches,1); eq(U.studioLibraryMatches[1].spellID,143)
+ local scanned=calls; assert(scanned>=180)
+ U.studioLibrarySearch.text="145"; U:RefreshStudioLibrary(false); eq(#U.studioLibraryMatches,0); eq(calls,scanned)
+ U.studioLibrarySearch.text=""; U:RefreshStudioLibrary(false); eq(calls,scanned)
+ U:CloseStudioLibrary(); U:RefreshStudioLibrary(false); eq(calls,scanned+180)
+ U.studioLibraryBarToggle.scripts.OnClick(); eq(U.studioLibraryOnlyBar,false); eq(#U.studioLibraryMatches,3)
+ eq(e.generation,generation); eq(e.receiptSerial,serial); eq(T.Runtime.intent,intent); eq(T.Dispatch.pending,nil)
+ C_ActionBar=actionBar; GetActionInfo=actionInfo; U.studioLibraryBarIDs=nil
+end)
 test("技能库添加和拖入复用父列表及组内插入接口",function()
  setup(); local passive=C_Spell.IsSpellPassive; C_Spell.IsSpellPassive=function() return false end
  assert(U:StudioInsert(143,2)); eq(U.customDraft[2].spellID,143); eq(U.customDraft[3].spellID,205)
  U:AddSkillGroup("apl"); assert(U:StudioInsert(143)); assert(U:StudioInsert(205,1)); eq(U.groupDraft.steps[1].spellID,205)
  U:CloseSkillGroup(true); C_Spell.IsSpellPassive=passive
+end)
+
+test("动作条筛选包含已核对宏的精确技能",function()
+ local e=setup()
+ local a,b,c,d,f,g,h=C_ActionBar,GetActionInfo,GetNumMacros,GetMacroInfo,GetMacroSpell,GetActionText,MAX_ACCOUNT_MACROS
+ C_ActionBar=nil; MAX_ACCOUNT_MACROS=120
+ GetActionInfo=function(slot) if slot==1 then return "macro",1 end end
+ GetNumMacros=function() return 1,0 end
+ GetMacroInfo=function() return "库宏",123,"/cast 205" end
+ GetMacroSpell=function() return 205 end
+ GetActionText=function() return "库宏" end
+ U.studioLibraryCatalog={{spellID=143,name="其他"},{spellID=205,name="宏技能"}}; U.studioLibraryEngine=e
+ U.studioLibrarySearch.text=""; U.studioLibraryOnlyBar=true; U.studioLibraryBarIDs=nil
+ U:RefreshStudioLibrary(false); eq(#U.studioLibraryMatches,1); eq(U.studioLibraryMatches[1].spellID,205)
+ C_ActionBar,GetActionInfo,GetNumMacros,GetMacroInfo,GetMacroSpell,GetActionText,MAX_ACCOUNT_MACROS=a,b,c,d,f,g,h
+ U.studioLibraryOnlyBar=false; U.studioLibraryBarIDs=nil
 end)
 test("技能库已学或被动身份变未知时保留原列表",function()
  setup(); local passive=C_Spell.IsSpellPassive; C_Spell.IsSpellPassive=function() return F.secret end

@@ -81,8 +81,20 @@ function U:RefreshStudioLibrary(force)
   self.studioLibraryCatalog=rows; self.studioLibraryEngine=self.engine; self.studioLibraryPartial=partial
  end
  local got,raw=self:Invoke(self.studioLibrarySearch,"GetText"); local query=(got and S.Public(raw,"string") or ""):lower()
+ if self.studioLibraryOnlyBar and (force or not self.studioLibraryBarIDs or self.studioLibraryBarEngine~=self.engine) then
+  local ids={}
+  -- 仅在开启筛选、重新打开或手动刷新时扫描；只接受现有解析器确认的精确ID。
+  for slot=1,180 do
+   local action=T.ActionSources:Action(slot)
+   if action then ids[action.spellID]=true end
+  end
+  self.studioLibraryBarIDs=ids; self.studioLibraryBarEngine=self.engine
+ end
  local matches={}
- for _,row in ipairs(self.studioLibraryCatalog) do if query=="" or row.name:lower():find(query,1,true) or tostring(row.spellID):find(query,1,true) then matches[#matches+1]=row end end
+ for _,row in ipairs(self.studioLibraryCatalog) do
+  if (not self.studioLibraryOnlyBar or self.studioLibraryBarIDs[row.spellID])
+   and (query=="" or row.name:lower():find(query,1,true) or tostring(row.spellID):find(query,1,true)) then matches[#matches+1]=row end
+ end
  self.studioLibraryMatches=matches
  self.studioLibraryOffset=math.max(0,math.min(self.studioLibraryOffset or 0,math.max(0,#matches-(self.studioLibraryVisible or 8))))
  self:PaintStudioLibraryRows()
@@ -99,7 +111,7 @@ function U:PaintStudioLibraryRows()
    w.frame.tefTooltipTitle=entry.name; w.frame.tefTooltipBody="精确ID " .. entry.spellID .. "；点击＋追加，或拖入技能行之前。"
   end
  end
- self:Paint(self.studioLibraryInfo,"SetText",#matches .. "项 · 滚轮或右侧滚动条" .. (self.studioLibraryPartial and " · 部分身份未知" or ""))
+ self:Paint(self.studioLibraryInfo,"SetText",#matches .. "项" .. (self.studioLibraryOnlyBar and " · 仅动作条" or "") .. " · 滚轮或右侧滚动条" .. (self.studioLibraryPartial and " · 部分身份未知" or ""))
  self.studioLibraryScrolling=true
  self:Paint(self.studioLibraryBar,"SetMinMaxValues",0,math.max(0,#matches-(self.studioLibraryVisible or 8)))
  self:Paint(self.studioLibraryBar,"SetValue",offset)
@@ -107,6 +119,7 @@ function U:PaintStudioLibraryRows()
 end
 function U:CloseStudioLibrary()
  self.studioLibraryOpen=false; self.studioLibraryDragging=nil
+ self.studioLibraryBarIDs=nil
  self:Paint(self.studioLibrarySearch,"ClearFocus"); self:Paint(self.studioLibrary,"Hide")
  for _,w in ipairs(self.studioLibraryWidgets or {}) do self:Paint(w.frame,"SetAlpha",1) end
  self:HideStudioInsertion(); self:HideControlTooltip()
@@ -212,7 +225,7 @@ function U:LayoutStudioBottom(width,height)
 end
 function U:LayoutStudioLibrary(left,height)
  local h=math.min(680,height-80)
- self.studioLibraryVisible=math.max(1,math.min(8,math.floor((h-160)/56)))
+ self.studioLibraryVisible=math.max(1,math.min(8,math.floor((h-192)/56)))
  self.studioLibraryOffset=math.max(0,math.min(self.studioLibraryOffset or 0,math.max(0,#(self.studioLibraryMatches or {})-self.studioLibraryVisible)))
  self:Paint(self.studioLibraryBar,"SetHeight",math.max(32,self.studioLibraryVisible*56-32))
  self:PaintStudioLibraryRows()
@@ -239,6 +252,8 @@ function U:CreateStudioTools()
  for _,button in pairs(self.strategyKindButtons) do self:Paint(button,"SetWidth",340) end
  self:Paint(self.strategyKindChild,"SetWidth",340)
  self.studioLibrary=self:CreateStudioPanel(self.settings); self:Paint(self.studioLibrary,"EnableMouse",true)
+ self:Paint(self.studioLibrary,"SetBackdropColor",.025,.055,.095,1)
+ self:Paint(self.studioLibrary,"SetBackdropBorderColor",.34,.58,.78,1)
  self:BindControlTooltip(self.studioLibrary,"已学技能库","只收录公开确认的精确已学主动技能；新学技能后点击刷新。")
  self:Paint(self:Text(self.studioLibrary,12,-12,224,"GameFontNormal"),"SetText","已学主动技能 · 精确ID")
  self:CreateActionButton(self.studioLibrary,"关闭",276,-8,72,function() self:CloseStudioLibrary(); self:LayoutSettings() end)
@@ -246,15 +261,29 @@ function U:CreateStudioTools()
  self.studioLibrarySearch=self:SequenceInput(self.studioLibrary,12,-76,248); self:Paint(self.studioLibrarySearch,"SetMaxLetters",80)
  self:Paint(self.studioLibrarySearch,"SetScript","OnTextChanged",function() self.studioLibraryOffset=0; if self.studioLibraryCatalog then self:RefreshStudioLibrary(false) end end)
  self:CreateActionButton(self.studioLibrary,"刷新",272,-76,76,function() self:RefreshStudioLibrary(true) end)
- self.studioLibraryInfo=self:Text(self.studioLibrary,12,-120,336,"GameFontHighlightSmall")
+ self:Paint(self:Text(self.studioLibrary,12,-118,240),"SetText","仅显示动作条上的技能")
+ -- 纯视图开关，不使用会标记技能组草稿变更的策略开关。
+ self.studioLibraryBarToggle=self:CreateActionButton(self.studioLibrary,"关闭",263,-112,85,function()
+  self.studioLibraryOnlyBar=not self.studioLibraryOnlyBar; self.studioLibraryBarIDs=nil; self.studioLibraryOffset=0
+  self:RefreshStudioLibrary(false)
+ end)
+ local function syncBarFilter()
+  local enabled=self.studioLibraryOnlyBar==true
+  self.studioLibraryBarToggle.tefControlSelected=enabled
+  self:Paint(self.studioLibraryBarToggle,"SetText",enabled and "开启" or "关闭")
+  self:SetControlEnabled(self.studioLibraryBarToggle,true)
+ end
+ self:AddControlSync(syncBarFilter,self.studioLibraryBarToggle); syncBarFilter()
+ self:BindControlTooltip(self.studioLibraryBarToggle,"仅显示动作条上的技能","按精确技能ID筛选，包含现有解析器能核对的宏技能；未知身份不收录。移动技能后点击刷新。")
+ self.studioLibraryInfo=self:Text(self.studioLibrary,12,-152,336,"GameFontHighlightSmall")
  self:Paint(self.studioLibrary,"SetMovable",true); self:Paint(self.studioLibrary,"SetClampedToScreen",true)
  local drag=self:Frame("Frame",self.studioLibrary); self:StudioAnchor(drag,self.studioLibrary,0,0,264,40)
  self:Paint(drag,"EnableMouse",true); self:Paint(drag,"RegisterForDrag","LeftButton")
  self:Paint(drag,"SetScript","OnDragStart",function() self:Paint(self.studioLibrary,"StartMoving") end)
  self:Paint(drag,"SetScript","OnDragStop",function() self:Paint(self.studioLibrary,"StopMovingOrSizing"); self.studioLibraryMoved=true end)
- self.studioLibraryChild=self:Frame("Frame",self.studioLibrary); self:StudioAnchor(self.studioLibraryChild,self.studioLibrary,12,-148,312,448)
+ self.studioLibraryChild=self:Frame("Frame",self.studioLibrary); self:StudioAnchor(self.studioLibraryChild,self.studioLibrary,12,-180,312,448)
  self.studioLibraryBar=self:Frame("Slider",self.studioLibrary,"UIPanelScrollBarTemplate")
- self:StudioAnchor(self.studioLibraryBar,self.studioLibrary,336,-164,16,416)
+ self:StudioAnchor(self.studioLibraryBar,self.studioLibrary,336,-196,16,416)
  self:Paint(self.studioLibraryBar,"SetValueStep",1); self:Paint(self.studioLibraryBar,"SetObeyStepOnDrag",true)
  self:Paint(self.studioLibraryBar,"SetScript","OnValueChanged",function(_,value)
   value=S.Public(value,"number"); if self.studioLibraryScrolling or not value then return end
@@ -269,6 +298,8 @@ function U:CreateStudioTools()
  self.studioLibraryWidgets={}
  for i=1,8 do
   local frame=self:CreateStudioPanel(self.studioLibraryChild); self:StudioAnchor(frame,self.studioLibraryChild,0,-(i-1)*56,312,52)
+  self:Paint(frame,"SetBackdropColor",.07,.11,.17,1)
+  self:Paint(frame,"SetBackdropBorderColor",.22,.35,.48,1)
   local ok,icon=self:Invoke(frame,"CreateTexture",nil,"ARTWORK"); if ok then self:StudioAnchor(icon,frame,8,-8,32,32) end
   local w={frame=frame,icon=icon,name=self:Text(frame,48,-6,216),id=self:Text(frame,48,-28,216,"GameFontHighlightSmall")}
   self:Paint(w.name,"SetWordWrap",false)

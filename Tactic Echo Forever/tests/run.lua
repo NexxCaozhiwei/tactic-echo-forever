@@ -677,11 +677,11 @@ test("native_hud_public_cast_labels_remain_visual",function()
     bindingFixture(); T.Dispatch:SetEnabled(false)
     local index=T.engine.index
     UnitCastingInfo=function() return "公开读条" end; UnitChannelInfo=function() return nil end
-    T.HUD:Refresh(); eq(T.HUD.cards[1].state.text,"施法")
+    T.HUD:Refresh(); eq(T.HUD.castText.text,"施法信息未知")
     UnitCastingInfo=function() return secret end; UnitChannelInfo=function() return "公开引导" end
-    T.HUD:Refresh(); eq(T.HUD.cards[1].state.text,"引导")
+    T.HUD:Refresh(); eq(T.HUD.castText.text,"引导信息未知")
     UnitChannelInfo=function() return secret end
-    T.HUD:Refresh(); eq(T.HUD.cards[1].state.text,"暂停")
+    T.HUD:Refresh(); eq(T.HUD.castText.text,"施法信息未知")
     eq(T.engine.index,index); eq(T.Dispatch.pending,nil)
 end)
 test("native_hud_cd_and_charges_text_planes",function()
@@ -689,9 +689,9 @@ test("native_hud_cd_and_charges_text_planes",function()
     C_Spell.GetSpellCooldown=function() return {startTime=10,duration=10,modRate=1,isEnabled=true,isOnGCD=false} end
     C_Spell.GetSpellCharges=function() return {currentCharges=1,maxCharges=2} end
     T.Presentation:Paint(T.HUD.cards[1],T.engine.steps[1],true)
-    eq(T.HUD.cards[1].cooldownText.text,"5"); eq(T.HUD.cards[1].chargeText.text,"1/2")
+    eq(T.HUD.cards[1].cooldownText,nil); eq(T.HUD.cards[1].chargeText,nil)
     T.Presentation:Paint(T.HUD.cards[1],nil,false)
-    eq(T.HUD.cards[1].cooldownText.text,""); eq(T.HUD.cards[1].chargeText.text,"")
+    eq(T.HUD.cards[1].cooldownText,nil); eq(T.HUD.cards[1].chargeText,nil)
 end)
 test("request_rejects_cast_channel_and_unknown_before_pending",function()
     for _,case in ipairs({"cast","channel","secret","missing","failed"}) do
@@ -1211,8 +1211,13 @@ test("hud_block_categories_show_reason_without_changing_dispatch",function()
     }
     for _,case in ipairs(cases) do
         T.Runtime:Changed("blocked",case[1])
-        eq(h.cards[1].state.text,"阻断·" .. case[2])
-        assert(h.badgeText.text:find("阻断·",1,true) or h.badgeText.text=="状态未知")
+        eq(h.cards[1].state,nil); eq(h:BlockCategory(case[1]),case[2])
+        local expected={CONTINUOUS_CAST_PRESENT_OR_UNKNOWN="施法收尾",APL_WAIT_CURRENT_RECEIPT="等待回执",
+            CONTINUOUS_TARGET_UNKNOWN_OR_BLOCKED="目标受阻",CONTINUOUS_RANGE_UNKNOWN_OR_BLOCKED="距离受阻",
+            CONTINUOUS_USABLE_UNKNOWN_OR_BLOCKED="技能受阻",CONTINUOUS_TEXT_FOCUS_OR_UNKNOWN="输入受阻",
+            APL_NO_CANDIDATE="暂无推荐",RUNTIME_COMBAT_UNKNOWN="战斗未知",
+            RUNTIME_PROFILE_UNCONFIGURED="方案缺失",UNRECOGNIZED_BLOCK="其他受阻"}
+        eq(h.badgeText.text,expected[case[1]])
         eq(T.Runtime.reason,case[1])
     end
     eq(h:BlockCategory(secret),"未知")
@@ -1927,9 +1932,9 @@ test("bootstrap_loop_events_only_reset_matching_mode_and_not_revive",function()
 end)
 test("hud_style_whitelist_bounds_secret_reload_independence",function()
     local clean=T.HudStyles.Clean({main={key={fontSize=99,scale=.1,point="BAD",offsetX=-200,color={r=2,g=secret}}},global={status={enabled=false}}})
-    eq(clean.main.key.fontSize,30); eq(clean.main.key.scale,.6); eq(clean.main.key.point,"TOPRIGHT")
-    eq(clean.main.key.offsetX,-100); eq(clean.main.key.color.r,1); eq(clean.main.key.color.g,1)
-    eq(clean.global.status.enabled,false); eq(clean.preview.key.fontSize,12)
+    eq(clean.main.key.fontSize,30); eq(clean.main.key.scale,.6); eq(clean.main.key.point,nil)
+    eq(clean.main.key.offsetX,nil); eq(clean.main.key.color.r,1); eq(clean.main.key.color.g,1)
+    eq(clean.global.status.enabled,false); eq(clean.preview,nil)
     local e=engine(); e.db.hud.styles=clean; local copy=engine(nil,e.db)
     eq(copy.db.hud.styles.main.key.fontSize,30); eq(copy.db.hud.styles.global.status.enabled,false)
     clean.main.key.fontSize=8; eq(copy.db.hud.styles.main.key.fontSize,30)
@@ -1944,7 +1949,7 @@ test("hud_styles_apply_hidden_labels_defer_combat_no_dispatch_change",function()
     e.db.hud.styles.main.key.color.r=.3; e.db.hud.styles.main.key.enabled=false
     local g=e.generation; local intent=T.Runtime.intent; local index=e.index
     InCombatLockdown=function() return true end; h:Layout(); eq(calls,0); eq(h.pending,true)
-    InCombatLockdown=function() return false end; h:Layout(); eq(font,10); eq(point,"TOPRIGHT"); eq(color,.3)
+    InCombatLockdown=function() return false end; h:Layout(); eq(font,10); eq(point,"CENTER"); eq(color,.3)
     eq(h.cards[1].key.shown,false); h:Refresh(); eq(h.cards[1].key.shown,false)
     eq(g,e.generation); eq(index,e.index); eq(intent,T.Runtime.intent)
 end)

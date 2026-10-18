@@ -186,8 +186,8 @@ function UI:RefreshPage()
     elseif self.page=="scene" then
         self:Paint(self.readouts.scene,"SetText","切换重置并暂停；自动判定仅旁路观察。\n可见敌方≥3建议多目标，≤1单体，2保持。\n1秒内两次不同采样；未知撤回。计数不等于命中。\n以下是采样时结果，不代表当前状态。\n\n" .. TEF.Research:View())
     elseif self.page=="hud" then
-        self:Paint(self.readouts.hud,"SetText","缩放：" .. e.db.hud.scale .. " · 位置：" .. (e.db.hud.locked and "已锁定" or "可拖动")
-            .. "\n后续两步：" .. (e.db.hud.preview and "显示" or "关闭") .. "\n主卡左键启停、右键设置，不直接施法。")
+        -- 这些信息已有对应控件，旧摘要会覆盖标签设置卡片。
+        self:Paint(self.readouts.hud,"SetText",""); self:Paint(self.readouts.hud,"Hide")
     elseif self.page=="tek" then
         self:Paint(self.readouts.tek,"SetText","TEAP v3 · 输出：" .. (TEF.Transport.enabled and "开启" or "关闭")
             .. "\nTEK许可：" .. (TEF.Dispatch.enabled and "开启" or "关闭")
@@ -346,16 +346,17 @@ function UI:CreateSettings()
             self:Paint(self.sourceMessage,"SetText",ok and "来源已切换并停止；关闭设置后主动开启。" or ("来源未切换：" .. reason))
         end)
     self:Paint(self.readouts.hud,"SetText","")
-    self:CreateSectionCard(self.pages.hud,"标签样式",0,0,580,720)
+    self:Paint(self.readouts.hud,"Hide")
+    self:CreateSectionCard(self.pages.hud,"标签样式",0,0,580,512)
     local labelPanel=self:Frame("Frame",self.pages.hud); self.labelStylePanel=labelPanel
-    self:Paint(labelPanel,"SetSize",548,660); self:Paint(labelPanel,"SetPoint","TOPLEFT",self.pages.hud,"TOPLEFT",16,-48)
+    self:Paint(labelPanel,"SetSize",548,440); self:Paint(labelPanel,"SetPoint","TOPLEFT",self.pages.hud,"TOPLEFT",16,-48)
     TEF.HudStyles:BuildUI(self,labelPanel)
-    self:CreateSectionCard(self.pages.hud,"HUD位置与缩放",0,-736,580,248)
-    self.hudSlider=self:CreateSliderRow(self.pages.hud,"整体缩放",16,-784,548,.6,1,.1,
+    self:CreateSectionCard(self.pages.hud,"HUD位置与缩放",0,-528,580,248)
+    self.hudSlider=self:CreateSliderRow(self.pages.hud,"整体缩放",16,-576,548,.6,1,.1,
         function() return math.min(1,e.db.hud.scale) end,function(value) e.db.hud.scale=value; self:Layout() end)
-    self:CreateToggleRow(self.pages.hud,"锁定位置",16,-840,548,function() return e.db.hud.locked end,function(value) e.db.hud.locked=value end)
-    self:CreateToggleRow(self.pages.hud,"显示后续预览",16,-888,548,function() return e.db.hud.preview end,function(value) e.db.hud.preview=value end)
-    button("hud","恢复位置",16,-936,188,function()
+    self:CreateToggleRow(self.pages.hud,"锁定位置",16,-632,548,function() return e.db.hud.locked end,function(value) e.db.hud.locked=value end)
+    self:CreateToggleRow(self.pages.hud,"显示后续预览",16,-680,548,function() return e.db.hud.preview end,function(value) e.db.hud.preview=value end)
+    button("hud","恢复位置",16,-728,188,function()
         self:ConfirmAction("确认将HUD恢复到默认位置？其他设置保留。",function()
             if self:Combat()~=false then return end
             e.db.position=nil; e.db.hud.x=nil; e.db.hud.y=nil
@@ -363,16 +364,16 @@ function UI:CreateSettings()
             self:Paint(TEF.HUD.frame,"ClearAllPoints"); self:Paint(TEF.HUD.frame,"SetPoint","CENTER",UIParent,"CENTER",0,-155)
         end,"恢复位置")
     end)
-    self:CreateSectionCard(self.pages.hud,"技能图标大小与间距",0,-1000,580,392)
-    local geometryRows={{"mainSize","当前技能大小",32,44},{"preview1Size","后续技能1大小",24,28},{"preview2Size","后续技能2大小",24,28},{"gap1","主图标与文字间距",2,6},{"gap2","后续1与2间距",2,4}}
+    self:CreateSectionCard(self.pages.hud,"技能图标大小与间距",0,-792,580,392)
+    local geometryRows={{"mainSize","当前技能大小",32,44},{"preview1Size","后续技能1大小",24,36},{"preview2Size","后续技能2大小",24,36},{"gap1","主图标与文字间距",2,6},{"gap2","后续1与2间距",2,4}}
     self.hudGeometryControls={}
     for i,row in ipairs(geometryRows) do local field=row[1]
-        local slider,input=self:CreateSliderRow(self.pages.hud,row[2],16,-1048-(i-1)*64,548,row[3],row[4],1,
+        local slider,input=self:CreateSliderRow(self.pages.hud,row[2],16,-840-(i-1)*64,548,row[3],row[4],1,
             function() return math.min(row[4],e.db.hud.geometry[field]) end,function(value) e.db.hud.geometry[field]=value; TEF.HUD:Layout() end,true)
         self.hudGeometryControls[field]={slider=slider,input=input}
     end
-    self:CreateHintText(self.pages.hud,"左键主卡切换派发意图，右键打开设置；空白区域可拖动。战斗中布局变更延后。",16,-1416,548)
-    self:Paint(self.pages.hud,"SetHeight",1476)
+    self:CreateHintText(self.pages.hud,"左键主卡切换派发意图，右键打开设置；空白区域可拖动。战斗中布局变更延后。",16,-1208,548)
+    self:Paint(self.pages.hud,"SetHeight",1268)
     self:CreateSectionCard(self.pages.tek,"高级能力门禁",0,-138,580,238)
     self.signalToggle=self:CreateToggleRow(self.pages.tek,"TEAP输出",12,-176,556,function() return e.db.dispatch.signal end,function(v) TEF.Runtime:SetSignal(v) end)
     self.permissionToggle=self:CreateToggleRow(self.pages.tek,"TEK请求许可",12,-220,556,function() return e.db.dispatch.permission end,function(v) TEF.Runtime:SetPermission(v) end)
