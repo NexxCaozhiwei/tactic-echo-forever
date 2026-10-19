@@ -159,7 +159,7 @@ end)
 test("条件芯片只显示要求与数量不伪造就绪",function()
  setup(); U.customDraft[1].strategies={{mode="use",conditions={{kind="moving",value=false},{kind="range",value=true},{kind="learned",value=true},{kind="combat",value=true}}}}
  U.studioProbe=nil; U:RefreshStudio()
- eq(U.customWidgets[1].frame.studioChips[3].label.text,"＋2项"); eq(U.customWidgets[1].frame.studioBadge.text,"UNKNOWN")
+ eq(U.customWidgets[1].frame.studioChips[3].label.text,"＋2项"); eq(U.customWidgets[1].frame.studioBadge.text,"未采样")
 end)
 test("不同窗口下列表底部与固定保存区不重叠",function()
  setup(); local parent=UIParent

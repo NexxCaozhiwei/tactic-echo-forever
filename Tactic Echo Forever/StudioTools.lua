@@ -10,6 +10,16 @@ local function encode(value)
  local parts={}; for _,key in ipairs(keys) do parts[#parts+1]=encode(key) .. "=" .. encode(value[key]) end
  return "{" .. table.concat(parts,";") .. "}"
 end
+function U:StudioReasonText(raw)
+ local reason=S.Public(raw,"string") or ""
+ local fields={known="精确ID已学状态",usable="技能可用性",power_ok="资源是否足够",in_range="技能范围",loss_control_clear="自身失控状态",ready="显式就绪检查",moving="移动状态",activity="冷却活动状态",distance="目标距离",enemies="可见敌人数",strategy="策略条件"}
+ local field=reason:match("^UNKNOWN:custom:([^:]+)")
+ if field then return (fields[field] or "技能状态") .. "无法确认；请检查对应条件或等待公开结果" end
+ field=reason:match("^custom:([^:]+)")
+ if field then return (fields[field] or "技能条件") .. "当前不满足" end
+ local messages={CUSTOM_CONDITIONS_TRUE="当前条件满足；派发还需运行门禁确认",CUSTOM_DISABLED="当前条目已停用",CUSTOM_TARGET_UNKNOWN="施放类型未知，请点击编辑策略选择类型",CUSTOM_USE_STRATEGY_UNMATCHED="使用策略条件未满足",CUSTOM_SKIP_STRATEGY_MATCHED="跳过策略已满足，本条目跳过",CDM_STACKS_REMOVED="CDM层数条件已移除，请删除或更换类型",GROUP_CONSUMED="技能组本次额度已消耗",MAINTENANCE_OWNS_SPELL="该技能由增益维护负责"}
+ return messages[reason] or "该条目未通过当前检查，请悬停查看诊断原因并检查配置"
+end
 function U:ConditionCategory(kind)
  if kind=="cdmBuff" or kind=="cdmCooldown" then return "CDM" end
  if kind=="range" or kind=="distance" or kind=="targetType" then return "目标" end
@@ -149,7 +159,7 @@ function U:StudioProbeRows()
   local result,reason,status=C:Check(state,row,i)
   local label=status or (result==nil and "UNKNOWN" or result and "TRUE" or "FALSE")
   if result==true and not first then first=i end
-  probes[i]={index=i,spellID=row.spellID,result=label,reason=reason or "UNKNOWN"}
+  probes[i]={index=i,spellID=row.spellID,result=label,reason=reason or "UNKNOWN",detail=(reason=="UNKNOWN:custom:strategy" or reason=="CUSTOM_USE_STRATEGY_UNMATCHED") and state.strategyBlockDetails and state.strategyBlockDetails[i] or nil}
  end
  local current,currentSource,currentScene=self:StudioActiveRows()
  if state.generation~=e.generation or state.receiptSerial~=(e.receiptSerial or 0) or state.revision~=(T.APL.State.revision or 0)
@@ -158,7 +168,9 @@ function U:StudioProbeRows()
  end
  self.studioProbe={engine=e,source=source,scene=scene,generation=e.generation,serial=e.receiptSerial or 0,revision=T.APL.State.revision or 0,
   fingerprint=fingerprint,rows=probes,state=state,first=first,time=state.sampledAt}
- self.studioBottomMode="trace"; self:RefreshStudio(); return true
+ self.studioLastProbeTime=state.sampledAt
+ if not self.studioLiveSampling then self.studioBottomMode="trace" end
+ self:RefreshStudio(); return true
 end
 function U:MaybeStudioLiveProbe()
  if not self.studioTraceLive or not self.settingsOpen then return end
@@ -170,7 +182,8 @@ function U:MaybeStudioLiveProbe()
  local now=T.APL.State.Time(); if not now then return end
  if self.studioLastProbeTime and now>=self.studioLastProbeTime and now-self.studioLastProbeTime<.20 then return end
  self.studioLastProbeTime=now
- local mode=self.studioBottomMode; self:StudioProbeRows(); self.studioBottomMode=mode
+ self.studioLiveSampling=true; local ok,result=pcall(self.StudioProbeRows,self); self.studioLiveSampling=false
+ if not ok then error(result) end
 end
 function U:StudioProbeCurrent()
  local p=self.studioProbe; local rows,source,scene=self:StudioActiveRows(); local e=self.engine
@@ -190,8 +203,9 @@ function U:RefreshStudioBottom()
   self:Paint(w,mode=="trace" and row and "Show" or "Hide")
   if row then
    local result=probe and probe.result or "UNKNOWN"
-   self:Paint(w,"SetText",string.format("%02d",i) .. " · ID " .. (row.spellID or 0) .. " · " .. result .. " · " .. (probe and probe.reason or "未采样或采样已失效"))
-   w.tefTraceIdentity=p; w.tefTraceIndex=i; w.tefTooltipTitle=result; w.tefTooltipBody=probe and probe.reason or "未知不等于不满足；不会授予输入资格。"
+   local label=({TRUE="条件满足",FALSE="条件未满足",UNKNOWN=probe and "条件未知" or "未采样",DISABLED="已停用",BLOCKED="配置受阻",MAINTENANCE="由增益维护接管"})[result] or "等待确认"
+   self:Paint(w,"SetText",string.format("%02d",i) .. " · ID " .. (row.spellID or 0) .. " · " .. label .. " · " .. (probe and probe.detail and probe.detail.description or probe and self:StudioReasonText(probe.reason) or "未采样或采样已失效"))
+   w.tefTraceIdentity=p; w.tefTraceIndex=i; w.tefTooltipTitle=label; w.tefTooltipBody=(probe and probe.detail and probe.detail.description or probe and self:StudioReasonText(probe.reason) or "未知不等于不满足；不会授予输入资格。") .. (probe and ("\n诊断原因码：" .. probe.reason) or "")
   end
  end
  self:Paint(self.studioTraceChild,"SetHeight",math.max(32,(rows and #rows or 0)*36))
@@ -212,6 +226,13 @@ function U:RefreshStudioBottom()
 end
 function U:LayoutStudioBottom(width,height)
  self.studioBottomHeight=height
+ local trace=(self.studioBottomMode or "trace")=="trace"
+ self:Paint(self.studioTextScroll,not trace and "Show" or "Hide")
+ self:Paint(self.studioTraceScroll,trace and height>=100 and "Show" or "Hide")
+ self:Paint(self.studioTraceHeader,trace and "Show" or "Hide")
+ local signature=width .. ":" .. height
+ if self.studioBottomGeometry==signature then return end
+ self.studioBottomGeometry=signature
  self:Paint(self.studioTextChild,"SetWidth",width-48)
  self:Paint(self.studioBottomText,"SetWidth",width-48)
  self:Paint(self.studioTextScroll,"SetSize",width-44,math.max(24,height-48))
@@ -219,9 +240,6 @@ function U:LayoutStudioBottom(width,height)
  self:Paint(self.studioTraceChild,"SetWidth",width-48)
  for _,w in ipairs(self.studioTraceWidgets) do self:Paint(w,"SetWidth",width-48) end
  self:StudioAnchor(self.studioSampleButton,self.studioBottom,width-136,-4,120,28)
- self:Paint(self.studioTextScroll,(self.studioBottomMode or "trace")~="trace" and "Show" or "Hide")
- self:Paint(self.studioTraceScroll,(self.studioBottomMode or "trace")=="trace" and height>=100 and "Show" or "Hide")
- self:Paint(self.studioTraceHeader,(self.studioBottomMode or "trace")=="trace" and "Show" or "Hide")
 end
 function U:LayoutStudioLibrary(left,height)
  local h=math.min(680,height-80)
@@ -240,6 +258,7 @@ function U:LayoutStudioLibrary(left,height)
  self:Paint(self.studioLibrary,self.studioLibraryOpen and "Show" or "Hide")
 end
 function U:CreateStudioTools()
+ self.studioBottomGeometry=nil
  self:Paint(self.strategyKindMenu,"SetSize",390,324)
  self.studioConditionSearch=self:SequenceInput(self.strategyKindMenu,8,-12,370); self:Paint(self.studioConditionSearch,"SetMaxLetters",80)
  self:BindControlTooltip(self.studioConditionSearch,"搜索条件","可按条件名称、字段名或技能／目标／玩家／战斗／CDM分类搜索。")

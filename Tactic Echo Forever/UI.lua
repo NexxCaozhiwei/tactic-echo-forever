@@ -10,12 +10,23 @@ end
 function UI:Call(object, method, ...)
     local ok=self:Invoke(object,method,...); return ok
 end
+-- 刷新异常必须释放重入标记，并丢弃可能只完成一部分的布局缓存。
+function UI:WithUpdateFlag(flag,callback,...)
+    if self[flag] then return end
+    self[flag]=true
+    local ok,err=pcall(callback,self,...)
+    self[flag]=false
+    if not ok then
+        self.settingsLayoutSignature=nil; self.studioBottomGeometry=nil
+        error(err,0)
+    end
+end
 function UI:Error()
     if not self.errorLogged then self.errorLogged=true; self.engine:Log("display","UI_CALL_FAILED") end
 end
 function UI:Paint(object,method,...)
     if not self:Call(object,method,...) then self:Error(); return false end
-    if (object==self.strategyPanel or object==self.groupPanel) and (method=="Show" or method=="Hide") and self.LayoutSettings then self:LayoutSettings() end
+    if (object==self.strategyPanel or object==self.groupPanel) and (method=="Show" or method=="Hide") and self.LayoutSettings and not self.refreshingPage and not self.studioRefreshing and not self.studioLayoutBusy then self:LayoutSettings() end
     return true
 end
 function UI:Frame(kind,parent,template,name)
@@ -67,8 +78,13 @@ function UI:Layout()
 end
 function UI:Refresh()
     if TEF.HUD then TEF.HUD:Refresh() end
+    local ok,raw=self:Invoke(self.frame,"IsVisible")
+    if ok and S.Public(raw,"boolean")==true then self:RefreshPractice() end
+    if self.settingsOpen then self:RefreshPage() end
+end
+-- 仅供 /tef test 使用的兼容工具，不参与普通Studio刷新。
+function UI:RefreshPractice()
     local e=self.engine
-    if not self.frame then return end
     local step=e.steps and e.steps[e.index]
     local view
     if step and step.unverified then
@@ -97,7 +113,6 @@ function UI:Refresh()
         self.lastResolution=key
         e:Log("display","SPELL_" .. view.reason,step and step.spellID>0 and step.spellID or nil)
     end
-    if self.settingsOpen then self:RefreshPage() end
 end
 function UI:OpenSettings()
     if self:Combat()~=false then self.engine:Log("ignored","SETTINGS_COMBAT_BLOCKED"); return end
@@ -164,7 +179,9 @@ function UI:ShowPage(key)
     if key=="profiles" then self:RefreshSequenceEditor(true) end
 end
 function UI:RefreshPage()
-    self:LayoutSettings()
+    return self:WithUpdateFlag("refreshingPage",self.RefreshPageContent)
+end
+function UI:RefreshPageContent()
     local e=self.engine
     if self.RefreshControls then self:RefreshControls() end
     self:RefreshPlanFeedback(); self:RefreshUndoControls()
@@ -175,7 +192,7 @@ function UI:RefreshPage()
         self:Paint(self.readouts.overview,"SetText",(self:ClassLabel() .. (v.source=="apl" and " · 优先级推荐" or " · 列表循环")) .. " · " .. TEF.Profiles:PlanName(e.scene)
             .. "\n" .. (v.source=="apl" and (e.aplTrace and e.aplTrace.reason or "等待启动采样") or ("步骤 " .. e.index .. "/" .. (e.steps and #e.steps or 0) .. " · 固定练习不保证ready")))
     elseif self.page=="profiles" then
-        if self.loadedProfile~=e.profileKey then self:ShowPage("profiles"); return end
+        if self.loadedProfile~=e.profileKey then self.refreshingPage=false; self:ShowPage("profiles"); return end
         self:Paint(self.readouts.profiles,"SetText",self:ClassLabel() .. " · 编辑：" .. TEF.Profiles:PlanName(self.editScene,e,"manual") .. " · 当前使用：" .. TEF.Profiles:PlanName(e.scene,e,TEF.Recommendation:Source(e))
 )
         if e.db.profileMigrationConflicts[e.classToken] and self.migrationHintEngine~=e then self.migrationHintEngine=e; self:SequenceMessage("旧职业配置存在冲突，原配置已保留，请核对并保存。") end
@@ -208,10 +225,11 @@ function UI:RefreshPage()
             local valid,errors,warnings=TEF.APL.Custom:Audit(rows,e)
             report="当前已保存方案体检\n" .. (valid and "未发现可证明的矛盾。" or errors) .. "\n" .. warnings
         end
-        self:Paint(self.readouts.diagnostics,"SetText",report)
-        local _,lineCount=report:gsub("\n","\n")
+        self:Paint(self.readouts.diagnostics,"SetText",table.concat(lines,"\n") .. "\n\n" .. report)
+        local _,lineCount=(table.concat(lines,"\n") .. "\n\n" .. report):gsub("\n","\n")
         self:Paint(self.pages.diagnostics,"SetHeight",math.max(600,100+(lineCount+1)*52))
     end
+    self.refreshingPage=false
     self:RefreshStudio()
 end
 function UI:CreateSettings()
@@ -369,10 +387,17 @@ function UI:CreateSettings()
     self.hudGeometryControls={}
     for i,row in ipairs(geometryRows) do local field=row[1]
         local slider,input=self:CreateSliderRow(self.pages.hud,row[2],16,-840-(i-1)*64,548,row[3],row[4],1,
-            function() return math.min(row[4],e.db.hud.geometry[field]) end,function(value) e.db.hud.geometry[field]=value; TEF.HUD:Layout() end,true)
+            function() return math.min(row[4],e.db.hud.geometry[field]) end,function(value) if e.db.hud.mode=="mini" then return end; e.db.hud.geometry[field]=value; TEF.HUD:Layout() end,true)
         self.hudGeometryControls[field]={slider=slider,input=input}
+        self:AddControlSync(function()
+            local enabled=e.db.hud.mode~="mini"
+            self:Paint(slider,enabled and "Enable" or "Disable"); self:Paint(input,"EnableMouse",enabled); self:Paint(input,"EnableKeyboard",enabled)
+            if not enabled then self:Paint(input,"ClearFocus") end
+            slider.tefDisabledReason=not enabled and "迷你HUD采用固定图标大小与间距；切回标准HUD后可调整。" or nil
+            input.tefDisabledReason=slider.tefDisabledReason
+        end,slider)
     end
-    self:CreateHintText(self.pages.hud,"左键主卡切换派发意图，右键打开设置；空白区域可拖动。战斗中布局变更延后。",16,-1208,548)
+    self:CreateHintText(self.pages.hud,"迷你HUD固定图标大小与间距，以上几何设置仅用于标准HUD。左键主卡启停，右键设置；空白可拖动。",16,-1208,548)
     self:Paint(self.pages.hud,"SetHeight",1268)
     self:CreateSectionCard(self.pages.tek,"高级能力门禁",0,-138,580,238)
     self.signalToggle=self:CreateToggleRow(self.pages.tek,"TEAP输出",12,-176,556,function() return e.db.dispatch.signal end,function(v) TEF.Runtime:SetSignal(v) end)

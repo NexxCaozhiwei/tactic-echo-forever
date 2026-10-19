@@ -98,7 +98,7 @@ test("hud_frame_interpolation_and_centered_keycap_preserve_dispatch",function()
  UnitCastingInfo=function() reads=reads+1 end; UnitChannelInfo=function() reads=reads+1 end
  T.Presentation.UpdateRange=function() rangeReads=rangeReads+1 end
  H.castBar.SetValue=function(self,value) updates=updates+1; setValue(self,value) end
- local tick=H.frame:GetScript("OnUpdate")
+ local tick=H.heartbeat:GetScript("OnUpdate")
  for i=1,10 do GetTime=function() return 10+i*.01 end; tick(H.frame,.01) end
  assert(updates>=10); assert(math.abs(H.castBar.value-.24)<.00001)
  eq(reads,0); eq(rangeReads,0); eq(T.Dispatch.pending,nil)

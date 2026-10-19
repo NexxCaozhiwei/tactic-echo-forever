@@ -2,7 +2,7 @@ local _, TEF = ...
 local S, R = TEF.Safety, {revision=0,fields={},versions={}}
 TEF.Research = R
 local keys={"targetExists","targetAttackable","targetAlive","inRange","usable","insufficientPower",
-    "moving","castPresent","channelPresent","ready","gcdClear","visibleEnemies"}
+    "moving","castPresent","channelPresent","visibleEnemies"}
 local states={PUBLIC_TRUE=true,PUBLIC_FALSE=true,PUBLIC_VALUE=true,NO_DATA=true,SECRET=true,
     UNKNOWN=true,UNAVAILABLE=true,CALL_FAILED=true,FIELD_FAILED=true,UNKNOWN_UNIT=true,
     UNKNOWN_CAPACITY=true,UNKNOWN_IDENTITY=true,UNKNOWN_DETECTOR_MISSING=true,
@@ -14,6 +14,10 @@ function R.CleanSummary(raw)
     for _,key in ipairs(keys) do
         local value=S.Field(raw,key,"string")
         if value and states[value] then clean[key]=value end
+    end
+    -- 只保留旧记录的字段，不再把未实现的探测显示为当前状态。
+    for _,key in ipairs({"ready","gcdClear"}) do
+        local value=S.Field(raw,key,"string"); if value and states[value] then clean[key]=value end
     end
     local count=S.Field(raw,"visibleCount","number")
     if count and count>=0 and count<=40 and count%1==0 then clean.visibleCount=count end
@@ -209,23 +213,6 @@ function R.Auto(policy,field,sample,current)
     if policy.hits>=2 then return desired,"AUTO_PROPOSAL" end
     return nil,"AUTO_CONFIRMING"
 end
-local function isTrue(field) return field and field.state=="PUBLIC_TRUE" and field.value==true end
-local function isFalse(field) return field and field.state=="PUBLIC_FALSE" and field.value==false end
--- Contract prototype, not a ready formula. Each exact spell must receive
--- independently certified own-ready evidence before any candidate exists.
-function R.Priority(rows,byID,common)
-    if not isTrue(common.targetExists) or not isTrue(common.targetAttackable) or not isTrue(common.targetAlive)
-        or not isTrue(common.gcdClear) or not isFalse(common.castPresent) or not isFalse(common.channelPresent)
-        or not isFalse(common.moving) then return nil,"PRIORITY_COMMON_UNKNOWN_OR_BLOCKED" end
-    for _,row in ipairs(rows) do
-        local f=byID[row.spellID]
-        if not row.unverified and f and isTrue(f.learned) and isTrue(f.ready) and isTrue(f.usable)
-            and isFalse(f.insufficientPower) and isTrue(f.inRange) then
-            return row.spellID,"PRIORITY_CANDIDATE"
-        end
-    end
-    return nil,"PRIORITY_NO_CERTIFIED_READY"
-end
 function R:Sample(e)
     if not e.steps or not e.steps[e.index] then return false,"RESEARCH_UNCONFIGURED" end
     if not e.running then self:Invalidate(); return false,"RESEARCH_PAUSED" end
@@ -239,7 +226,7 @@ function R:Sample(e)
         targetAlive=alive,inRange=id>0 and boolean("C_Spell.IsSpellInRange",id,"target") or {state="UNAVAILABLE"},
         moving=boolean("IsPlayerMoving"),
         castPresent=presence("UnitCastingInfo"),channelPresent=presence("UnitChannelInfo"),
-        ready={state="UNKNOWN"},gcdClear={state="UNKNOWN"},visibleEnemies=self:CountVisible()}
+        visibleEnemies=self:CountVisible()}
     local fn=S.Resolve("C_Spell.IsSpellUsable")
     if fn and id>0 then
         local ok,usable,power=pcall(fn,id)
@@ -257,8 +244,6 @@ function R:Sample(e)
     self.auto=self.auto or {}
     self.proposal,self.autoReason=nil,"AUTO_UNKNOWN"
     if sampledAt then self.proposal,self.autoReason=R.Auto(self.auto,self.fields.visibleEnemies,self.sampleSerial,e.scene) end
-    -- Same public field evidence, but deliberately no certified ready source.
-    self.dynamic,self.dynamicReason=R.Priority(e.db.profiles[e.scene],{},self.fields)
     e:Log("observed","RESEARCH_SAMPLED")
     local summary={proposal=self.proposal}
     for _,key in ipairs(keys) do summary[key]=self.fields[key].state end
@@ -269,7 +254,7 @@ end
 function R:View()
     local ok,raw=S.Call("GetTime")
     local now=ok and S.Public(raw,"number") or nil
-    if not now or not self.sampledAt or now-self.sampledAt>1 or now<self.sampledAt then return "状态未采样或已过期；ready未验证" end
+    if not now or not self.sampledAt or now-self.sampledAt>1 or now<self.sampledAt then return "状态未采样或已过期；请重新执行只读采样" end
     local lines={"最近手动采样时刻 " .. self.sampledAt .. "（非实时状态）"}
     for _,key in ipairs(keys) do
         local field=self.fields[key]
@@ -277,7 +262,7 @@ function R:View()
             .. (field and field.state=="PUBLIC_VALUE" and (":" .. field.value) or "")
     end
     lines[#lines+1]="场景建议：" .. (self.proposal or "无") .. "（只观察，不自动切换）"
-    lines[#lines+1]="动态规则：" .. (self.dynamicReason or "PRIORITY_NO_CERTIFIED_READY")
+    lines[#lines+1]="场景采样仅供诊断；推荐由当前列表或APL负责。"
     return table.concat(lines,"\n")
 end
 R:Invalidate()

@@ -1,7 +1,8 @@
 local _,TEF=...
 local T={}; TEF.APL.Trace=T
-function T:Record(e,trace,reason,candidate,state)
- local old=e.aplTrace
+function T:Record(e,trace,reason,candidate,state,channel)
+ local field=channel=="maintenance" and "maintenanceTrace" or "aplTrace"
+ local old=e[field]
  local parts={reason}
  if state then parts[#parts+1]=tostring(state.gcd.ready); for _,key in ipairs({"fireball","frostbolt","scorch","arcane_missiles"}) do local a=state.actions[key]; if a then for _,field in ipairs({"known","usable","power_ok","in_range","loss_control_clear","ready"}) do parts[#parts+1]=tostring(a[field]) end end end end
  for _,r in ipairs(trace) do parts[#parts+1]=r.rule .. ":" .. r.result .. ":" .. r.reason end
@@ -41,13 +42,14 @@ function T:Record(e,trace,reason,candidate,state)
   end
  end
  local fingerprint=table.concat(parts,"|")
- e.aplTrace={reason=reason,rule=candidate and candidate.rule,action=candidate and candidate.action,
+ local recorded={reason=reason,rule=candidate and candidate.rule,action=candidate and candidate.action,
   spellID=candidate and candidate.spellID,rules=trace,build=state and state.buildSignature or {},fingerprint=fingerprint}
- local changed=not old or old.fingerprint~=fingerprint or old.rule~=e.aplTrace.rule or old.spellID~=e.aplTrace.spellID
+ e[field]=recorded
+ local changed=not old or old.fingerprint~=fingerprint or old.rule~=recorded.rule or old.spellID~=recorded.spellID
  if changed then
   e:Log("observed",candidate and "APL_SELECTED" or "APL_NO_CANDIDATE",candidate and candidate.spellID)
   local row=e.db.diagnostics[#e.db.diagnostics]
-  row.apl={reason=reason,rule=e.aplTrace.rule,action=e.aplTrace.action,build=e.aplTrace.build,rules=trace}
+  row.apl={reason=reason,rule=recorded.rule,action=recorded.action,build=recorded.build,rules=trace}
   if state then
    row.apl.gcd=state.gcd and state.gcd.ready
    row.apl.inCombat=state.combat.in_combat

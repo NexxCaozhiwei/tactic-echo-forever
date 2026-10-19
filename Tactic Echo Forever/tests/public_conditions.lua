@@ -13,11 +13,26 @@ end
 local function fixtures(active)
  C_CooldownViewer={GetCooldownViewerCategorySet=function(category) return category==2 and {10} or {} end,
  GetCooldownViewerCooldownInfo=function() return {spellID=133} end}
- local frame={cooldownID=10,isActive=active}
+ local frame={cooldownID=10,IsVisible=function() return true end,isActive=active}
  local function pool(frames) return {EnumerateActive=function() local i=0; return function() i=i+1; return frames[i] end end} end
  BuffIconCooldownViewer={itemFramePool=pool({frame})}; BuffBarCooldownViewer={itemFramePool=pool({})}
  return frame,pool
 end
+test("cdm_hidden_or_unknown_visibility_never_authorizes_rule",function()
+ local r=row(143); r.strategies={{mode="use",conditions={{kind="cdmBuff",spellID=133,value=false}}}}
+ for _,visibility in ipairs({function() return false end,function() return F.secret end,function() error("VISIBILITY_FAILURE") end,false}) do
+  local frame=fixtures(false); frame.IsVisible=visibility or nil
+  local observed=P.CDM({{enabled=true,cdmKind="buff",cdmSpellID=133}})
+  eq(observed["buff:133"].value,nil); eq(observed["buff:133"].reason,"CDM_HIDDEN_OR_UNKNOWN")
+  local s=state({r}); s.actions.custom_1.strategyCDM=observed
+  eq(C:Check(s,r,1),nil)
+ end
+ local frame,pool=fixtures(false)
+ local hidden={cooldownID=10,isActive=false,IsVisible=function() return false end}
+ BuffIconCooldownViewer.itemFramePool=pool({frame,hidden})
+ eq(P.CDM({{enabled=true,cdmKind="buff",cdmSpellID=133}})["buff:133"].value,nil)
+end)
+
 test("numeric_operators_boundaries_unknown",function()
  for _,op in ipairs({"lt","le","eq","ne","ge","gt"}) do eq(P.Compare(nil,op,20),nil) end
  eq(P.Compare(20,"lt",20),false); eq(P.Compare(20,"le",20),true); eq(P.Compare(20,"eq",20),true)
@@ -80,7 +95,7 @@ end)
 test("cdm_capacity_failure_conflict_block",function()
  local r=row(143); r.cdmKind="buff"; r.cdmSpellID=133
  local _,pool=fixtures(false)
- BuffIconCooldownViewer.itemFramePool=pool({{cooldownID=10,isActive=false},{cooldownID=10,isActive=true}})
+ BuffIconCooldownViewer.itemFramePool=pool({{cooldownID=10,IsVisible=function() return true end,isActive=false},{cooldownID=10,IsVisible=function() return true end,isActive=true}})
  eq(P.CDM({r})["buff:133"].value,nil)
  fixtures(false); BuffBarCooldownViewer.itemFramePool.EnumerateActive=function() error("RAW_FAILURE") end
  eq(P.CDM({r})["buff:133"].value,nil)
@@ -90,7 +105,7 @@ end)
 test("cdm_unidentified_frames_before_after_preserve_public_false",function()
  local r=row(143); r.cdmKind="buff"; r.cdmSpellID=133
  local frame,pool=fixtures(false)
- BuffIconCooldownViewer.itemFramePool=pool({{},frame,{cooldownID=99,isActive=true},{}})
+ BuffIconCooldownViewer.itemFramePool=pool({{},frame,{cooldownID=99,IsVisible=function() return true end,isActive=true},{}})
  local v=P.CDM({r})["buff:133"]
  eq(v.value,false); eq(v.reason,"PUBLIC"); eq(v.scanReason,"CDM_FRAME_ID_UNKNOWN"); eq(v.skippedFrames,2)
  frame.isActive=true; eq(P.CDM({r})["buff:133"].value,true)
@@ -100,7 +115,7 @@ test("cdm_secret_id_failed_getter_and_public_getter_continue",function()
  local _,pool=fixtures(false)
  local unknown={cooldownID=F.secret,GetCooldownID=function() error("PRIVATE_ERROR") end}
  local secret={GetCooldownID=function() return F.secret end}
- local good={GetCooldownID=function() return 10 end,isActive=true}
+ local good={GetCooldownID=function() return 10 end,IsVisible=function() return true end,isActive=true}
  BuffIconCooldownViewer.itemFramePool=pool({unknown,secret,good})
  local v=P.CDM({r})["buff:133"]; eq(v.value,true); eq(v.skippedFrames,2)
 end)
@@ -118,11 +133,11 @@ end)
 test("cdm_unknown_frames_do_not_hide_exact_conflict_or_secret_state",function()
  local r=row(143); r.cdmKind="buff"; r.cdmSpellID=133
  local _,pool=fixtures(false)
- BuffIconCooldownViewer.itemFramePool=pool({{},{cooldownID=10,isActive=false},{},{cooldownID=10,isActive=true}})
+ BuffIconCooldownViewer.itemFramePool=pool({{},{cooldownID=10,IsVisible=function() return true end,isActive=false},{},{cooldownID=10,IsVisible=function() return true end,isActive=true}})
  local v=P.CDM({r})["buff:133"]; eq(v.value,nil); eq(v.reason,"CDM_CONFLICT")
- BuffIconCooldownViewer.itemFramePool=pool({{},{cooldownID=10,isActive=F.secret},{cooldownID=10,isActive=false}})
+ BuffIconCooldownViewer.itemFramePool=pool({{},{cooldownID=10,IsVisible=function() return true end,isActive=F.secret},{cooldownID=10,IsVisible=function() return true end,isActive=false}})
  eq(P.CDM({r})["buff:133"].value,nil)
- local frames={{cooldownID=10,isActive=false}}; for i=2,81 do frames[i]={} end
+ local frames={{cooldownID=10,IsVisible=function() return true end,isActive=false}}; for i=2,81 do frames[i]={} end
  BuffIconCooldownViewer.itemFramePool=pool(frames); eq(P.CDM({r})["buff:133"].reason,"CDM_CAPACITY")
 end)
 test("cdm_scan_diagnostics_clean_and_ledger",function()
@@ -212,7 +227,7 @@ test("click_pickup_and_drag_both_add_no_duplicates_after_clear",function()
 end)
 test("strategy_multiple_cdm_live_recheck_revokes_changed_packet",function()
  local e=F.runtime(); local _,pool=fixtures(true)
- local cooldown={cooldownID=11,isActive=false}; local buff={cooldownID=12,isActive=true}
+ local cooldown={cooldownID=11,IsVisible=function() return true end,isActive=false}; local buff={cooldownID=12,IsVisible=function() return true end,isActive=true}
  C_CooldownViewer={GetCooldownViewerCategorySet=function(category)
   if category==0 then return {11} elseif category==2 then return {12} end; return {}
  end,GetCooldownViewerCooldownInfo=function(id) return {spellID=id==11 and 116 or 133} end}
@@ -222,7 +237,9 @@ test("strategy_multiple_cdm_live_recheck_revokes_changed_packet",function()
  local r={spellID=143,strategies={{mode="use",conditions={{kind="distance",min=20,max=30},
   {kind="cdmCooldown",spellID=116,value=false},{kind="cdmBuff",spellID=133,value=true}}}}}
  assert(C:Save(e,{r},"single","MAGE")); T.Runtime:SetIntent(true); T.Dispatch:TickContinuous(); assert(T.Dispatch.pending)
- eq(T.APL:Allowed(e,143),true); buff.isActive=false; eq(T.Dispatch:Packet(),nil)
+ eq(T.APL:Allowed(e,143),true)
+ buff.IsVisible=function() return false end; eq(T.APL:Allowed(e,143),false); eq(T.Dispatch:Packet(),nil)
+ buff.IsVisible=function() return true end; buff.isActive=false; eq(T.Dispatch:Packet(),nil)
  buff.isActive=true; assert(C:Save(e,{r},"single","MAGE")); T.Runtime:SetIntent(true); T.Dispatch:TickContinuous(); assert(T.Dispatch.pending)
  cooldown.isActive=F.secret; eq(T.Dispatch:Packet(),nil)
 end)

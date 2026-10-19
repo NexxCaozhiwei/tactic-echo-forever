@@ -72,7 +72,7 @@ end
 function C:Initialize(e)
     self.maintenanceManual=false
     self.e=e; self.intent=false; self.worldSeen=false; self.state="paused"
-    self.reason=nil; self.cycle=0; self.requestSerial=0
+    self.reason=nil; self.displayBlock=nil; self.cycle=0; self.requestSerial=0
     e.db.dispatch=self.Clean(e.db.dispatch)
     TEF.Dispatch:SetEnabled(e.db.dispatch.permission)
 end
@@ -108,7 +108,10 @@ function C:OnDispatchFault(reason)
 end
 function C:Suspend(reason,state)
     if not self.e then return end
+    local detail=TEF.Dispatch:BlockDetail(reason)
     if self.e.running and not self:EngineCall("Pause") then return end
+    self.displayBlock=detail and {engine=self.e,generation=self.e.generation,index=self.e.index,serial=self.e.receiptSerial or 0,reason=reason,
+        title=detail.title,description=detail.description,unknown=detail.unknown} or nil
     TEF.Dispatch:StopContinuous(reason); TEF.Dispatch:Cancel(reason)
     self:Changed(self.intent and (state or "blocked") or "paused",reason)
 end
@@ -427,11 +430,15 @@ function C:Reconcile()
     end
     self:Changed("running","RUNTIME_RUNNING")
 end
+function C:DisplayBlockDetail(reason)
+    local d,e=self.displayBlock,self.e
+    if d and e and d.engine==e and d.generation==e.generation and d.index==e.index and d.serial==(e.receiptSerial or 0) and d.reason==reason then return d end
+end
 function C:GetViewState()
     local e=self.e
     local source=e and TEF.Recommendation:Source(e) or "manual"
     return {intent=self.intent,state=self.state,label=names[self.state] or "未知",reason=self.reason,
-        profileKey=e and e.profileKey or "职业未解析",source=source,index=e and e.index or 1,
+        detail=self:DisplayBlockDetail(self.reason),profileKey=e and e.profileKey or "职业未解析",source=source,index=e and e.index or 1,
         count=e and e.steps and #e.steps or 0}
 end
 function C:IsDispatchIntentEnabled() return self.intent end

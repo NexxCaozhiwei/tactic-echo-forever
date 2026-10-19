@@ -157,7 +157,7 @@ function U:AcquireStrategyText(parent,template)
  return object
 end
 function U:LayoutSettings()
- if not self.settings or self.fittingSettings then return end
+ if not self.settings or self.fittingSettings or self.refreshingPage or self.studioRefreshing then return end
  local widthOK,rawWidth=self:Invoke(UIParent,"GetWidth"); local heightOK,rawHeight=self:Invoke(UIParent,"GetHeight")
  local width=widthOK and S.Public(rawWidth,"number"); local height=heightOK and S.Public(rawHeight,"number")
  if not width or not height or width<=32 or height<=32 then return end

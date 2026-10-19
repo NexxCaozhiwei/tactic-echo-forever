@@ -47,8 +47,10 @@ function U:RefreshSkillGroup()
  for i,w in ipairs(self.groupWidgets) do
   local row=self.groupDraft.steps[i]; self:Paint(w.frame,row and "Show" or "Hide")
   if row then
+   if not self.studio then
    w.frame.tefTooltipTitle=S.Spell(row.spellID,row.name).name; w.frame.tefTooltipBody="精确ID " .. row.spellID .. "；次数1～99。"
    self:Paint(w.name,"SetText",i .. ". " .. self:ShortLabel(w.frame.tefTooltipTitle,6) .. " · ID " .. row.spellID)
+   end
    self:SetInputValue(w.count,tostring(row.repeatCount)); self:Paint(w.skip,"SetText",row.skipUnavailable and "不可用跳过：开" or "不可用跳过：关")
   end
  end

@@ -25,12 +25,15 @@ function A.Clean(raw)
  end
  return out
 end
+function A.EffectiveSize(style,cap)
+ return math.max(8,math.min(cap,style.fontSize*style.scale))
+end
 function A:Apply(hud)
  local U=TEF.UI
  if U:Combat()~=false then hud.pending=true; return end
  local styles=hud.engine.db.hud.styles
  local function paint(text,parent,v,width,cap,point,x,y)
-  U:Paint(text,"SetFont",STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF",math.min(cap,v.fontSize*v.scale),v.fontPreset=="disable" and "" or "OUTLINE")
+  U:Paint(text,"SetFont",STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF",A.EffectiveSize(v,cap),v.fontPreset=="disable" and "" or "OUTLINE")
   U:Paint(text,"SetTextColor",v.color.r,v.color.g,v.color.b,v.color.a)
   U:Paint(text,"SetScale",1); U:Paint(text,"ClearAllPoints"); U:Paint(text,"SetWidth",width)
   U:Paint(text,"SetPoint",point or "TOPLEFT",parent,point or "TOPLEFT",x or 0,y or 0)
@@ -52,6 +55,10 @@ function A:Apply(hud)
 end
 function A:BuildUI(U,parent)
  local selected=labels[1]
+ local fontPanels={}; local syncFontPanels
+ U.labelFontPanels=fontPanels
+ -- 先同步可见性，再刷新当前可见滑块，避免切标签后显示上一标签的值。
+ U:AddControlSync(function() if syncFontPanels then syncFontPanels() end end,parent)
  local function current() return U.engine.db.hud.styles[selected.module][selected.key] end
  local function changed() TEF.HUD:Layout() end
  local choices={}; for _,label in ipairs(labels) do choices[#choices+1]={label.key,label.name} end
@@ -66,8 +73,19 @@ function A:BuildUI(U,parent)
  U:AddControlSync(function() U:SetControlEnabled(U.labelEnabledButton,not fixedProgress(),"标准HUD固定显示步骤与次数。") end,parent)
  U:CreateSegmentedControl(parent,{{"normal","描边"},{"disable","无描边"}},0,-96,548,
   function() return current().fontPreset end,function(v) current().fontPreset=v; changed() end)
- U:CreateSliderRow(parent,"字号",0,-152,548,8,30,1,function() return current().fontSize end,function(v) current().fontSize=v; changed() end,true)
- U:CreateSliderRow(parent,"标签缩放",0,-216,548,.6,2,.1,function() return current().scale end,function(v) current().scale=v; changed() end,true)
+ for _,spec in ipairs({{"key",10,false},{"name",14,false},{"status",12,false},{"status",10,true}}) do
+  local key,cap,mini=spec[1],spec[2],spec[3]
+  local panel=U:Frame("Frame",parent); U:Paint(panel,"SetPoint","TOPLEFT",parent,"TOPLEFT",0,-152); U:Paint(panel,"SetSize",548,56)
+  local item={frame=panel,key=key,mini=mini}; fontPanels[#fontPanels+1]=item
+  item.slider,item.input=U:CreateSliderRow(panel,"实际字号",0,0,548,8,cap,1,function() return A.EffectiveSize(current(),cap) end,
+   function(v) current().fontSize=v; current().scale=1; changed() end,true)
+ end
+ local effective=U:CreateHintText(parent,"",0,-216,548)
+ syncFontPanels=function()
+  local mini=U.engine.db.hud.mode=="mini"
+  for _,item in ipairs(fontPanels) do U:Paint(item.frame,item.key==selected.key and (item.key~="status" or item.mini==mini) and not (mini and selected.key=="name") and "Show" or "Hide") end
+  U:Paint(effective,"SetText",mini and selected.key=="name" and "迷你HUD不显示技能名称；切回标准HUD后可设置。" or "字号按实际显示值设置；旧字号与缩放仅兼容读取，新修改使用1倍标签缩放。")
+ end
  for i,color in ipairs(colors) do U:CreateActionButton(parent,color[1],(i-1)*92,-280,80,function()
   current().color={r=color[2],g=color[3],b=color[4],a=1}; changed()
  end) end

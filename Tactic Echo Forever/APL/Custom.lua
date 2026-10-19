@@ -257,7 +257,7 @@ function C:SampleStrategies(state,rows,e)
   if budget>=16 then return false end
   watched[id]=true; budget=budget+1; return true
  end
- local targetNeeded=false
+ local targetNeeded=false; local activeMeasured={}
  for i,row in ipairs(rows) do if row.enabled and not row.invalid and row.strategies then
   local a=state.actions["custom_" .. i]
   for _,strategy in ipairs(row.strategies) do for _,condition in ipairs(strategy.conditions) do
@@ -271,11 +271,16 @@ function C:SampleStrategies(state,rows,e)
    if condition.kind=="enemies" then countNeeded=true end
    if condition.kind=="distance" then distanceNeeded=true end
    if condition.kind=="cooldown" and a then
-    local ok,record=S.Call("C_Spell.GetSpellCooldown",row.spellID)
-    a.active=nil; if ok then a.active=S.Field(record,"isActive","boolean") end
+    if not activeMeasured[row.spellID] then
+     activeMeasured[row.spellID]=true
+     local probe=a.cooldownProbe
+     if not probe then probe=A.State.ProbeCooldown(row.spellID) end
+     state.strategyCooldowns=state.strategyCooldowns or {}; state.strategyCooldowns[row.spellID]=probe
+    end
+    a.active=state.strategyCooldowns[row.spellID].active
    end
    if condition.kind=="cdmCooldown" or condition.kind=="cdmBuff" then
-    requests[#requests+1]={enabled=true,cdmKind=condition.kind~="cdmCooldown" and "buff" or "cooldown",cdmSpellID=condition.spellID or row.spellID,cdmStacks=condition.kind=="cdmStacks"}
+    requests[#requests+1]={enabled=true,cdmKind=condition.kind~="cdmCooldown" and "buff" or "cooldown",cdmSpellID=condition.spellID or row.spellID}
    end
   end end
   if a then a.strategyCDM={} end
@@ -347,31 +352,44 @@ function C:StrategyCondition(state,row,index,c)
 end
 function C:CheckStrategies(state,row,index)
  local useFalse,useUnknown,skipUnknown
- for _,strategy in ipairs(row.strategies or {}) do
+ local firstFalse,firstUnknown
+ state.strategyBlockDetails=state.strategyBlockDetails or {}; state.strategyBlockDetails[index]=nil
+ for si,strategy in ipairs(row.strategies or {}) do
   local failed,unknown=false,false
-  for _,condition in ipairs(strategy.conditions) do
+  local falseDetail,unknownDetail
+  for ci,condition in ipairs(strategy.conditions) do
    local v=self:StrategyCondition(state,row,index,condition)
    if v==false then failed=true elseif v==nil then unknown=true end
+   if (v==false and not falseDetail) or (v==nil and not unknownDetail) then
+    local detail={strategy=si,condition=ci,kind=condition.kind,spellID=condition.spellID or row.spellID,
+     unknown=v==nil,description="策略" .. si .. "／条件" .. ci .. " · ID " .. (condition.spellID or row.spellID or 0) .. " · " .. self:ConditionView(state,row,index,condition)}
+    if v==false then falseDetail=falseDetail or detail else unknownDetail=unknownDetail or detail end
+   end
   end
   if strategy.mode=="skip" then
    if not failed and not unknown then return false,"CUSTOM_SKIP_STRATEGY_MATCHED" end
-   if not failed and unknown then skipUnknown=true end
+   if not failed and unknown then skipUnknown=true; firstUnknown=firstUnknown or unknownDetail end
   else
-   if failed then useFalse=true elseif unknown then useUnknown=true end
+   if failed then useFalse=true; firstFalse=firstFalse or falseDetail elseif unknown then useUnknown=true; firstUnknown=firstUnknown or unknownDetail end
   end
  end
- if useFalse then return false,"CUSTOM_USE_STRATEGY_UNMATCHED" end
- if useUnknown or skipUnknown then return nil,"UNKNOWN:custom:strategy" end
+ if useFalse then state.strategyBlockDetails[index]=firstFalse; return false,"CUSTOM_USE_STRATEGY_UNMATCHED" end
+ if useUnknown or skipUnknown then state.strategyBlockDetails[index]=firstUnknown; return nil,"UNKNOWN:custom:strategy" end
  return true,"CUSTOM_STRATEGIES_TRUE"
 end
 function C:Sample(e,state,provided)
  state.combat=state.combat or {in_combat=A.State.Boolean("InCombatLockdown")}
  if T.Maintenance then T.Maintenance:Context(e,state) end
- local rows=provided or self:Rows(e); local countNeeded=false; local probes={}
+ local rows=provided or self:Rows(e); local countNeeded=false; local probes={}; local actions={}
  for i,row in ipairs(rows) do
   if row.enabled and row.experimentalEnemies and (row.enemyMin or row.enemyMax) then countNeeded=true end
   local action
-  if row.enabled and not row.invalid then action=self:Read(row.spellID,false,row.targetMode) else action={spellID=row.spellID} end
+  if row.enabled and not row.invalid then
+   local identity=row.spellID .. ":" .. (row.targetMode or "auto")
+   local cached=actions[identity]
+   if not cached then cached=self:Read(row.spellID,false,row.targetMode); actions[identity]=cached end
+   action={}; for k,v in pairs(cached) do action[k]=v end
+  else action={spellID=row.spellID} end
   if row.enabled and not row.invalid and action.known==true and row.spellID~=61304 then
    probes[row.spellID]=probes[row.spellID] or A.State.ProbeCooldown(row.spellID)
    action.cooldownProbe=probes[row.spellID]
@@ -391,6 +409,10 @@ function C:Sample(e,state,provided)
     if #action.conditionObservations<16 then
      local id=condition.spellID or row.spellID
      local observation={kind=condition.kind,spellID=id,result=self:StrategyCondition(state,row,i,condition)}
+     if condition.kind=="cdmBuff" or condition.kind=="cdmCooldown" then
+      local probe=action.strategyCDM and action.strategyCDM[(condition.kind=="cdmBuff" and "buff:" or "cooldown:") .. id]
+      observation.reason=probe and probe.reason or "CDM_FRAME_MISSING"
+     end
      if condition.kind=="targetType" then observation.text=state.targetType end
      if condition.kind=="comboPoints" then local p=state.comboPointProbe; observation.number=p and p.value; observation.reason=state.classToken~="ROGUE" and "CLASS_UNSUPPORTED" or p and p.reason or "UNKNOWN_COMBO_POINTS" end
      if condition.kind=="lossOfControl" then observation.text=condition.control; observation.reason=state.controlProbe and state.controlProbe.reason or "UNKNOWN_CONTROL"; observation.number=state.controlProbe and state.controlProbe.count end
@@ -656,7 +678,15 @@ function C:ConditionView(state,row,index,c)
   end
  end
  local result; if state then result=self:StrategyCondition(state,row,index,c) end
- return (conditionLabels[c.kind] or c.kind) .. "：要求 " .. expected .. "；采样 " .. publicText(value) .. "；" .. (result==nil and "未知，阻断" or result and "满足" or "不满足")
+ local why=""
+ if result==nil and state then
+  local record=c.kind=="cdmBuff" or c.kind=="cdmCooldown"
+  local probe=record and a.strategyCDM and a.strategyCDM[(c.kind=="cdmCooldown" and "cooldown:" or "buff:") .. (c.spellID or row.spellID)]
+  local code=probe and probe.reason or c.kind=="distance" and state.distanceReason or c.kind=="cooldown" and a.cooldownProbe and a.cooldownProbe.activeReason
+  local explanations={SECRET="客户端限制了该值",UNAVAILABLE="当前客户端未提供接口",CALL_FAILED="接口调用失败",NO_DATA="接口没有返回数据",CDM_FRAME_MISSING="请确认对应技能已加入CDM并可见",CDM_VIEWER_UNAVAILABLE="CDM面板不可用",CDM_CONFLICT="CDM存在相互冲突的结果",CDM_HIDDEN_OR_UNKNOWN="CDM隐藏或可见性未知",ITEM_RANGE_UNKNOWN="距离探针没有公开结果"}
+  why="；" .. (explanations[code] or (c.kind=="comboPoints" and state.classToken~="ROGUE" and "当前职业不支持此条件" or "缺少可确认的公开结果，请检查观察对象及对应条件"))
+ end
+ return (conditionLabels[c.kind] or c.kind) .. "：要求 " .. expected .. "；采样 " .. publicText(value) .. "；" .. (result==nil and "未知，阻断" or result and "满足" or "不满足") .. why
 end
 -- 体检只检查可证明的配置问题，不用瞬时资源或未知API拒绝保存。
 function C:Audit(rows,e)

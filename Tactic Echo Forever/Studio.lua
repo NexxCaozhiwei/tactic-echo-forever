@@ -67,18 +67,23 @@ function U:RefreshStudioRow(w,row,index,source)
  local view=S.Spell(row.spellID,row.name or ("技能 " .. (row.spellID or "未知")))
  self:Paint(w.frame.studioIcon,"SetTexture",view.icon)
  self:Paint(w.frame.studioID,"SetText","ID " .. (row.spellID or "未知"))
+ w.frame.tefTooltipTitle=row.group and row.group.name or view.name
+ w.frame.tefTooltipBody="精确ID " .. (row.spellID or "未知") .. "；编辑仅修改草稿，保存后生效。"
+ local snapshot=self.studioCurrentProbe and self.studioCurrentProbe.state or self.engine.aplSnapshot
+ local sampled=source=="apl" and snapshot and snapshot.actions and snapshot.actions["custom_" .. index]
+ local targetUnknown=not row.group and (not row.targetMode or row.targetMode=="auto") and sampled and sampled.spellID==row.spellID and sampled.reason=="CUSTOM_TARGET_UNKNOWN"
  self:Paint(w.frame.studioBadge,(source=="manual" or source=="group") and "Hide" or "Show")
  self:Paint(w.frame.studioSummary,(source=="manual" or source=="group") and "Hide" or "Show")
  if source=="apl" then self:Paint(w.frame.studioSummary,"SetText",row.group and (#row.group.steps .. "步 · " .. row.group.rounds .. "轮") or ("策略 " .. #(row.strategies or {}) .. " 组 · 点击编辑策略")) end
  anchor(self,w.name,w.frame,68,-10); self:Paint(w.name,"SetWidth",math.max(120,(self.studioEditorWidth or 580)-396))
  self:Paint(w.name,"SetText",string.format("%02d",index) .. " " .. self:ShortLabel(row.group and row.group.name or view.name,7))
  local badge=row.enabled==false and "DISABLED" or "UNKNOWN"
- local p=self.studioCurrentProbe; local now=T.APL.State.Time()
+ local p=self.studioCurrentProbe; local now=T.APL.State.Time(); local fresh=false
  if p and now and p.time and now>=p.time and now-p.time<=.25 and p.rows[index] and row.enabled~=false then
-  local result=p.rows[index].result
+  fresh=true; local result=p.rows[index].result
   badge=result=="TRUE" and "READY" or result=="UNKNOWN" and "UNKNOWN" or result=="DISABLED" and "DISABLED" or "BLOCKED"
  end
- self:Paint(w.frame.studioBadge,"SetText",badge)
+ self:Paint(w.frame.studioBadge,"SetText",({READY="条件满足",BLOCKED="条件未满足",DISABLED="已停用",UNKNOWN=fresh and "条件未知" or p and "采样过期" or "未采样"})[badge])
  self:Paint(w.frame.studioBadge,"SetTextColor",unpack(self.theme.statusColors[badge] or self.theme.colorHint))
  -- 草稿没有对应的实时求值身份，不复用已保存列表的就绪快照。
  local selected=self.studioSelected and self.studioSelected.source==source and self.studioSelected.index==index
@@ -89,11 +94,16 @@ function U:RefreshStudioRow(w,row,index,source)
   conditions[#conditions+1]=label
  end end
  for n,chip in ipairs(w.frame.studioChips or {}) do
-  local shown=source=="apl" and not row.group and conditions[n]~=nil
+  local shown=source=="apl" and not targetUnknown and not row.group and conditions[n]~=nil
   self:Paint(chip,shown and "Show" or "Hide")
   if shown then self:Paint(chip.label,"SetText",n==3 and #conditions>3 and ("＋" .. (#conditions-2) .. "项") or self:ShortLabel(conditions[n],6)); chip.tefTooltipBody=table.concat(conditions,"\n") .. "\n使用条件全部满足；任一跳过策略全部满足则跳过。" end
  end
  if source=="apl" and #conditions>0 and not row.group then self:Paint(w.frame.studioSummary,"Hide") end
+ if targetUnknown then
+  self:Paint(w.frame.studioSummary,"SetText","请选择施放类型：点击编辑策略")
+  self:Paint(w.frame.studioSummary,"SetTextColor",1,.8,.25,1); self:Paint(w.frame.studioSummary,"Show")
+  w.frame.tefTooltipBody=w.frame.tefTooltipBody .. "\n施放类型未知；请选择自身、友方、敌方或地面类型。"
+ else self:Paint(w.frame.studioSummary,"SetTextColor",unpack(self.theme.colorHint)) end
 end
 function U:StudioDropTarget(source)
  if source~="manual" and source~="apl" and source~="group" then return nil end

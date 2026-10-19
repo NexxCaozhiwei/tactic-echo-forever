@@ -106,11 +106,11 @@ function M:Succeeded(e,id)
  if e.maintenanceActive then e.maintenanceDone=e.maintenanceDone or {}; e.maintenanceDone[id]=true; e.maintenanceSnapshot=nil; e:Log("match","MAINTENANCE_SUCCEEDED",id) end
 end
 function M:Refresh(e)
- if T.UI.settingsOpen or e:RecommendationLocked() then return end
- if e.maintenanceActive and e.emergencyExitGroup then self:Restore(e,"EMERGENCY_RETURN") end
+ local locked=T.UI.settingsOpen or e:RecommendationLocked()
+ if not locked and e.maintenanceActive and e.emergencyExitGroup then self:Restore(e,"EMERGENCY_RETURN") end
  local combat=A.State.Boolean("InCombatLockdown")
  if not self:Enabled(e) or combat==nil or (combat==false and not T.Runtime.maintenanceManual) then
-  if e.maintenanceActive then self:Restore(e) end; return
+  if not locked and e.maintenanceActive then self:Restore(e) end; return
  end
  local now=A.State.Time(); local old=e.maintenanceSnapshot
  local state
@@ -123,20 +123,31 @@ function M:Refresh(e)
   if state.generation~=e.generation or state.receiptSerial~=(e.receiptSerial or 0) or state.revision~=(A.State.revision or 0) then return end
   e.maintenanceSnapshot=state
  end
- local candidate
+ local candidate; local trace={}
  e.maintenanceDone=e.maintenanceDone or {}
  for pass=1,2 do for i,row in ipairs(self:Rows(e)) do
   local emergency=row.behavior and row.behavior.emergency==true or false
   if emergency==(pass==1) then
-  local allowed=A.Custom:Check(state,row,i)
-  if allowed==false then e.maintenanceDone[row.spellID]=nil end
+  local allowed,reason=A.Custom:Check(state,row,i)
+  -- 锁定推荐只禁止替换和派发，不应漏掉成功后公开的条件复位。
+  if allowed==false and e.maintenanceDone[row.spellID] then
+   e.maintenanceDone[row.spellID]=nil; e:Log("observed","MAINTENANCE_REARMED",row.spellID)
+  end
+  trace[#trace+1]={rule="maintenance:" .. i,result=allowed==nil and "UNKNOWN" or allowed and "TRUE" or "FALSE",
+   reason=allowed==true and e.maintenanceDone[row.spellID] and "MAINTENANCE_WAIT_REARM" or reason}
   if allowed==true and not e.maintenanceDone[row.spellID] and not candidate and self:BuffSpell(row.spellID) then
    local action=state.actions["custom_" .. i]
    candidate={spellID=row.spellID,name=action.name,target=action.target,action="custom_" .. i,customIndex=i,rule="maintenance:" .. i}
   end
   end
  end end
- if not candidate then if e.maintenanceActive then self:Restore(e) end; return end
+ if locked or T.UI.settingsOpen or e:RecommendationLocked() then
+  A.Trace:Record(e,trace,"MAINTENANCE_WAIT_UNLOCK",nil,state,"maintenance"); return
+ end
+ if not candidate then
+  A.Trace:Record(e,trace,"MAINTENANCE_IDLE",nil,state,"maintenance")
+  if e.maintenanceActive then self:Restore(e) end; return
+ end
  if not e.maintenanceActive then
   e.maintenanceBase={steps=e.steps,index=e.index,stepCasts=e.stepCasts,completed=e.completed,running=e.running,
    skipStreak=e.skipStreak,policySkipStreak=e.policySkipStreak,usageProgress=e.usageProgress,shootHandoff=e.shootHandoff,aplCandidate=e.aplCandidate}
@@ -148,5 +159,5 @@ function M:Refresh(e)
  end
  state.generation=e.generation; state.receiptSerial=e.receiptSerial or 0
  e.aplCandidate=candidate; e.aplSnapshot=state; e.aplPreviewSnapshot=state; e.maintenanceSnapshot=state
- A.Trace:Record(e,{},"MAINTENANCE_CANDIDATE",candidate,state)
+ A.Trace:Record(e,trace,"MAINTENANCE_CANDIDATE",candidate,state)
 end

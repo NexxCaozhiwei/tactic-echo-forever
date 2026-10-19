@@ -383,7 +383,7 @@ test("studio_selection_uses_original_strategy_and_unknown_is_display_only",funct
  T.UI:ChangeCustomStrategy(function(r) r.strategies={{mode="skip",conditions={{kind="moving",value=true}}}} end)
  eq(T.UI:DraftRows()[1].strategies[1].mode,"skip")
  T.UI:ShowPage("customapl"); assert(T.UI:AddCustomSpell(205)); T.UI:RefreshStudio()
- local before=e.generation; eq(T.UI.customWidgets[1].frame.studioBadge.text,"UNKNOWN")
+ local before=e.generation; eq(T.UI.customWidgets[1].frame.studioBadge.text,"未采样")
  T.UI:RefreshStudio(); eq(e.generation,before); eq(T.Dispatch.pending,nil)
  assert(T.UI.studioStatus.text:find("TEK连接：未确认",1,true))
 end)

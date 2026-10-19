@@ -195,7 +195,7 @@ function Engine:Invalidate(reason)
     end
     if TEF.Runtime then TEF.Runtime:Invalidated(self) end
     if TEF.Dispatch then TEF.Dispatch:StopContinuous("CONTINUOUS_LIFECYCLE_STOP") end
-    if TEF.Presentation then TEF.Presentation.cooldowns={}; TEF.Presentation.bindings={} end
+    if TEF.Presentation then TEF.Presentation.bindings={} end
     if TEF.Dispatch then TEF.Dispatch:Cancel("TEK_LIFECYCLE_INVALIDATED") end
     self.generation = self.generation + 1
     self.associations, self.associationCount = {}, 0

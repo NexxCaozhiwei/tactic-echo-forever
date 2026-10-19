@@ -1,0 +1,27 @@
+{
+  "scale_cache": {
+    "second_actual_scale": 0.8941176470588236,
+    "second_required_scale": 0.8352941176470589,
+    "signature_unchanged": true,
+    "first_scale": 0.8941176470588236
+  },
+  "refresh_exception": {
+    "flag_still_set": true,
+    "recovery_refresh_calls": 0,
+    "first_ok": false,
+    "second_ok": true
+  },
+  "hidden_cdm": {
+    "rule_allowed": true,
+    "old_head_reason": "PUBLIC",
+    "visibility_read_count": 0,
+    "old_head_value": false,
+    "public_value": false,
+    "rule_reason": "CUSTOM_CONDITIONS_TRUE",
+    "reason": "PUBLIC"
+  },
+  "strategy_semantics": {
+    "mismatches": 0,
+    "compared_cases": 324
+  }
+}

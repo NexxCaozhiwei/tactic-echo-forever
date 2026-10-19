@@ -63,12 +63,12 @@ end)
 test("cdm_stacks_exact_public_secret_hidden_missing_conflict",function()
  local saved={}; for _,key in ipairs({"C_CooldownViewer","BuffIconCooldownViewer","BuffBarCooldownViewer"}) do saved[key]={_G[key]} end
  C_CooldownViewer={GetCooldownViewerCategorySet=function(cat) return cat==2 and {10} or {} end,GetCooldownViewerCooldownInfo=function() return {spellID=133} end}
- local data={spellId=133,applications=3}; local shown=true
- local frame={cooldownID=10,isActive=true,IsVisible=function() return shown end,GetAuraDataCached=function() return data end}
+ local data={spellId=133,applications=3}; local shown=true; local reads=0
+ local frame={cooldownID=10,isActive=true,IsVisible=function() return shown end,GetAuraDataCached=function() reads=reads+1; return data end}
  local function pool(frames) return {EnumerateActive=function() local i=0; return function() i=i+1; return frames[i] end end} end
  BuffIconCooldownViewer={itemFramePool=pool({frame})}; BuffBarCooldownViewer={itemFramePool=pool({})}
  local requests={{enabled=true,cdmKind="buff",cdmSpellID=133,cdmStacks=true}}
- eq(P.CDM(requests)["buff:133"].stacks,3)
+ eq(P.CDM(requests)["buff:133"].stacks,nil)
  data.applications=F.secret; eq(P.CDM(requests)["buff:133"].stacks,nil)
  data.applications=nil; eq(P.CDM(requests)["buff:133"].stacks,nil)
  data.applications=3; shown=false; eq(P.CDM(requests)["buff:133"].stacks,nil)
@@ -77,6 +77,7 @@ test("cdm_stacks_exact_public_secret_hidden_missing_conflict",function()
  local other={cooldownID=10,isActive=true,IsVisible=function() return true end,GetAuraDataCached=function() return {spellId=133,applications=4} end}
  BuffIconCooldownViewer.itemFramePool=pool({frame,other}); eq(P.CDM(requests)["buff:133"].stacks,nil)
  BuffIconCooldownViewer.itemFramePool=pool({}); eq(P.CDM(requests)["buff:133"].stacks,nil)
+ eq(reads,0)
  for key,value in pairs(saved) do _G[key]=value[1] end
 end)
 

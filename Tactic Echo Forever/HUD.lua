@@ -83,6 +83,9 @@ function H:StatusText(v)
    return "等待施法结束","施法门禁尚未解除，等待重新确认",false
   end
  end
+ local detail=v.detail or TEF.Dispatch:BlockDetail(reason)
+ if detail then return detail.title,detail.description,detail.unknown end
+ if reason:match("^UNKNOWN:custom:") then return "条件未知","无法确认当前技能的策略条件，请在编辑器只读采样查看具体条件",true end
  local entry=statusReasons[reason]
  if entry then return entry[1],entry[2],reason=="RUNTIME_COMBAT_UNKNOWN" or reason=="SEQUENCE_POLICY_UNKNOWN" end
  if v.state=="blocked" then
@@ -222,6 +225,7 @@ function H:SetMode(mode)
  if (mode~="standard" and mode~="mini") or U:Combat()~=false or not self.engine then return false end
  self.engine.db.hud.mode=mode
  self:Layout(); self:Refresh()
+ if U.settingsOpen and U.page=="hud" and U.engine==self.engine then U:RefreshPage() end
  return true
 end
 function H:CreateModeButton()
@@ -356,8 +360,8 @@ function H:Card(x,size,primary)
             local state=TEF.Runtime:GetViewState()
             U:Call(GameTooltip,"AddLine","当前：" .. state.label,.7,.8,.9)
             if state.state=="blocked" then
-                local category,description=self:BlockCategory(state.reason)
-                U:Call(GameTooltip,"AddLine","阻断分类：" .. category .. " · " .. description,1,.78,.28)
+                local category,description=self:StatusText(state)
+                U:Call(GameTooltip,"AddLine","阻断分类：" .. category .. " · " .. description,1,.78,.28,true)
                 local code=S.Public(state.reason,"string")
                 if code then U:Call(GameTooltip,"AddLine","原因码：" .. code,.7,.7,.7) end
             end
@@ -491,9 +495,18 @@ function H:Create(e)
     self:CreateQuickPlans()
     self.name=U:Text(self.textSlots.name.frame,0,0,230,"GameFontHighlightSmall")
     self.status=U:Text(self.textSlots.status.frame,0,0,230,"GameFontHighlightSmall")
-    U:Call(self.frame,"SetScript","OnUpdate",function(_,rawElapsed)
+    -- 将原显示心跳移到独立载体：隐藏HUD和关闭信号不影响设置中的只读追踪。
+    self.heartbeat=U:Frame("Frame",UIParent)
+    U:Call(self.heartbeat,"SetScript","OnUpdate",function(_,rawElapsed)
         local elapsed=S.Public(rawElapsed,"number")
         if not elapsed or elapsed<0 then return end
+        self.traceElapsed=(self.traceElapsed or 0)+elapsed
+        if self.traceElapsed>=.05 then
+            self.traceElapsed=self.traceElapsed%.05
+            if U.settingsOpen and U.studioTraceLive then U:Guard(U.MaybeStudioLiveProbe,U) end
+        end
+        local ok,shown=U:Invoke(self.frame,"IsVisible")
+        if ok and S.Public(shown,"boolean")==false then return end
         -- 每帧只插值缓存的公开施法时间；其他显示查询仍保持原节拍。
         self:PaintCastVisual(true)
         self.elapsed=(self.elapsed or 0)+elapsed
@@ -523,7 +536,7 @@ function H:Refresh(cooldownEvent)
     local view=step and self.metadata[step.spellID .. ":" .. step.name]
     self.primaryFullName=(e.completed and not e.groupRun) and "完成" or (view and view.name or (TEF.APL:IsActive(e) and TEF.APL.Trace:Waiting(e) or "未配置推荐序列"))
     local style=e.db.hud.styles.global.name
-    local limit=math.max(3,math.floor((self.textSlots.name.width or 140)/math.min(14,style.fontSize*style.scale))-1)
+    local limit=math.max(3,math.floor((self.textSlots.name.width or 140)/TEF.HudStyles.EffectiveSize(style,14))-1)
     local name=U:ShortLabel(self.primaryFullName,limit+1)
     if name~=self.primaryFullName then name=U:ShortLabel(self.primaryFullName,limit) end
     U:Paint(self.name,"SetText",name)

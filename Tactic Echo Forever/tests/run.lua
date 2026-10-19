@@ -14,6 +14,7 @@ local function load(name) assert(loadfile(root .. "/" .. name))("Tactic Echo For
 load("Config.lua"); load("Safety.lua"); load("ActionSources.lua"); load("APL/Packs/Mage/Abilities.lua"); load("APL/Packs/Mage/Talents.lua"); load("APL/TalentState.lua"); load("APL/Registry.lua"); load("APL/PublicConditions.lua"); load("APL/Custom.lua"); load("APL/RankResolver.lua"); load("APL/Packs/Mage/BuildSelector.lua"); load("APL/State.lua"); load("APL/Conditions.lua"); load("APL/Trace.lua"); load("APL/Packs/Mage/Mage60.lua"); load("APL/Packs/Mage/Rules.lua"); load("APL/Engine.lua"); load("SkillGroups.lua")
 load("Sequence.lua"); load("SequenceUsage.lua")
 load("HudStyles.lua"); load("Profiles.lua"); load("Recommendation.lua"); load("Maintenance.lua"); load("Research.lua")
+local historicalPriority=assert(loadfile(root .. "/tests/fixtures/research_priority_prototype.lua"))()
 local standard=T.StandardConfig or T.Config
 local count=0
 local function test(name,fn)
@@ -313,8 +314,8 @@ end
 test("sample_false_preserved_unknown_ready_no_dynamic_candidate",function()
     samplingAPIs(); local e=engine(); e:Start(); assert(T.Research:Sample(e))
     eq(T.Research.fields.insufficientPower.value,false); eq(T.Research.fields.channelPresent.value,false)
-    eq(T.Research.fields.ready.state,"UNKNOWN"); eq(T.Research.dynamic,nil)
-    local log=e.db.diagnostics[#e.db.diagnostics]; eq(log.research.ready,"UNKNOWN"); eq(log.research.visibleCount,0)
+    eq(T.Research.fields.ready,nil); eq(T.Research.dynamic,nil)
+    local log=e.db.diagnostics[#e.db.diagnostics]; eq(log.research.ready,nil); eq(log.research.visibleCount,0)
     eq(e.index,1); eq(e.running,true)
 end)
 test("succeeded_cast_can_still_present_and_channel_independent",function()
@@ -364,12 +365,12 @@ test("priority_exact_certified_ready_order_and_blockers",function()
     local common={targetExists=yes,targetAttackable=yes,targetAlive=yes,gcdClear=yes,castPresent=no,channelPresent=no,moving=no}
     local evidence={[205]={learned=yes,ready={state="UNKNOWN"},usable=yes,insufficientPower=no,inRange=yes},
         [143]={learned=yes,ready=yes,usable=yes,insufficientPower=no,inRange=yes}}
-    eq(T.Research.Priority(standard,evidence,common),143)
-    evidence[205].ready=yes; eq(T.Research.Priority(standard,evidence,common),205)
-    common.castPresent=yes; eq(T.Research.Priority(standard,evidence,common),nil)
-    common.castPresent=no; common.moving={state="UNKNOWN"}; eq(T.Research.Priority(standard,evidence,common),nil)
+    eq(historicalPriority(standard,evidence,common),143)
+    evidence[205].ready=yes; eq(historicalPriority(standard,evidence,common),205)
+    common.castPresent=yes; eq(historicalPriority(standard,evidence,common),nil)
+    common.castPresent=no; common.moving={state="UNKNOWN"}; eq(historicalPriority(standard,evidence,common),nil)
     common.moving=no; evidence[205].inRange=no; evidence[143].insufficientPower=yes
-    eq(T.Research.Priority(standard,evidence,common),nil)
+    eq(historicalPriority(standard,evidence,common),nil)
 end)
 test("research_summary_saturation_and_reload_sanitized",function()
     samplingAPIs(); local e=engine(); e:Start()
@@ -387,10 +388,10 @@ test("priority_presence_not_target_validity_and_gcd_unknown_blocks",function()
     local common={targetExists=yes,targetAttackable={state="UNKNOWN"},targetAlive=yes,gcdClear=yes,
         castPresent=no,channelPresent=no,moving=no}
     local byID={[205]={learned=yes,ready=yes,usable=yes,insufficientPower=no,inRange=yes}}
-    eq(T.Research.Priority(standard,byID,common),nil)
+    eq(historicalPriority(standard,byID,common),nil)
     common.targetAttackable=yes; common.gcdClear={state="UNKNOWN"}
-    eq(T.Research.Priority(standard,byID,common),nil)
-    common.gcdClear=yes; byID[205].learned={state="SECRET"}; eq(T.Research.Priority(standard,byID,common),nil)
+    eq(historicalPriority(standard,byID,common),nil)
+    common.gcdClear=yes; byID[205].learned={state="SECRET"}; eq(historicalPriority(standard,byID,common),nil)
 end)
 test("stale_samples_do_not_confirm_auto_proposal",function()
     samplingAPIs(); C_NamePlate.GetNamePlates=function() return {
@@ -414,6 +415,11 @@ local function object(name)
         return function(self,...)
             if method=="SetScript" then local key,fn=...; self.scripts[key]=fn
             elseif method=="GetParent" then return self.parent
+            elseif method=="IsShown" then return rawget(self,"shown")~=false
+            elseif method=="IsVisible" then
+                local current=self
+                while current do if rawget(current,"shown")==false then return false end; current=rawget(current,"parent") end
+                return true
             elseif method=="GetScript" then return self.scripts[(...)]
             elseif method=="RegisterEvent" then self.events[(...)]=true
             elseif method=="CreateFontString" or method=="CreateTexture" or method=="CreateMaskTexture" then
@@ -602,26 +608,22 @@ test("shared_run_permission_keys_and_stop_revoke",function()
     TEF_PermissionToggle(); eq(T.Dispatch.enabled,false); eq(T.Dispatch.pending,nil)
     T.Dispatch:SetEnabled(false); ActionButton1=nil
 end)
-test("hud_cd_event_only_own_cooldown_and_gcd",function()
-    T.Presentation.cooldowns={}; GetTime=function() return 15 end
-    C_Spell.GetSpellCooldown=function() return {startTime=10,duration=10,modRate=1,isEnabled=true,isOnGCD=false} end
+test("hud_native_renderer_only_needs_public_charge_selection",function()
+    C_Spell.GetSpellCooldown=function() error("NUMERIC_COOLDOWN_MUST_NOT_BE_READ") end
     C_Spell.GetSpellCharges=function() return {currentCharges=1,maxCharges=2} end
-    local view=T.Presentation:Read(116,false); eq(view.cd,"CD 未知"); eq(view.charges,"充能 1/2")
-    view=T.Presentation:Read(116,true); eq(view.cd,"CD 5s")
-    GetTime=function() return 16 end; view=T.Presentation:Read(116,false); eq(view.cd,"CD 4s")
-    C_Spell.GetSpellCooldown=function() return {startTime=10,duration=10,modRate=1,isEnabled=true,isOnGCD=true} end
-    view=T.Presentation:Read(116,true); eq(view.cd,"GCD"); eq(T.Presentation.cooldowns[116],nil)
+    local view=T.Presentation:Read(116); eq(view.recharging,true); eq(view.cd,nil); eq(view.charges,nil)
+    C_Spell.GetSpellCharges=function() return {currentCharges=2,maxCharges=2} end
+    eq(T.Presentation:Read(116).recharging,false)
 end)
-test("hud_secret_missing_failed_fields_do_not_guess",function()
-    T.Presentation.cooldowns={}
-    C_Spell.GetSpellCooldown=function() return {startTime=secret,duration=secret,modRate=1,isEnabled=true,isOnGCD=false} end
-    C_Spell.GetSpellCharges=function() return {currentCharges=secret,maxCharges=2} end
-    local view=T.Presentation:Read(116,true); eq(view.cd,"CD 未知"); eq(view.charges,"充能 未知")
-    C_Spell.GetSpellCooldown=function() error("DO_NOT_EXPORT") end
-    C_Spell.GetSpellCharges=nil
-    view=T.Presentation:Read(116,true); eq(view.cd,"CD 未知"); eq(view.charges,"充能 未知")
+test("hud_secret_missing_failed_charge_fields_do_not_guess",function()
+    for _,value in ipairs({secret,-1,3}) do
+        C_Spell.GetSpellCharges=function() return {currentCharges=value,maxCharges=2} end
+        eq(T.Presentation:Read(116).recharging,nil)
+    end
+    C_Spell.GetSpellCharges=function() error("DO_NOT_EXPORT") end
+    eq(T.Presentation:Read(116).recharging,nil)
     C_Spell.GetSpellCharges=function() return nil end
-    view=T.Presentation:Read(116,false); eq(view.charges,"充能 —")
+    eq(T.Presentation:Read(116).recharging,nil)
 end)
 test("one_duration_renderer_visual_only_and_tick_no_input",function()
     local renders=0; local called
@@ -631,8 +633,8 @@ test("one_duration_renderer_visual_only_and_tick_no_input",function()
     C_Spell.GetSpellCharges=function() return nil end
     T.Presentation:Paint(card,T.engine.steps[1],false); eq(renders,1); eq(called,true)
     local index=T.engine.index; local fresh=T.Transport.freshness
-    T.HUD.frame.scripts.OnUpdate(nil,.25); eq(T.engine.index,index); eq(T.Transport.freshness,fresh)
-    T.HUD.frame.scripts.OnUpdate(nil,secret); eq(T.engine.index,index)
+    T.HUD.heartbeat.scripts.OnUpdate(nil,.25); eq(T.engine.index,index); eq(T.Transport.freshness,fresh)
+    T.HUD.heartbeat.scripts.OnUpdate(nil,secret); eq(T.engine.index,index)
     card.cooldown.SetCooldownFromDurationObject=nil
 end)
 test("charge_duration_selected_once_and_no_permission_from_labels",function()
@@ -1287,7 +1289,7 @@ test("hud_fallback_never_scans_metadata_bindings_or_spell_apis",function()
     C_Spell.GetSpellInfo=function() reads=reads+1 end; C_Spell.GetSpellCooldown=function() reads=reads+1 end
     C_Spell.GetSpellCharges=function() reads=reads+1 end
     UnitCastingInfo=function() reads=reads+1 end; UnitChannelInfo=function() reads=reads+1 end
-    for i=1,40 do T.HUD.frame.scripts.OnUpdate(nil,.25) end
+    for i=1,40 do T.HUD.heartbeat.scripts.OnUpdate(nil,.25) end
     eq(reads,0); T.Dispatch.Resolve=resolver
 end)
 test("runtime_cast_block_preserves_success_and_never_writes_cast_absent",function()
@@ -1671,7 +1673,7 @@ test("editor_row_controls_receive_drop_without_editing_existing_step",function()
     end
 end)
 test("repeat_hud_and_test_panel_progress",function()
-    deliveryFixture(); assert(T.Profiles:Save(T.engine,"single",T.Profiles:Parse("116*3\n205")))
+    deliveryFixture(); T.UI:Paint(T.UI.frame,"Show"); assert(T.Profiles:Save(T.engine,"single",T.Profiles:Parse("116*3\n205")))
     T.Runtime:SetIntent(true); receipt("UNIT_SPELLCAST_SENT",116,"progress"); receipt("UNIT_SPELLCAST_SUCCEEDED",116,"progress")
     T.UI:Refresh(); assert(T.HUD.countText.text:find("本步 1/3",1,true),T.HUD.countText.text); assert(T.UI.progress.text:find("次数 1/3",1,true),T.UI.progress.text)
 end)
@@ -1966,6 +1968,8 @@ test("hud_style_individual_api_failure_does_not_stop_paint",function()
 end)
 test("loop_selection_survives_hover_leave_and_page_refresh",function()
     deliveryFixture("manual"); T.UI:OpenSettings(); T.UI:ShowPage("looping")
+    -- 独立验证旧分段组件；Studio中的对应旧控件隐藏，不参与可见控件同步。
+    for _,button in pairs(T.UI.loopModeControls) do button.IsVisible=function() return true end end
     for _,mode in ipairs({"normal","target","combat","none"}) do
         local selected=T.UI.loopModeControls[mode]; selected.scripts.OnClick()
         eq(T.engine.db.loopMode,mode); eq(selected.tefControlSelected,true)
@@ -2080,6 +2084,7 @@ test("bootstrap_build_updates_allowed_but_version_interface_unknown_blocked",fun
  GetBuildInfo=old
 end)
 assert(loadfile(root .. "/tests/hud_studio.lua"))(T,{deliveryFixture=deliveryFixture,test=test,eq=eq,secret=secret})
+assert(loadfile(root .. "/tests/audit_fixes.lua"))(T,{deliveryFixture=deliveryFixture,test=test,eq=eq,secret=secret})
 realprint("TEF simulated tests: " .. count .. " passed\n")
 
 assert(loadfile(root .. "/tests/apl.lua"))("Tactic Echo Forever",T,{runtimeFixture=runtimeFixture,deliveryFixture=deliveryFixture,receipt=receipt})

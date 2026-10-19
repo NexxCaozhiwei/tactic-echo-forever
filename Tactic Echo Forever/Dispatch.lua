@@ -143,7 +143,23 @@ function D:ManualPolicy(e,step,live,groupEntry)
     self.manualPolicySnapshot={engine=e,step=step,state=state,allowed=allowed,reason=reason}
     return allowed,reason
 end
+function D:EvidenceBlock(reason,title,description,unknown)
+ local e=TEF.engine
+ self.evidenceDetail={engine=e,generation=e.generation,index=e.index,serial=e.receiptSerial or 0,
+  reason=reason,title=title,description=description,unknown=unknown==true}
+ return false,reason
+end
+function D:BlockDetail(reason)
+ local e=TEF.engine; local d=self.evidenceDetail
+ if d and d.engine==e and d.generation==e.generation and d.index==e.index and d.serial==(e.receiptSerial or 0) and d.reason==reason then return d end
+ local p=self.manualPolicySnapshot
+ if p and p.engine==e and p.step==(e.steps and e.steps[e.index]) and p.state.generation==e.generation and p.state.receiptSerial==(e.receiptSerial or 0) and p.reason==reason then
+  local condition=p.state.strategyBlockDetails and p.state.strategyBlockDetails[1]
+  if condition and (reason=="UNKNOWN:custom:strategy" or reason=="CUSTOM_USE_STRATEGY_UNMATCHED") then return {title=condition.unknown and "条件未知" or "条件未满足",description=condition.description,unknown=condition.unknown} end
+ end
+end
 function D:ContinuousEvidence(id,policyStep)
+    self.evidenceDetail=nil
     local e=TEF.engine
     if TEF.Recommendation:Source(e)=="manual" then
         local step=policyStep or (self.castQueue and e.steps[self.castQueue.nextIndex]) or (e.steps and e.steps[e.index])
@@ -166,9 +182,15 @@ function D:ContinuousEvidence(id,policyStep)
         local reason; friendlyUnit,reason=TEF.APL.State.FriendlyUnit()
         if not friendlyUnit then return false,reason end
     end
-    if not selfAction and not friendly and (publicBoolean("UnitExists","target")~=true
-        or publicBoolean("UnitCanAttack","player","target")~=true
-        or publicBoolean("UnitIsDeadOrGhost","target")~=false) then return false,"CONTINUOUS_TARGET_UNKNOWN_OR_BLOCKED" end
+    if not selfAction and not friendly then
+        for _,test in ipairs({{"UnitExists",true,"目标不存在","请先选择目标"},{"UnitCanAttack",true,"目标不可攻击","请选择可攻击的敌方目标"},{"UnitIsDeadOrGhost",false,"目标已死亡","请选择存活目标"}}) do
+            local value=test[1]=="UnitCanAttack" and publicBoolean(test[1],"player","target")
+            if test[1]~="UnitCanAttack" then value=publicBoolean(test[1],"target") end
+            if value~=test[2] then
+                return self:EvidenceBlock("CONTINUOUS_TARGET_UNKNOWN_OR_BLOCKED",value==nil and "目标状态未知" or test[3],value==nil and "无法公开确认目标状态，等待重新探测" or test[4],value==nil)
+            end
+        end
+    end
     -- 6603是用户选择的启动开关步骤；开启不等同于近战命中，不要求命中范围。
     if not selfAction and friendlyUnit~="player" and id~=6603 then
         local range,rangeReason
@@ -178,13 +200,16 @@ function D:ContinuousEvidence(id,policyStep)
         if (rangeOK and rangeReason=="NO_DATA") or (not rangeOK and callReason=="UNAVAILABLE") then
             range=self:ActionRange(id)
         end
-        if range~=true then return false,"CONTINUOUS_RANGE_UNKNOWN_OR_BLOCKED" end
+        if range~=true then return self:EvidenceBlock("CONTINUOUS_RANGE_UNKNOWN_OR_BLOCKED",range==false and "超出范围" or "距离未知",range==false and "目标超出技能范围，请调整距离" or "无法公开确认技能范围，等待重新探测",range==nil) end
     end
     local fn=S.Resolve("C_Spell.IsSpellUsable")
-    if not fn then return false,"CONTINUOUS_USABLE_UNKNOWN_OR_BLOCKED" end
+    if not fn then return self:EvidenceBlock("CONTINUOUS_USABLE_UNKNOWN_OR_BLOCKED","可用性未知","客户端未提供技能可用性接口",true) end
     local ok,usable,power=pcall(fn,id)
-    if not ok or S.Public(usable,"boolean")~=true or S.Public(power,"boolean")~=false then
-        return false,"CONTINUOUS_USABLE_UNKNOWN_OR_BLOCKED"
+    local canUse=ok and S.Public(usable,"boolean"); local insufficient=ok and S.Public(power,"boolean")
+    if not ok or canUse~=true or insufficient~=false then
+        local unknown=not ok or (canUse~=false and insufficient~=true)
+        return self:EvidenceBlock("CONTINUOUS_USABLE_UNKNOWN_OR_BLOCKED",unknown and "可用性未知" or insufficient==true and "资源不足" or "技能不可用",
+            unknown and "无法公开确认可用性或资源状态，等待重新探测" or insufficient==true and "当前资源不足，等待恢复" or "客户端确认该技能当前不可用",unknown)
     end
     -- Ordinary fixed practice is an explicitly authorized input attempt, like
     -- TE's ordinary recommendation transport, not AutoBurst admission or a

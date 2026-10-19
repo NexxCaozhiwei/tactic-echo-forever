@@ -82,7 +82,7 @@ def main():
                      list((ROOT / "docs").rglob("*.md")) + list((ROOT / "docs/references/wotlk").glob("*.json")) +
                      [ROOT / "tests/run.lua", ROOT / "tests/run.py", ROOT / "tests/apl.lua", ROOT / "tests/foundation.lua", ROOT / "tests/custom_apl.lua", ROOT / "tests/public_conditions.lua", ROOT / "tests/strategy_conditions.lua", ROOT / "tests/cast_queue.lua", ROOT / "tests/skip_unavailable.lua", ROOT / "tests/test_acceptance_harness.py", ROOT / "scripts/deliver.py", ROOT / "scripts/import_apl_catalog.py", ROOT / "scripts/import_wotlk_apl.py", ROOT / "scripts/tek_acceptance.py"])
     sources += sorted((ROOT.parent / "docs/baselines/tef").glob("BASELINE_*.md"))
-    sources = sorted(set(sources) | set((ROOT / "tests").glob("*.lua")))
+    sources = sorted(set(sources) | set((ROOT / "tests").rglob("*.lua")))
     archive = out / f"Tactic Echo Forever-{VERSION}.zip"
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
         for source in sources:

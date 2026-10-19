@@ -565,6 +565,7 @@ test("maintenance_migrates_buff_once_and_filters_battle_duplicates",function()
  eq(#T.Maintenance:Rows(e),0); eq(T.Maintenance:Enabled(e),false)
  C_Spell.GetSpellInfo=info
 end)
+n=n+assert(loadfile((arg and arg[1] or ".") .. "/tests/maintenance_rearm.lua"))("TEF",T,F)
 n=n+assert(loadfile((arg and arg[1] or ".") .. "/tests/strategy_conditions.lua"))("TEF",T,F)
 n=n+assert(loadfile((arg and arg[1] or ".") .. "/tests/skill_groups.lua"))("TEF",T,F)
 n=n+assert(loadfile((arg and arg[1] or ".") .. "/tests/public_conditions.lua"))("TEF",T,F)

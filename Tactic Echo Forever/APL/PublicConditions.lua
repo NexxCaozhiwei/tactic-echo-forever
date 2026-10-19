@@ -145,31 +145,12 @@ local categories={
  {kind="buff",value=2,viewer="BuffIconCooldownViewer"},
  {kind="buff",value=3,viewer="BuffBarCooldownViewer"}}
 local function key(kind,id) return kind .. ":" .. id end
--- 只读匹配帧的公开光环数据，不读取显示文字，不以空白推断0层。
-local function stackValue(frame,id)
- local shown=S.Field(frame,"IsVisible","function")
- if not shown then return nil,"CDM_VISIBILITY_UNKNOWN" end
- local ok,raw=pcall(shown,frame); local visible=ok and S.Public(raw,"boolean")
- if visible~=true then return nil,"CDM_HIDDEN_OR_UNKNOWN" end
- local get=S.Field(frame,"GetAuraDataCached","function")
- if not get then return nil,"CDM_STACK_UNAVAILABLE" end
- local got,data=pcall(get,frame)
- if not got then return nil,"CDM_STACK_CALL_FAILED" end
- local record,why=S.Public(data,"table"); if not record then return nil,why end
- local spell=S.ID(S.Field(record,"spellId","number"))
- if spell~=id then return nil,"CDM_STACK_ID_UNKNOWN" end
- local value,status=S.Field(record,"applications","number")
- if value==nil then return nil,status end
- if value<0 or value>255 or value%1~=0 then return nil,"UNKNOWN_NUMBER" end
- return value,"PUBLIC"
-end
 function P.CDM(rows)
- local requests,needed,out,skipped,stackRequests={},{},{},{},{}
+ local requests,needed,out,skipped={},{},{},{}
  for _,row in ipairs(rows) do
   if row.enabled and not row.invalid and row.cdmKind and row.cdmKind~="none" then
    local id=row.cdmSpellID or row.spellID; local k=key(row.cdmKind,id)
    requests[k]=id; needed[row.cdmKind]=true; out[k]={reason="CDM_FRAME_MISSING"}
-   if row.cdmStacks then stackRequests[k]=id end
   end
  end
  for _,cat in ipairs(categories) do if needed[cat.kind] then
@@ -222,21 +203,17 @@ function P.CDM(rows)
      if not id then skipped[cat.kind]=(skipped[cat.kind] or 0)+1 end
      local k=id and mappings[id]
      if k then
-      local stack,stackReason
-      if stackRequests[k] then stack,stackReason=stackValue(frame,stackRequests[k]) end
-      local previous=out[k]
-      local active,classification=S.Field(frame,"isActive","boolean")
+      local visibility=S.Field(frame,"IsVisible","function")
+      local shown
+      if visibility then local ok,value=pcall(visibility,frame); if ok then shown=S.Public(value,"boolean") end end
+      local active,classification
+      if shown==true then active,classification=S.Field(frame,"isActive","boolean")
+      else classification="CDM_HIDDEN_OR_UNKNOWN" end
       local old=out[k]
       if active==nil then out[k]={reason=classification or "CDM_ACTIVE_UNKNOWN",uncertain=true}
       elseif old.uncertain or (old.value~=nil and old.value~=active) then out[k]={reason="CDM_CONFLICT",uncertain=true}
       else out[k]={value=active,reason="PUBLIC"} end
-      if stackRequests[k] then
-       local current=out[k]
-       if previous.stackUncertain or stack==nil or (previous.stacks~=nil and previous.stacks~=stack) then
-        current.stackUncertain=true; current.stackReason=previous.stackReason or (stack==nil and stackReason) or "CDM_STACK_CONFLICT"
-       elseif current.uncertain or current.value~=true then current.stackReason=current.reason or "CDM_STACK_INACTIVE"; current.stackUncertain=true
-       else current.stacks=stack; current.stackReason="PUBLIC" end
-      end
+
      end
     end
    end

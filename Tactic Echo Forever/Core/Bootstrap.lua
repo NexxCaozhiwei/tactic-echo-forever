@@ -1,5 +1,5 @@
 local addonName, TEF = ...
-local VERSION = "2.0.0"
+local VERSION = "2.0.1"
 local S = TEF.Safety
 local engine, frame
 
@@ -63,7 +63,7 @@ local function onEvent(_,event,...)
         TEF.Profiles:RefreshIdentity(engine); refresh(); return
     end
     if event=="PLAYER_TALENT_UPDATE" or event=="TRAIT_CONFIG_UPDATED" or event=="ACTIVE_TALENT_GROUP_CHANGED" then refresh(); return end
-    if event == "SPELLS_CHANGED" then TEF.Presentation.bindings={}; TEF.Presentation.cooldowns={}; TEF.HUD.metadata={}; TEF.Dispatch:ClearBindingCache(); refresh(); return end
+    if event == "SPELLS_CHANGED" then TEF.Presentation.bindings={}; TEF.HUD.metadata={}; TEF.Dispatch:ClearBindingCache(); refresh(); return end
     if event == "UPDATE_MACROS" then
         TEF.ActionSources:Clear(); TEF.Dispatch:BindingsChanged()
         TEF.Presentation.bindings={}; TEF.Research:Invalidate(); TEF.APL:Invalidate(true); refresh(); return

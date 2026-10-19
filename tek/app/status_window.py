@@ -14,6 +14,18 @@ from tek.runtime.status_mapper import status_color
 from tek.src.windows_display import virtual_desktop_bounds
 
 
+def _monitor_label(snapshot) -> str:
+    monitor = []
+    if snapshot.last_target_casting:
+        monitor.append("目标读条")
+    if snapshot.last_target_interruptible:
+        monitor.append("可打断")
+    if snapshot.last_player_health_critical:
+        monitor.append("低血预警")
+    # 当前TEF发送端没有发布这些监控位，不能把全零解释为已检查且正常。
+    return " / ".join(monitor) if monitor else "当前信号未提供此监控"
+
+
 class StatusWindow:
     """Small Chinese TEK status window with compact settings tabs.
 
@@ -755,14 +767,7 @@ class StatusWindow:
         self.values["sampler_backend"].set(backend_label)
         self.values["combat_state"].set("战斗中" if snapshot.last_in_combat is True else ("脱战" if snapshot.last_in_combat is False else "-"))
         self.values["protocol_token"].set(f"v{snapshot.last_protocol_version or '-'} / {snapshot.last_binding_token if snapshot.last_binding_token is not None else '-'}")
-        monitor = []
-        if snapshot.last_target_casting:
-            monitor.append("目标读条")
-        if snapshot.last_target_interruptible:
-            monitor.append("可打断")
-        if snapshot.last_player_health_critical:
-            monitor.append("低血预警")
-        self.values["monitor_state"].set(" / ".join(monitor) if monitor else "无监控告警")
+        self.values["monitor_state"].set(_monitor_label(snapshot))
         physical = snapshot.physical_input_diagnostics or {}
         if physical:
             whitelist = physical.get("intervention_whitelist") or {}

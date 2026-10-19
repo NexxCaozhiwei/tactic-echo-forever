@@ -213,10 +213,11 @@ function U:CreateStudio()
  self:CreateStudioTools(); self.settingsLayoutSignature=nil
 end
 function U:RefreshStudio()
- if not self.studio or self.studioRefreshing then return end
- self.studioRefreshing=true
+ if not self.studio or self.studioRefreshing or self.refreshingPage then return end
+ return self:WithUpdateFlag("studioRefreshing",self.RefreshStudioContent)
+end
+function U:RefreshStudioContent()
  local e=self.engine; local rows,source,scene=self:StudioActiveRows(); local view=T.Runtime:GetViewState()
- self:MaybeStudioLiveProbe()
  local parentSource=self.page=="profiles" and "manual" or "apl"
  if source then self.studioLastEditorPage=self.page end
  local maintenance=self.page=="maintenance"
@@ -275,9 +276,32 @@ function U:RefreshStudio()
  self.studioRefreshing=false
  self:LayoutSettings()
 end
+function U:SyncStudioVisibility(listPage,source,inspect,dock,workspace,selected,bodyHeight,w)
+ local function show(object,value) self:Paint(object,value and "Show" or "Hide") end
+ show(self.studioWorkspace,workspace>0 or self.studioWorkspaceOpen)
+ show(self.studioWorkspacePlanButton,listPage and bodyHeight>=520)
+ show(self.studioEditor,listPage)
+ for _,panel in pairs(self.pageFrames) do show(panel,not listPage and self.pageFrames[self.page]==panel) end
+ for key,scroll in pairs({manual=self.sequenceScroll,apl=self.customScroll,group=self.groupScroll}) do show(scroll,listPage and key==source) end
+ for key,toolbar in pairs(self.studioToolbars) do show(toolbar,listPage and key==source) end
+ for _,footer in pairs(self.pageFooters) do show(footer,false) end
+ local footer=source=="manual" and self.pageFooters[self.pages.profiles] or source=="apl" and self.pageFooters[self.pages.customapl] or self.studioGroupFooter
+ show(self.studioGroupFooter,listPage and source=="group")
+ if listPage and footer then show(footer,true) end
+ show(self.studioBottom,listPage); show(self.studioInspector,inspect)
+ show(self.studioInspectorShield,inspect and not dock); show(self.studioInspectorClose,not dock)
+ local plan=listPage and self.studioPlanOpen and not self.groupEditing
+ show(self.studioPlanScroll,plan); show(self.studioPlanPanel,plan)
+ if not listPage or self.studioPlanOpen then show(self.strategyPanel,false) end
+ if not self.groupEditing then show(self.groupPanel,false) end
+ local empty=not (selected or self.studioPlanOpen or self.groupEditing)
+ show(self.studioInspectTitle,empty); show(self.studioInspectBody,empty); show(self.studioInspectOpen,empty)
+ show(self.studioContext,w>=1200); show(self.studioLibrary,self.studioLibraryOpen)
+end
 function U:LayoutStudioSettings(width,height)
- if self.studioLayoutBusy then return end
- self.studioLayoutBusy=true
+ return self:WithUpdateFlag("studioLayoutBusy",self.LayoutStudioSettingsContent,width,height)
+end
+function U:LayoutStudioSettingsContent(width,height)
  local scale=math.min(1,(width-32)/680); local w=math.min(1560,(width-32)/scale); local h=math.min(920,(height-32)/scale)
  local workspace=w>=1400 and 200 or 0
  local dock=w>=64+workspace+620+448+48
@@ -288,19 +312,18 @@ function U:LayoutStudioSettings(width,height)
  local rows,source=self:StudioActiveRows()
  local selected=self.studioSelected and rows and self.studioSelected.source==source and rows[self.studioSelected.index]
  local inspect=listPage and (dock or self.studioInspectorRequested)
- local signature=table.concat({w,h,tostring(self.page),tostring(source),tostring(dock),tostring(inspect),tostring(self.studioPlanOpen),tostring(self.studioLibraryOpen),tostring(self.studioWorkspaceOpen),tostring(selected~=nil),tostring(bottom)},":")
+ local signature=table.concat({w,h,scale,tostring(self.page),tostring(source),tostring(dock),tostring(inspect),tostring(self.studioPlanOpen),tostring(self.studioLibraryOpen),tostring(self.studioWorkspaceOpen),tostring(selected~=nil),tostring(bottom)},":")
  self.studioWidth=w; self.settingsHeight=h; self.settingsFitScale=scale; self.editorOverlay=not dock
  self.studioEditorWidth=editorWidth; self.studioListHeight=math.max(32,editorHeight-120-bottom-96)
- -- 刷新可能重新显示旧控件，必须每次同步可见性，不能按几何签名跳过。
+ -- 可见性始终同步，只有几何签名变化才重排所有控件。
+ self:SyncStudioVisibility(listPage,source,inspect,dock,workspace,selected,bodyHeight,w)
+ if self.settingsLayoutSignature==signature then self.studioLayoutBusy=false; return end
  self.settingsLayoutSignature=signature
  self:Paint(self.settings,"SetScale",scale); self:Paint(self.settings,"SetSize",w,h)
  self:StudioAnchor(self.studioActivity,self.settings,0,-64,64,bodyHeight)
  self:StudioAnchor(self.studioWorkspace,self.settings,64,-64,200,bodyHeight)
- self:Paint(self.studioWorkspace,(workspace>0 or self.studioWorkspaceOpen) and "Show" or "Hide")
- self:Paint(self.studioWorkspacePlanButton,listPage and bodyHeight>=520 and "Show" or "Hide")
  self:Paint(self.studioWorkspace,"SetFrameLevel",self.studioWorkspaceOpen and 30 or 2); self:Paint(self.studioWorkspace,"EnableMouse",true)
  self:StudioAnchor(self.studioEditor,self.settings,left,-108,editorWidth,editorHeight)
- self:Paint(self.studioEditor,listPage and "Show" or "Hide")
  self:StudioAnchor(self.studioTab,self.settings,left,-68,180,32); self:StudioAnchor(self.studioSequenceTab,self.settings,left+188,-68,204,32)
  self:StudioAnchor(self.studioGroupTab,self.settings,left+400,-68,math.max(160,editorWidth-400),32)
  self:StudioAnchor(self.studioPlanButton,self.studioEditor,editorWidth-136,0,120,32)
@@ -308,50 +331,36 @@ function U:LayoutStudioSettings(width,height)
  self:Paint(self.studioListHeading,"SetWidth",editorWidth-292)
  for key,panel in pairs(self.pageFrames) do
   self:StudioAnchor(panel,self.settings,left,-116,editorWidth,h-160)
-  self:Paint(panel,(not listPage and self.pageFrames[self.page]==panel) and "Show" or "Hide")
  end
  for _,scroll in pairs(self.pageScrolls) do self:Paint(scroll,"SetHeight",h-160) end
  local scrolls={manual=self.sequenceScroll,apl=self.customScroll,group=self.groupScroll}
  for key,scroll in pairs(scrolls) do
   self:StudioAnchor(scroll,self.studioEditor,12,-120,editorWidth-44,self.studioListHeight)
-  self:Paint(scroll,listPage and key==source and "Show" or "Hide")
  end
- for key,toolbar in pairs(self.studioToolbars) do self:Paint(toolbar,listPage and key==source and "Show" or "Hide") end
  for _,entry in ipairs({{self.sequenceRows,self.sequenceChild},{self.customWidgets,self.customChild},{self.groupWidgets,self.groupChild}}) do
   self:Paint(entry[2],"SetWidth",editorWidth-48)
   for _,row in ipairs(entry[1]) do self:LayoutStudioRow(row,editorWidth-48) end
  end
- for _,footer in pairs(self.pageFooters) do self:StudioAnchor(footer,self.settings,left,-h+bottom+116,editorWidth-16,88); self:Paint(footer,"Hide") end
+ for _,footer in pairs(self.pageFooters) do self:StudioAnchor(footer,self.settings,left,-h+bottom+116,editorWidth-16,88) end
  self:StudioAnchor(self.manualSave,self.pageFooters[self.pages.profiles],editorWidth-160,-52,144,32)
  self:StudioAnchor(self.customSave,self.pageFooters[self.pages.customapl],editorWidth-160,-52,144,32)
  self:Paint(self.editorMessage,"SetWidth",editorWidth-16); self:Paint(self.customMessage,"SetWidth",editorWidth-16)
- local footer=source=="manual" and self.pageFooters[self.pages.profiles] or source=="apl" and self.pageFooters[self.pages.customapl] or self.studioGroupFooter
  self:StudioAnchor(self.studioGroupFooter,self.settings,left,-h+bottom+116,580,88)
- self:Paint(self.studioGroupFooter,listPage and source=="group" and "Show" or "Hide")
- if listPage and footer then self:Paint(footer,"Show") end
  self:StudioAnchor(self.studioBottom,self.settings,left,-h+bottom+28,editorWidth,bottom)
- self:Paint(self.studioBottom,listPage and "Show" or "Hide"); self:LayoutStudioBottom(editorWidth,bottom)
+ self:LayoutStudioBottom(editorWidth,bottom)
  self:StudioAnchor(self.studioInspector,self.settings,w-464,-64,448,bodyHeight)
- self:Paint(self.studioInspector,inspect and "Show" or "Hide"); self:Paint(self.studioInspector,"SetFrameLevel",dock and 4 or 40)
+ self:Paint(self.studioInspector,"SetFrameLevel",dock and 4 or 40)
  self:StudioAnchor(self.studioInspectorShield,self.settings,left,-64,w-left-16,bodyHeight)
- self:Paint(self.studioInspectorShield,"SetFrameLevel",39); self:Paint(self.studioInspectorShield,inspect and not dock and "Show" or "Hide")
+ self:Paint(self.studioInspectorShield,"SetFrameLevel",39)
  self:Paint(self.studioInspectorClose,"ClearAllPoints"); self:Paint(self.studioInspectorClose,"SetPoint","BOTTOMLEFT",self.studioInspector,"BOTTOMLEFT",16,12)
- self:Paint(self.studioInspectorClose,dock and "Hide" or "Show")
  for _,panel in ipairs({self.strategyPanel,self.groupPanel}) do self:StudioAnchor(panel,self.studioInspector,0,0,448,bodyHeight-(dock and 0 or 48)) end
  self:StudioAnchor(self.studioPlanScroll,self.studioInspector,0,0,410,bodyHeight-(dock and 0 or 48))
  self:StudioAnchor(self.studioPlanPanel,self.studioPlanScroll,0,0,410,744)
- self:Paint(self.studioPlanScroll,listPage and self.studioPlanOpen and not self.groupEditing and "Show" or "Hide")
  self:Paint(self.strategyScroll,"SetHeight",math.max(80,bodyHeight-(dock and 232 or 280)))
- self:Paint(self.studioPlanPanel,listPage and self.studioPlanOpen and not self.groupEditing and "Show" or "Hide")
- if not listPage or self.studioPlanOpen then self:Paint(self.strategyPanel,"Hide") end
- if not self.groupEditing then self:Paint(self.groupPanel,"Hide") end
- self:Paint(self.studioInspectTitle,(selected or self.studioPlanOpen or self.groupEditing) and "Hide" or "Show")
- self:Paint(self.studioInspectBody,(selected or self.studioPlanOpen or self.groupEditing) and "Hide" or "Show")
- self:Paint(self.studioInspectOpen,(selected or self.studioPlanOpen or self.groupEditing) and "Hide" or "Show")
  self:StudioAnchor(self.studioStatus,self.settings,12,-h+20,w-24)
  self:StudioAnchor(self.studioRun,self.settings,w-340,-16,112,32); self:StudioAnchor(self.studioSave,self.settings,w-220,-16,112,32)
  self:Paint(self.studioClose,"ClearAllPoints"); self:Paint(self.studioClose,"SetPoint","TOPRIGHT",self.settings,"TOPRIGHT",-16,-16)
- self:Paint(self.studioContext,w>=1200 and "Show" or "Hide"); self:Paint(self.studioContext,"SetWidth",w-720)
+ self:Paint(self.studioContext,"SetWidth",w-720)
  self:LayoutStudioLibrary(left,h)
  self:Call(self.confirmationBody,"SetScale",scale)
  self.studioLayoutBusy=false
@@ -363,4 +372,5 @@ function U:LayoutStudioRow(w,width)
  self:StudioAnchor(w.delete,w.frame,width-96,-8,88,28)
  if w.usage then self:StudioAnchor(w.usage,w.frame,width-212,-44,204,28) end
  self:Paint(w.name,"SetWidth",math.max(120,width-348))
+ self:Paint(w.frame.studioSummary,"SetWidth",math.max(120,width-148))
 end

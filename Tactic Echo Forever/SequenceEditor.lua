@@ -153,12 +153,15 @@ function U:RefreshSequenceEditor(force)
         local row=rows and rows[i]
         self:Paint(widgets.frame,row and "Show" or "Hide")
         if row then
+            if not self.studio then
             local view=row.unverified and S.Spell(row.name,row.name) or S.Spell(row.spellID,row.name)
             widgets.frame.tefTooltipTitle=row.group and row.group.name or view.name; widgets.frame.tefTooltipBody="精确ID " .. row.spellID .. "；次数按独立成功回执计数。"
             self:Paint(widgets.icon,"SetTexture",view.icon)
             self:Paint(widgets.groupEdit,row.group and "Show" or "Hide")
             self:Paint(widgets.name,"SetWidth",232)
             self:Paint(widgets.name,"SetText",i .. ". " .. (row.group and ("【" .. self:ShortLabel(row.group.name,12) .. "】") or (self:ShortLabel(view.name,8) .. " · ID " .. row.spellID)) .. (row.enabled==false and " · 已停用" or ""))
+            end
+            self:Paint(widgets.groupEdit,row.group and "Show" or "Hide")
             self:SetInputValue(widgets.count,tostring(row.repeatCount or 1))
             self:Paint(widgets.skip,"SetText",row.skipUnavailable and "不可用跳过：开" or "不可用跳过：关")
             self:Paint(widgets.skip,(row.group or row.spellID==6603) and "Hide" or "Show")

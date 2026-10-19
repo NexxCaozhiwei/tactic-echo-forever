@@ -9,10 +9,10 @@ function U:CommitCustomNumbers()
   if not text then self:CustomMessage("无法公开读取输入，请取消编辑或重新输入。"); return false end
   text=text:match("^%s*(.-)%s*$")
   local n=text~="" and text:match("^%d+%.?%d*$") and tonumber(text) or nil
-  local limit=entry.field=="spellID" and 2147483647 or entry.field=="radius" and 40 or entry.condition.kind=="distance" and 2000 or entry.condition.kind=="cdmStacks" and 255 or entry.condition.kind=="comboPoints" and 10 or 40
+  local limit=entry.field=="spellID" and 2147483647 or entry.field=="radius" and 40 or entry.condition.kind=="distance" and 2000 or entry.condition.kind=="comboPoints" and 10 or 40
   if text~="" and (not n or n>limit or (entry.condition.kind~="distance" and entry.field~="radius" and n%1~=0) or ((entry.field=="spellID" or entry.field=="radius") and n<=0)) then
    if entry.label then self:Paint(entry.label,"SetText",(entry.labelText or "数值") .. "：格式或范围无效") end
-   self:CustomMessage("数值无效：距离0～2000码、敌人数0～40整数、层数0～255整数、连击点0～10整数，观察技能填写精确ID。"); return false
+   self:CustomMessage("数值无效：距离0～2000码、敌人数0～40整数、连击点0～10整数，观察技能填写精确ID。"); return false
   end
   pending[#pending+1]={condition=entry.condition,field=entry.field,value=n}
  end
@@ -58,11 +58,13 @@ function U:RefreshCustomAPL()
    local height=80
    self:Paint(w.frame,"ClearAllPoints"); self:Paint(w.frame,"SetPoint","TOPLEFT",self.customChild,"TOPLEFT",0,-listHeight); self:Paint(w.frame,"SetHeight",height); listHeight=listHeight+height+8
    self:Paint(w.groupEdit,row.group and "Show" or "Hide"); self:Paint(w.name,"SetWidth",232)
+   if not self.studio then
    local view=S.Spell(row.spellID,tostring(row.spellID or "未解析")); if row.group then view.name="【" .. row.group.name .. "】" end
    self:Paint(w.name,"SetText",(i==self.customSelected and "|cff8cf0df" or "") .. i .. ". " .. self:ShortLabel(view.name,8) .. " · ID " .. (row.spellID or "?") .. (row.enabled and "" or " · 已停用") .. "|r")
    w.frame.tefTooltipTitle=view.name; w.frame.tefTooltipBody="精确ID " .. (row.spellID or "未知") .. "；编辑策略仅修改草稿，保存后生效。"
    local sampled=self.engine.aplSnapshot and self.engine.aplSnapshot.actions["custom_" .. i]
    if sampled and sampled.spellID==row.spellID and sampled.reason=="CUSTOM_TARGET_UNKNOWN" then self:Paint(w.name,"SetText",i .. ". " .. view.name .. " |cffffcf45· 请选择施放类型|r") end
+   end
   end
  end
  self:Paint(self.customChild,"SetHeight",math.max(108,listHeight))
@@ -260,8 +262,13 @@ function U:RefreshStrategyForm()
  if not self.strategyPanel then return end
  local row=self:CustomRow()
  self:Paint(self.strategyTitle,"SetWordWrap",false)
- self.strategyPanel.tefTooltipTitle=row and (row.group and row.group.name or S.Spell(row.spellID,tostring(row.spellID)).name) or "未选择技能"
- self:Paint(self.strategyTitle,"SetText",row and ("策略条件设置 · " .. (row.group and row.group.name or S.Spell(row.spellID,tostring(row.spellID)).name)) or "策略条件设置 · 未选择技能")
+ local identity=row and (row.group and row.group.name or row.spellID)
+ if self.strategyTitleRow~=row or self.strategyTitleIdentity~=identity then
+  local name=row and (row.group and row.group.name or S.Spell(row.spellID,tostring(row.spellID)).name)
+  self.strategyPanel.tefTooltipTitle=name or "未选择技能"
+  self:Paint(self.strategyTitle,"SetText","策略条件设置 · " .. (name or "未选择技能"))
+  self.strategyTitleRow,self.strategyTitleIdentity=row,identity
+ end
  if self.customFormIndex==self.customSelected then return end
  local first
  local scrollOK,rawScroll=self:Invoke(self.strategyScroll,"GetVerticalScroll"); local previousScroll=scrollOK and S.Public(rawScroll,"number") or 0
@@ -373,14 +380,14 @@ function U:RefreshStrategyForm()
      self:CreateHintText(card,"此条件已移除，旧配置保持未知阻断。请删除此条件或更换类型后保存。",8,cy-48,370)
     elseif condition.kind=="comboPoints" and self.engine.classToken~="ROGUE" then
      self:CreateHintText(card,"当前职业不支持，保持未知阻断；可以删除或更换条件。",8,cy-40,370)
-    elseif condition.kind=="comboPoints" or condition.kind=="distance" or condition.kind=="enemies" or condition.kind=="cdmStacks" or condition.kind=="rangedEnemies" or condition.kind=="nearbyEnemies" then
+    elseif condition.kind=="comboPoints" or condition.kind=="distance" or condition.kind=="enemies" or condition.kind=="rangedEnemies" or condition.kind=="nearbyEnemies" then
      if condition.op then
       local ops={{"lt","<"},{"le","≤"},{"eq","="},{"ne","≠"},{"ge","≥"},{"gt",">"}}
       self:CreateSegmentedControl(card,ops,8,cy-36,250,function() return condition.op end,function(v) condition.op=v end)
       input("threshold",280,92)
       self:CreateHintText(card,"保留旧条件的比较方式；重新选择目标距离可改为区间。",8,cy-112,370)
      else
-     self:CreateHintText(card,condition.kind=="comboPoints" and "连击点：下限～上限（0～10整数）" or condition.kind=="distance" and "码数：下限～上限（含边界）" or condition.kind=="cdmStacks" and "公开层数：下限～上限" or "数量：下限～上限（可见姓名板）",8,cy-48,160)
+     self:CreateHintText(card,condition.kind=="comboPoints" and "连击点：下限～上限（0～10整数）" or condition.kind=="distance" and "码数：下限～上限（含边界）" or "数量：下限～上限（可见姓名板）",8,cy-48,160)
      input("min",176,96); input("max",280,96)
      if condition.kind=="rangedEnemies" or condition.kind=="nearbyEnemies" then
       local choices={{5,"5码"},{10,"10码"},{20,"20码"},{25,"25码"},{30,"30码"},{35,"35码"},{40,"40码"}}
@@ -388,12 +395,6 @@ function U:RefreshStrategyForm()
        function(value) if self:CommitCustomNumbers() then condition.radius=value; self.customFormIndex=nil; self:RefreshStrategyForm() end end)
       local supported=false; for _,choice in ipairs(choices) do if condition.radius==choice[1] then supported=true end end
       self:CreateHintText(card,supported and "自身所选码数内；探针未知不视为满足。" or ("旧半径 " .. tostring(condition.radius) .. "码；请选择新档位，原条件暂保留。"),8,cy-152,370)
-     elseif condition.kind=="cdmStacks" then
-      self:CreateHintText(card,"观察技能ID",8,cy-108,112)
-      local box=self:SequenceInput(card,8,cy-132,112); local field=(condition.kind=="nearbyEnemies" or condition.kind=="rangedEnemies") and "radius" or "spellID"
-      self:Paint(box,"SetText",condition[field] and tostring(condition[field]) or "")
-      self.strategyInputs[#self.strategyInputs+1]={box=box,condition=condition,field=field}
-      self:CreateHintText(card,"目录ID；Secret/隐藏/缺失均未知",136,cy-132,240)
      else self:CreateHintText(card,"单边可留空；距离区间跨越阈值时视为未知。",8,cy-112,370) end
      end
     elseif condition.kind=="lossOfControl" then
