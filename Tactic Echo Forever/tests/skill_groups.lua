@@ -38,6 +38,29 @@ test("priority_group_locks_order_then_consumes_trigger",function()
  T.APL:Invalidate(); T.Runtime:Reconcile(); eq(e.aplCandidate.spellID,205)
  T.Runtime:Stop()
 end)
+test("group_inactive_cdm_buff_skips_first_child_for_both_sources",function()
+ local catalog,icons,bars=C_CooldownViewer,BuffIconCooldownViewer,BuffBarCooldownViewer
+ for _,source in ipairs({"manual","apl"}) do
+  local e=F.runtime(); local g=group()
+  g.steps[1].strategies={{mode="use",conditions={{kind="cdmBuff",spellID=400588,value=true}}}}
+  C_CooldownViewer={GetCooldownViewerCategorySet=function(cat) return cat==2 and {10} or {} end,
+   GetCooldownViewerCooldownInfo=function() return {spellID=400588} end}
+  local frame={cooldownID=10,isActive=false,hideWhenInactive=true,allowHideWhenInactive=true,IsVisible=function() return false end}
+  BuffIconCooldownViewer={IsVisible=function() return true end,itemFramePool={EnumerateActive=function()
+   local done=false; return function() if not done then done=true; return frame end end
+  end}}
+  BuffBarCooldownViewer={itemFramePool={EnumerateActive=function() return function() end end}}
+  if source=="manual" then
+   assert(T.Recommendation:SetSource(e,"manual","single"))
+   assert(T.Profiles:Save(e,"single",{T.SkillGroups:Row(g),spell(143)}))
+  else assert(T.APL.Custom:Save(e,{{group=g,spellID=143,enabled=true,strategies={}}},"single","MAGE")) end
+  T.Runtime:SetIntent(true); T.Runtime:Reconcile()
+  assert(e.groupRun); eq(e.steps[e.index].spellID,205); eq(e.stepCasts,0)
+  T.Runtime:Stop()
+ end
+ C_CooldownViewer,BuffIconCooldownViewer,BuffBarCooldownViewer=catalog,icons,bars
+end)
+
 test("group_editor_save_roundtrip_and_reject_nested_secret",function()
  local e=F.runtime(); T.UI:ShowPage("customapl"); T.UI:AddSkillGroup("apl")
  assert(T.UI.groupEditing); T.UI:GroupAdd(143); T.UI:GroupAdd(205)

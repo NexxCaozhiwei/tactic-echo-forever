@@ -33,6 +33,36 @@ test("cdm_hidden_or_unknown_visibility_never_authorizes_rule",function()
  eq(P.CDM({{enabled=true,cdmKind="buff",cdmSpellID=133}})["buff:133"].value,nil)
 end)
 
+test("cdm_inactive_buff_auto_hide_is_generic_and_preserves_unknown",function()
+ for _,id in ipairs({133,1459,400588}) do
+  for _,category in ipairs({2,3}) do
+   local frame,pool=fixtures(false)
+   C_CooldownViewer.GetCooldownViewerCategorySet=function(cat) return cat==category and {10} or {} end
+   C_CooldownViewer.GetCooldownViewerCooldownInfo=function() return {spellID=id} end
+   local viewer={IsVisible=function() return true end,itemFramePool=pool({frame})}
+   BuffIconCooldownViewer={itemFramePool=pool({})}; BuffBarCooldownViewer={itemFramePool=pool({})}
+   if category==2 then BuffIconCooldownViewer=viewer else BuffBarCooldownViewer=viewer end
+   frame.IsVisible=function() return false end
+   frame.hideWhenInactive=true; frame.allowHideWhenInactive=true
+   local request={{enabled=true,cdmKind="buff",cdmSpellID=id}}
+   local observed=P.CDM(request)
+   eq(observed["buff:" .. id].value,false); eq(observed["buff:" .. id].reason,"PUBLIC_INACTIVE_HIDDEN")
+   local r=row(143); r.strategies={{mode="use",conditions={{kind="cdmBuff",spellID=id,value=true}}}}
+   local s=state({r}); s.actions.custom_1.strategyCDM=observed
+   eq(C:CheckStrategies(s,r,1),false)
+   r.strategies[1].mode="skip"; r.strategies[1].conditions[1].value=false
+   eq(C:CheckStrategies(s,r,1),false)
+   for _,value in ipairs({true,F.secret}) do frame.isActive=value; eq(P.CDM(request)["buff:" .. id].value,nil) end
+   frame.isActive=false
+   viewer.IsVisible=function() return false end; eq(P.CDM(request)["buff:" .. id].value,nil)
+   viewer.IsVisible=function() return F.secret end; eq(P.CDM(request)["buff:" .. id].value,nil)
+   viewer.IsVisible=function() return true end
+   frame.allowHideWhenInactive=false; eq(P.CDM(request)["buff:" .. id].value,nil)
+   frame.allowHideWhenInactive=true; frame.hideWhenInactive=false; eq(P.CDM(request)["buff:" .. id].value,nil)
+  end
+ end
+end)
+
 test("numeric_operators_boundaries_unknown",function()
  for _,op in ipairs({"lt","le","eq","ne","ge","gt"}) do eq(P.Compare(nil,op,20),nil) end
  eq(P.Compare(20,"lt",20),false); eq(P.Compare(20,"le",20),true); eq(P.Compare(20,"eq",20),true)

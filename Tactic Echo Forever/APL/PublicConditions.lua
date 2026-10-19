@@ -145,6 +145,13 @@ local categories={
  {kind="buff",value=2,viewer="BuffIconCooldownViewer"},
  {kind="buff",value=3,viewer="BuffBarCooldownViewer"}}
 local function key(kind,id) return kind .. ":" .. id end
+local function visible(frame)
+ local method=frame and S.Field(frame,"IsVisible","function")
+ if method then
+  local ok,value=pcall(method,frame)
+  if ok then return S.Public(value,"boolean") end
+ end
+end
 function P.CDM(rows)
  local requests,needed,out,skipped={},{},{},{}
  for _,row in ipairs(rows) do
@@ -203,16 +210,21 @@ function P.CDM(rows)
      if not id then skipped[cat.kind]=(skipped[cat.kind] or 0)+1 end
      local k=id and mappings[id]
      if k then
-      local visibility=S.Field(frame,"IsVisible","function")
-      local shown
-      if visibility then local ok,value=pcall(visibility,frame); if ok then shown=S.Public(value,"boolean") end end
+      local shown=visible(frame)
       local active,classification
       if shown==true then active,classification=S.Field(frame,"isActive","boolean")
+      elseif shown==false and cat.kind=="buff" and visible(viewer)==true
+       and S.Field(frame,"hideWhenInactive","boolean")==true
+       and S.Field(frame,"allowHideWhenInactive","boolean")==true then
+       -- 增益条目可以因公开的不活动状态自行隐藏；面板整体隐藏不能授权。
+       local value,why=S.Field(frame,"isActive","boolean")
+       if value==false then active=false; classification="PUBLIC_INACTIVE_HIDDEN"
+       else classification=value==nil and why or "CDM_HIDDEN_OR_UNKNOWN" end
       else classification="CDM_HIDDEN_OR_UNKNOWN" end
       local old=out[k]
       if active==nil then out[k]={reason=classification or "CDM_ACTIVE_UNKNOWN",uncertain=true}
       elseif old.uncertain or (old.value~=nil and old.value~=active) then out[k]={reason="CDM_CONFLICT",uncertain=true}
-      else out[k]={value=active,reason="PUBLIC"} end
+      else out[k]={value=active,reason=classification=="PUBLIC_INACTIVE_HIDDEN" and classification or "PUBLIC"} end
 
      end
     end
