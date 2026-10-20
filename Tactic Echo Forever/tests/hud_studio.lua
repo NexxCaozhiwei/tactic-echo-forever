@@ -12,6 +12,42 @@ local function setup()
  H:Layout(); H:Refresh()
  return e
 end
+
+test("hud_opacity_is_saved_and_rejects_secret_or_invalid_values",function()
+ local e=setup(); eq(e.db.hud.opacity.background,.94); eq(e.db.hud.opacity.border,1)
+ e.db.hud.opacity={background=.35,border=0}
+ local copy=T.Engine.New(T.Config,e.db)
+ eq(copy.db.hud.opacity.background,.35); eq(copy.db.hud.opacity.border,0)
+ local clean=T.HudStyles.CleanOpacity({background=F.secret,border=math.huge})
+ eq(clean.background,.94); eq(clean.border,1)
+ clean=T.HudStyles.CleanOpacity({background=-1,border=2})
+ eq(clean.background,0); eq(clean.border,1)
+end)
+
+test("hud_opacity_controls_only_change_shell_in_both_modes",function()
+ local e=setup(); U:OpenSettings(); U:ShowPage("hud")
+ local generation,index,serial=e.generation,e.index,e.receiptSerial
+ local setAlpha=H.frame.SetAlpha; local parentAlphaCalls=0
+ H.frame.SetAlpha=function() parentAlphaCalls=parentAlphaCalls+1 end
+ local background,border=U.hudOpacityControls.background.slider,U.hudOpacityControls.border.slider
+ background:GetScript("OnValueChanged")(background,100)
+ border:GetScript("OnValueChanged")(border,75)
+ for _,mode in ipairs({"mini","standard"}) do
+  H:SetMode(mode); H:Refresh()
+  for _,part in ipairs(H.roundSurfaces[H.chrome].fill) do eq(part.color[4],0) end
+  for _,part in ipairs(H.roundSurfaces[H.chrome].border) do eq(part.color[4],.25) end
+  for _,part in ipairs(H.roundSurfaces[H.chromeInner].border) do eq(part.color[4],.65*.25) end
+  for _,card in ipairs(H.cards) do
+   for _,part in ipairs(H.roundSurfaces[card.border].border) do eq(part.color[4],1) end
+   eq(card.icon.color[4],1)
+  end
+ end
+ background:GetScript("OnValueChanged")(background,0)
+ border:GetScript("OnValueChanged")(border,100)
+ eq(H.roundSurfaces[H.chrome].fill[1].color[4],1); eq(H.roundSurfaces[H.chrome].border[1].color[4],0)
+ eq(parentAlphaCalls,0); eq(e.generation,generation); eq(e.index,index); eq(e.receiptSerial,serial)
+ H.frame.SetAlpha=setAlpha
+end)
 test("hud_compact_matches_260_108_and_uses_shared_rounded_surfaces",function()
  setup(); eq(H.layoutWidth,260); eq(H.layoutHeight,108)
  assert(H.chrome.frameLevel<H.content.frameLevel); assert(H.content.frameLevel<H.cards[1].frame.frameLevel)

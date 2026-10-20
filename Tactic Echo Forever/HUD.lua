@@ -134,6 +134,13 @@ function H:SurfaceColor(frame,layer,r,g,b,a)
  for _,part in ipairs(surface and surface[layer] or {}) do U:Paint(part,"SetVertexColor",r,g,b,a) end
  if layer=="border" then U:Call(frame,"SetBackdropBorderColor",r,g,b,a) end
 end
+function H:ApplyOpacity()
+ local opacity=self.engine.db.hud.opacity
+ -- 只修改HUD外壳贴图，不能使用父级透明度影响技能图标和文字。
+ self:SurfaceColor(self.chrome,"fill",.025,.045,.075,opacity.background)
+ self:SurfaceColor(self.chrome,"border",.30,.62,.88,opacity.border)
+ self:SurfaceColor(self.chromeInner,"border",.13,.30,.47,.65*opacity.border)
+end
 local function mask(icon,parent)
  local ok,m=U:Invoke(parent,"CreateMaskTexture",nil,"ARTWORK")
  if ok and m then
@@ -421,9 +428,8 @@ function H:Layout()
  end
  U:Paint(self.frame,"SetScale",scale); U:Paint(self.frame,"SetSize",width,height)
  self:RoundSurface(self.chrome,width,height,8,true,true)
- self:SurfaceColor(self.chrome,"fill",.025,.045,.075,.94); self:SurfaceColor(self.chrome,"border",.30,.62,.88,1)
  anchor(self.chromeInner,self.frame,1,-1,width-2,height-2)
- self:RoundSurface(self.chromeInner,width-2,height-2,7,false,true); self:SurfaceColor(self.chromeInner,"border",.13,.30,.47,.65)
+ self:RoundSurface(self.chromeInner,width-2,height-2,7,false,true); self:ApplyOpacity()
  local xs=mini and {6,62,108} or {6,previewX,previewX+sizes[2]+gap}
  for i,card in ipairs(self.cards or {}) do
   card.size=sizes[i]; anchor(card.frame,self.frame,xs[i],mini and (i==1 and -6 or -10) or (i==1 and -8 or -12),sizes[i],sizes[i])
