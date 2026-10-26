@@ -906,29 +906,30 @@ end)
 local function runtimeFixture(mode)
     continuousFixture(); T.Dispatch:SetContinuous(false); T.engine:Reset()
     -- 既有用例显式保留旧单次尝试模式，新行为由独立回归覆盖。
-    T.engine.db.dispatch={mode=mode or "auto",ordinaryContinuous=false}
+    T.engine.db.dispatch={mode=mode or "auto",ordinaryContinuous=false,retryDelay=0}
     T.Runtime:Initialize(T.engine); T.Runtime:SetSignal(true)
     T.UI.settingsOpen=false; InCombatLockdown=function() return false end
 end
-test("ordinary_continuous_keeps_token_through_cast_and_exact_success_changes_step",function()
+test("confirmed_initiation_stops_old_token_and_exact_success_changes_step",function()
     runtimeFixture("manual"); local e=T.engine
     e.db.dispatch.ordinaryContinuous=true; e.db.dispatch.castQueue=false
     e.steps[1].skipUnavailable=true; InCombatLockdown=function() return true end
     T.Runtime:Start(false); T.Dispatch:TickContinuous()
     local pending=T.Dispatch.pending; assert(pending)
     receipt("UNIT_SPELLCAST_SENT",116,"ordinary-A")
-    eq(T.Dispatch.pending,pending)
+    eq(T.Dispatch.pending,nil)
     UnitCastingInfo=function() return "读条" end
     for i=1,8 do
         T.Runtime:Reconcile(); T.Dispatch:TickContinuous()
-        assert(T.Dispatch:Packet()); eq(e.index,1); eq(e.stepCasts,0)
+        eq(T.Dispatch:Packet(),nil); eq(e.index,1); eq(e.stepCasts,0)
         T.Transport:Paint()
     end
     receipt("UNIT_SPELLCAST_SENT",116,"ordinary-extra")
     receipt("UNIT_SPELLCAST_FAILED_QUIET",116,"ordinary-extra")
-    eq(T.Dispatch.pending,pending); eq(T.Dispatch.initiation.guid,"ordinary-A")
+    eq(T.Dispatch.pending,nil); eq(T.Dispatch.initiation.guid,"ordinary-A")
     receipt("UNIT_SPELLCAST_SUCCEEDED",116,"ordinary-A")
     eq(e.index,2); eq(T.Dispatch.pending,nil)
+    UnitCastingInfo=function() return nil end
     T.Runtime:Reconcile(); T.Dispatch:TickContinuous()
     assert(T.Dispatch.pending); eq(T.Dispatch.pending.binding.spellID,205)
     assert(T.Dispatch:Packet()); T.Runtime:Stop(); eq(T.Dispatch:Packet(),nil)
@@ -1175,6 +1176,14 @@ end)
 test("manual_mode_out_of_combat_runs",function()
     deliveryFixture("manual"); T.Runtime:SetIntent(true); eq(T.Runtime.state,"running"); eq(T.engine.running,true)
 end)
+
+test("manual_mode_auto_world_does_not_grant_out_of_combat_input",function()
+    deliveryFixture("manual"); T.Runtime:SetIntent(true,"RUNTIME_AUTO_WORLD")
+    T.Dispatch:TickContinuous(); eq(T.Dispatch:Packet(),nil)
+    eq(T.Runtime.state,"standby"); eq(T.Runtime.reason,"RUNTIME_MANUAL_START_REQUIRED")
+    T.Runtime:Stop(); T.Runtime:SetIntent(true); T.Dispatch:TickContinuous()
+    assert(T.Dispatch:Packet()); eq(T.Runtime.state,"running")
+end)
 test("combatstop_mode_clears_intent_on_leave_combat",function()
     deliveryFixture("stop"); InCombatLockdown=function() return true end
     T.Runtime:SetIntent(true); eq(T.Runtime.intent,true)
@@ -1352,11 +1361,11 @@ test("movement_old_failure_start_success_cannot_affect_retry",function()
     eq(T.Runtime.intent,true); eq(T.engine.index,1); eq(T.Dispatch.pending,pending)
     eq(T.engine.associations["m-old"],nil)
 end)
-test("movement_receipt_after_heartbeat_suspend_remains_temporary",function()
+test("movement_change_preserves_initiation_until_explicit_failure",function()
     deliveryFixture(); T.Runtime:SetIntent(true); T.Dispatch:TickContinuous()
     receipt("UNIT_SPELLCAST_SENT",116,"m-suspend"); IsPlayerMoving=function() return true end
     C_Spell.IsSpellUsable=function() return false,false end
-    T.Runtime:Reconcile(); eq(T.Dispatch.continuous,false)
+    T.Runtime:Reconcile(); eq(T.Dispatch.continuous,true); assert(T.Dispatch:HasCurrentInitiation())
     receipt("UNIT_SPELLCAST_INTERRUPTED",116,"m-suspend"); eq(T.Runtime.intent,true)
     IsPlayerMoving=function() return false end; C_Spell.IsSpellUsable=function() return true,false end
     T.Runtime:Reconcile(); T.Dispatch:TickContinuous()
@@ -2085,6 +2094,7 @@ test("bootstrap_build_updates_allowed_but_version_interface_unknown_blocked",fun
 end)
 assert(loadfile(root .. "/tests/hud_studio.lua"))(T,{deliveryFixture=deliveryFixture,test=test,eq=eq,secret=secret})
 assert(loadfile(root .. "/tests/audit_fixes.lua"))(T,{deliveryFixture=deliveryFixture,test=test,eq=eq,secret=secret})
+assert(loadfile(root .. "/tests/dispatch_pacing.lua"))(T,{runtimeFixture=runtimeFixture,deliveryFixture=deliveryFixture,receipt=receipt,test=test,eq=eq,secret=secret})
 realprint("TEF simulated tests: " .. count .. " passed\n")
 
 assert(loadfile(root .. "/tests/apl.lua"))("Tactic Echo Forever",T,{runtimeFixture=runtimeFixture,deliveryFixture=deliveryFixture,receipt=receipt})

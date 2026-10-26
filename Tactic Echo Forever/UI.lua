@@ -399,13 +399,15 @@ function UI:CreateSettings()
     end
     self:CreateHintText(self.pages.hud,"迷你HUD固定图标大小与间距，以上几何设置仅用于标准HUD。左键主卡启停，右键设置；空白可拖动。",16,-1208,548)
     self:Paint(self.pages.hud,"SetHeight",1268)
-    self:CreateSectionCard(self.pages.tek,"高级能力门禁",0,-138,580,238)
+    self:CreateSectionCard(self.pages.tek,"派发与接续参数",0,-138,580,332)
     self.signalToggle=self:CreateToggleRow(self.pages.tek,"TEAP输出",12,-176,556,function() return e.db.dispatch.signal end,function(v) TEF.Runtime:SetSignal(v) end)
     self.permissionToggle=self:CreateToggleRow(self.pages.tek,"TEK请求许可",12,-220,556,function() return e.db.dispatch.permission end,function(v) TEF.Runtime:SetPermission(v) end)
     self.castQueueToggle=self:CreateToggleRow(self.pages.tek,"读条末尾提前排队（实验）",12,-264,556,function() return e.db.dispatch.castQueue end,function(v) TEF.Runtime:SetCastQueue(v) end)
-    self.castQueueLeadSlider=self:CreateSliderRow(self.pages.tek,"提前时间（秒，0关闭提前）",14,-306,550,0,.5,.05,
-        function() return e.db.dispatch.castQueueLead end,function(v) TEF.Runtime:SetCastQueueLead(v) end)
-    self:CreateHintText(self.pages.tek,"正常使用只需主卡或派发启停。以上是高级门禁。\n设置期间零Token，关闭后按模式恢复新请求。\n固定练习不保证ready。只保留一个信号源。\n提前时间0–0.5秒，0不提前；实际受客户端排队窗口上限约束。\n排队仅固定序列普通读条，不含APL或引导。\nTEK等待事件时可能重复输入；插件不证明已连接。",12,-400,550)
+    self.castQueueLeadSlider,self.castQueueLeadInput=self:CreateSliderRow(self.pages.tek,"提前时间（秒）",14,-310,550,0,.5,.05,
+        function() return e.db.dispatch.castQueueLead end,function(v) TEF.Runtime:SetCastQueueLead(v) end,true)
+    self.retryDelaySlider,self.retryDelayInput=self:CreateSliderRow(self.pages.tek,"失败重试间隔（秒）",14,-384,550,0,.5,.05,
+        function() return e.db.dispatch.retryDelay end,function(v) TEF.Runtime:SetRetryDelay(v) end,true)
+    self:CreateHintText(self.pages.tek,"确认起手后停止重发，精确成功才推进。\n普通读条末尾只请求下一步；不能排队时等待结束。\n提前时间0～0.5秒，0关闭；实际受客户端排队窗口限制。\n排队仅用于列表循环普通读条，不跨技能组，不预测APL或引导。\n失败重试默认0.15秒，0表示下一次心跳重试。\n修改参数会停止派发，关闭设置后需重新开启；仅保留一个信号源。",12,-492,550)
     self:Paint(self.readouts.diagnostics,"ClearAllPoints"); self:Paint(self.readouts.diagnostics,"SetPoint","TOPLEFT",self.pages.diagnostics,"TOPLEFT",4,-104)
     for i,option in ipairs({{"explain","策略解释"},{"audit","配置体检"},{"timeline","事件时间线"}}) do
         local mode=option[1]
@@ -413,9 +415,9 @@ function UI:CreateSettings()
     end
     self.testSingle=button("diagnostics","单步派发测试",4,-44,184,function() TEF_RequestCurrent() end)
     self:SetControlEnabled(self.testSingle,false,"设置期间禁止派发；关闭设置后使用 /tef dispatch。")
-    self:CreateSelectRow(self.pages.tek,"施放非当前步骤技能后",{{"continue","保留原进度"},{"pause","暂停等待手动继续"}},12,-584,550,
+    self:CreateSelectRow(self.pages.tek,"施放非当前步骤技能后",{{"continue","保留原进度"},{"pause","暂停等待手动继续"}},12,-676,550,
         function() return e.db.dispatch.takeover end,function(v) TEF.Runtime:Stop("TAKEOVER_SETTING_CHANGED"); e.db.dispatch.takeover=v end)
-    self:Paint(self.pages.tek,"SetHeight",680)
+    self:Paint(self.pages.tek,"SetHeight",780)
     for _,panel in pairs(self.pageFrames or self.pages) do self:Paint(panel,"Hide") end
     self:CreateStudio()
     self.settingsLayoutSignature=nil

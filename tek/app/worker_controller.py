@@ -556,7 +556,9 @@ class WorkerController:
             dispatcher = self._active_dispatcher
             releaser = getattr(dispatcher, "release_modifiers", None)
             if callable(releaser):
-                releaser()
+                result = releaser()
+                if result is not None and getattr(result, "sent", True) is False:
+                    LOGGER.warning("input cleanup deferred: %s", getattr(result, "reason", "unknown"))
         except Exception:
             LOGGER.exception("modifier release failed during worker shutdown")
 

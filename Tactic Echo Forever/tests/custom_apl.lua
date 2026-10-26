@@ -38,7 +38,7 @@ test("experimental_count_opt_in_unknown_and_bounds",function()
  s.enemy_count=nil; eq(evaluate(rows,s),nil); s.enemy_count=2; eq(evaluate(rows,s),nil)
  rows[1].enemyMax=4; s.enemy_count=5; eq(evaluate(rows,s),nil)
 end)
-test("custom_apl_ordinary_cast_keeps_exact_candidate_output",function()
+test("custom_apl_confirmed_cast_keeps_candidate_without_repeating_input",function()
  local e=F.runtime(); e.db.dispatch.ordinaryContinuous=true; e.db.dispatch.castQueue=false
  assert(C:Save(e,{row(143)},"single","MAGE"))
  T.Runtime:SetIntent(true); T.Dispatch:TickContinuous(); assert(T.Dispatch.pending)
@@ -46,7 +46,7 @@ test("custom_apl_ordinary_cast_keeps_exact_candidate_output",function()
  if not consumed then e:Handle(e.generation,"UNIT_SPELLCAST_SENT","player","apl-ordinary",143) end
  UnitCastingInfo=function() return "普通读条" end
  T.Runtime:Reconcile(); T.Dispatch:TickContinuous()
- assert(T.Dispatch:Packet()); eq(e.steps[e.index].spellID,143)
+ eq(T.Dispatch:Packet(),nil); eq(e.steps[e.index].spellID,143)
  UnitChannelInfo=function() return "引导" end
  T.Runtime:Reconcile(); eq(T.Dispatch:Packet(),nil)
  UnitChannelInfo=function() return nil end; UnitCastingInfo=function() return nil end

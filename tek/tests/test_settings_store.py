@@ -11,6 +11,24 @@ from tek.src.windows_display import VirtualDesktopBounds
 
 
 class SettingsStoreTests(unittest.TestCase):
+    def test_invalid_numeric_field_preserves_disabled_auto_start(self):
+        for value in ("invalid", None, float("inf"), float("nan"), {}, True):
+            with self.subTest(value=value):
+                settings = AppSettings.from_dict({"auto_start_ui_linked": False, "sampling_interval_ms": value,
+                    "wow_process_names": "wow.exe", "window_width": 700})
+                self.assertFalse(settings.auto_start_ui_linked)
+                self.assertEqual(settings.sampling_interval_ms, 50)
+                self.assertEqual(settings.window_width, 700)
+
+    def test_invalid_layout_and_bom_do_not_reset_unrelated_preferences(self):
+        settings = AppSettings.from_dict({"auto_start_ui_linked": False, "window_x": float("inf"), "window_y": 0})
+        self.assertFalse(settings.auto_start_ui_linked)
+        self.assertIsNone(settings.window_x)
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "settings.json"
+            path.write_text('{"auto_start_ui_linked":false}', encoding="utf-8-sig")
+            self.assertFalse(SettingsStore(path).load().auto_start_ui_linked)
+
     def test_defaults_are_safe_for_ui_linked_product_flow(self):
         settings = AppSettings.defaults()
         self.assertTrue(settings.auto_start_ui_linked)

@@ -412,7 +412,12 @@ function U:RefreshStrategyForm()
      self:CreateSegmentedControl(card,{{true,labels[1]},{false,labels[2]}},8,cy-68,190,function() return condition.value end,function(v) condition.value=v end)
      if condition.kind=="cdmCooldown" or condition.kind=="cdmBuff" or condition.kind=="learned" or condition.kind=="succeeded" then
       input("spellID",264,112)
-      self:CreateHintText(card,condition.kind=="succeeded" and "ID空白=本技能；开始/重置/编辑清除，暂停保留。" or condition.kind=="learned" and "精确已学ID；空白=本技能，不按名称或最高等级推断。" or "ID空白=当前技能；帧缺失为未知；增益存在指帧活动。",8,cy-112,370)
+      if condition.kind=="cdmCooldown" or condition.kind=="cdmBuff" then
+       self:CreateActionButton(card,"选择CDM技能",8,cy-112,180,function() self:OpenCDMCatalog(condition) end)
+       self:CreateHintText(card,"从CDM目录选默认观察ID；活动信号不等于光环真值。",8,cy-152,370)
+      else
+       self:CreateHintText(card,condition.kind=="succeeded" and "ID空白=本技能；开始/重置/编辑清除，暂停保留。" or "精确已学ID；空白=本技能，不按名称或最高等级推断。",8,cy-112,370)
+      end
      end
     end
    end

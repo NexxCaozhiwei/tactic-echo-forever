@@ -405,13 +405,16 @@ function C:Sample(e,state,provided)
   local action=state.actions["custom_" .. i]
   if action then
    action.conditionObservations={}
-   for _,strategy in ipairs(row.strategies or {}) do for _,condition in ipairs(strategy.conditions) do
+   for si,strategy in ipairs(row.strategies or {}) do for ci,condition in ipairs(strategy.conditions) do
     if #action.conditionObservations<16 then
      local id=condition.spellID or row.spellID
-     local observation={kind=condition.kind,spellID=id,result=self:StrategyCondition(state,row,i,condition)}
+     local observation={kind=condition.kind,spellID=id,strategyIndex=si,conditionIndex=ci,result=self:StrategyCondition(state,row,i,condition)}
      if condition.kind=="cdmBuff" or condition.kind=="cdmCooldown" then
       local probe=action.strategyCDM and action.strategyCDM[(condition.kind=="cdmBuff" and "buff:" or "cooldown:") .. id]
       observation.reason=probe and probe.reason or "CDM_FRAME_MISSING"
+      if probe then
+       for _,field in ipairs({"catalogEntryCount","frameScanCount","catalogMatchCount","frameMatchCount","catalogSpellIDs"}) do observation[field]=probe[field] end
+      end
      end
      if condition.kind=="targetType" then observation.text=state.targetType end
      if condition.kind=="comboPoints" then local p=state.comboPointProbe; observation.number=p and p.value; observation.reason=state.classToken~="ROGUE" and "CLASS_UNSUPPORTED" or p and p.reason or "UNKNOWN_COMBO_POINTS" end

@@ -649,6 +649,24 @@ class WindowsPhysicalInputMonitor:
         return False
 
     # All mouse input is intentionally ignored by the approved policy.
+    def is_key_physically_down(self, key: str) -> bool | None:
+        # 不改变接管白名单；只给异常恢复提供真实键盘所有权证据。
+        if self.health_reason() is not None:
+            return None
+        if key == "BUTTON3":
+            # 没有鼠标钩子时，只将系统已抬起视为可清理；按下来源仍未知。
+            api = self._native_api
+            getter = getattr(getattr(api, "user32", None), "GetAsyncKeyState", None)
+            try:
+                return None if not callable(getter) or getter(0x04) & 0x8000 else False
+            except Exception:
+                return None
+        with self._lock:
+            for vk in self._active_keyboard_vks:
+                if _MODIFIER_VKS.get(vk) == key or _vk_to_key(vk) == key:
+                    return True
+            return False
+
     def observe_mouse_button(self, *, flags: int = 0) -> bool:
         return False
 

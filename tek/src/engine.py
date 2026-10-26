@@ -68,6 +68,8 @@ class TEKEngine:
         self.failure_tracker = failure_tracker or DispatchFailureTracker()
         self.physical_input_guard = physical_input_guard
         self.physical_input_monitor = physical_input_monitor
+        if self.dispatcher_backend == "windows_sendinput" and hasattr(self.input_dispatcher, "physical_key_checker"):
+            self.input_dispatcher.physical_key_checker = getattr(physical_input_monitor, "is_key_physically_down", None)
 
     def _runtime_diagnostics(self) -> dict:
         diagnostics = {

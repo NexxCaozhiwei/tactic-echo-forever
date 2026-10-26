@@ -122,9 +122,11 @@ class INPUT(ctypes.Structure):
 class WindowsSendInputDispatcher:
     backend = "windows_sendinput"
 
-    def __init__(self, user32=None, kernel32=None):
+    def __init__(self, user32=None, kernel32=None, physical_key_checker=None):
         self.user32 = user32 or ctypes.windll.user32
         self.kernel32 = kernel32 or ctypes.windll.kernel32
+        self.physical_key_checker = physical_key_checker
+        self._unreleased_keys = []
         try:
             self.user32.SendInput.argtypes = (UINT, ctypes.POINTER(INPUT), ctypes.c_int)
             self.user32.SendInput.restype = UINT
@@ -138,6 +140,11 @@ class WindowsSendInputDispatcher:
                 pass
 
     def dispatch(self, plan: InputPlan) -> DispatchResult:
+        if self._unreleased_keys and plan.binding != "release_modifiers":
+            recovery = self.release_modifiers()
+            return DispatchResult(False, self.backend,
+                "input_recovery_completed_wait_fresh_frame" if recovery.sent else recovery.reason,
+                recovery.events_sent)
         inputs = (INPUT * len(plan.events))()
         for index, event in enumerate(plan.events):
             if event.event == "wheel":
@@ -167,15 +174,33 @@ class WindowsSendInputDispatcher:
                 dwExtraInfo=0,
             )
 
+        if plan.binding == "release_modifiers":
+            # 构造输入后再核对一次，避免构造期间玩家开始按住同键。
+            for event in plan.events:
+                try:
+                    held = self.physical_key_checker(event.key) if callable(self.physical_key_checker) else None
+                except Exception:
+                    held = None
+                if held is not False:
+                    return DispatchResult(False, self.backend, "input_recovery_wait_physical_release", 0)
         try:
             sent = self.user32.SendInput(len(inputs), inputs, ctypes.sizeof(INPUT))
         except Exception as error:
+            # 异常时接受数量未知，仅登记本计划可能按下的键，后续有界恢复。
+            for event in plan.events:
+                if event.event == "down" and event.key not in self._unreleased_keys:
+                    self._unreleased_keys.append(event.key)
             return DispatchResult(
                 sent=False,
                 backend=self.backend,
                 reason=f"sendinput_exception:{type(error).__name__}:{error}",
                 events_sent=0,
             )
+        for event in plan.events[:sent]:
+            if event.event == "down" and event.key not in self._unreleased_keys:
+                self._unreleased_keys.append(event.key)
+            elif event.event == "up" and event.key in self._unreleased_keys:
+                self._unreleased_keys.remove(event.key)
         if sent != len(inputs):
             last_error = self.kernel32.GetLastError() if hasattr(self.kernel32, "GetLastError") else 0
             return DispatchResult(
@@ -193,5 +218,21 @@ class WindowsSendInputDispatcher:
         )
 
     def release_modifiers(self, plan: InputPlan | None = None) -> DispatchResult:
-        events = tuple(KeyEvent(key=key, event="up") for key in ("CTRL", "ALT", "SHIFT", "WIN"))
-        return self.dispatch(InputPlan(binding="release_modifiers", events=events))
+        if not self._unreleased_keys:
+            return DispatchResult(True, self.backend, "input_recovery_not_needed", 0)
+        checker = self.physical_key_checker
+        events = []
+        for key in reversed(self._unreleased_keys):
+            try:
+                held = checker(key) if callable(checker) else None
+            except Exception:
+                held = None
+            if held is False:
+                events.append(KeyEvent(key=key, event="up"))
+        if not events:
+            return DispatchResult(False, self.backend, "input_recovery_wait_physical_release", 0)
+        events = tuple(events)
+        result = self.dispatch(InputPlan(binding="release_modifiers", events=events))
+        if result.sent and self._unreleased_keys:
+            return DispatchResult(False, self.backend, "input_recovery_wait_physical_release", result.events_sent)
+        return result

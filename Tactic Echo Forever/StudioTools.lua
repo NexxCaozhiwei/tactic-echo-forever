@@ -50,7 +50,18 @@ function U:StudioInsert(id,index)
  self:StudioMessage("请先选择列表循环、优先级或增益维护列表。"); return false
 end
 function U:RefreshStudioLibrary(force)
- if force or self.studioLibraryEngine~=self.engine or not self.studioLibraryCatalog then
+ local mode=self.studioCDMTarget and self.studioCDMTarget.kind or "learned"
+ local cdm=mode~="learned"
+ self:Paint(self.studioLibraryTitle,"SetText",cdm and (mode=="buff" and "CDM增益 · 默认技能ID" or "CDM冷却 · 默认技能ID") or "已学主动技能 · 精确ID")
+ self:Paint(self.studioLibraryFilterLabel,"SetText",cdm and "选择条目填写观察ID；保存后生效" or "仅显示动作条上的技能")
+ self:Paint(self.studioLibraryFilterLabel,"SetWidth",cdm and 336 or 240)
+ self.studioLibrary.tefTooltipTitle=cdm and "CDM公开目录" or "已学技能库"
+ self.studioLibrary.tefTooltipBody=cdm and "直接读取CDM默认技能ID；选入观察条件不改变施放技能或派发资格。" or "只收录公开确认的精确已学主动技能；新学技能后点击刷新。"
+ self:Paint(self.studioLibraryBarToggle,cdm and "Hide" or "Show")
+ if cdm and (force or (self.studioLibraryCatalogMode or "learned")~=mode or self.studioLibraryEngine~=self.engine or not self.studioLibraryCatalog) then
+  local catalog=T.APL.PublicConditions.CDMCatalog(mode)
+  self.studioLibraryCatalog=catalog.rows; self.studioLibraryPartial=catalog.partial; self.studioLibraryEngine=self.engine
+ elseif not cdm and (force or (self.studioLibraryCatalogMode or "learned")~=mode or self.studioLibraryEngine~=self.engine or not self.studioLibraryCatalog) then
   local rows,seen={},{}; local partial=false; local scanned=0
   local bank=S.Field(S.Field(Enum,"SpellBookSpellBank","table"),"Player","number")
   local spellType=S.Field(S.Field(Enum,"SpellBookItemType","table"),"Spell","number")
@@ -90,8 +101,9 @@ function U:RefreshStudioLibrary(force)
   table.sort(rows,function(a,b) if a.name==b.name then return a.spellID<b.spellID end; return a.name<b.name end)
   self.studioLibraryCatalog=rows; self.studioLibraryEngine=self.engine; self.studioLibraryPartial=partial
  end
+ self.studioLibraryCatalogMode=mode
  local got,raw=self:Invoke(self.studioLibrarySearch,"GetText"); local query=(got and S.Public(raw,"string") or ""):lower()
- if self.studioLibraryOnlyBar and (force or not self.studioLibraryBarIDs or self.studioLibraryBarEngine~=self.engine) then
+ if not cdm and self.studioLibraryOnlyBar and (force or not self.studioLibraryBarIDs or self.studioLibraryBarEngine~=self.engine) then
   local ids={}
   -- 仅在开启筛选、重新打开或手动刷新时扫描；只接受现有解析器确认的精确ID。
   for slot=1,180 do
@@ -102,7 +114,7 @@ function U:RefreshStudioLibrary(force)
  end
  local matches={}
  for _,row in ipairs(self.studioLibraryCatalog) do
-  if (not self.studioLibraryOnlyBar or self.studioLibraryBarIDs[row.spellID])
+  if (cdm or not self.studioLibraryOnlyBar or self.studioLibraryBarIDs[row.spellID])
    and (query=="" or row.name:lower():find(query,1,true) or tostring(row.spellID):find(query,1,true)) then matches[#matches+1]=row end
  end
  self.studioLibraryMatches=matches
@@ -117,23 +129,58 @@ function U:PaintStudioLibraryRows()
   self:Paint(w.frame,entry and "Show" or "Hide")
   if entry then
    self:Paint(w.icon,"SetTexture",entry.icon); self:Paint(w.name,"SetText",self:ShortLabel(entry.name,14))
-   self:Paint(w.id,"SetText","ID " .. entry.spellID .. " · " .. (entry.rank and ("等级 " .. entry.rank) or "等级未知"))
-   w.frame.tefTooltipTitle=entry.name; w.frame.tefTooltipBody="精确ID " .. entry.spellID .. "；点击＋追加，或拖入技能行之前。"
+   local cdm=self.studioCDMTarget~=nil
+   self:Paint(w.id,"SetText",(cdm and "观察ID " or "ID ") .. entry.spellID .. " · " .. (cdm and entry.category or entry.rank and ("等级 " .. entry.rank) or "等级未知"))
+   self:Paint(w.add,"SetText",cdm and "选" or "＋")
+   w.frame.tefTooltipTitle=entry.name; w.frame.tefTooltipBody="精确ID " .. entry.spellID .. (cdm and "；CDM目录默认身份，点击选入观察条件，保存后生效。" or "；点击＋追加，或拖入技能行之前。")
   end
  end
- self:Paint(self.studioLibraryInfo,"SetText",#matches .. "项" .. (self.studioLibraryOnlyBar and " · 仅动作条" or "") .. " · 滚轮或右侧滚动条" .. (self.studioLibraryPartial and " · 部分身份未知" or ""))
+ local summary=#matches .. "项" .. (not self.studioCDMTarget and self.studioLibraryOnlyBar and " · 仅动作条" or "") .. " · 滚轮或右侧滚动条" .. (self.studioLibraryPartial and " · 部分身份未知" or "")
+ if self.studioCDMTarget and #matches==0 then summary="无匹配CDM条目；清空搜索或配置后刷新" end
+ self:Paint(self.studioLibraryInfo,"SetText",summary)
  self.studioLibraryScrolling=true
  self:Paint(self.studioLibraryBar,"SetMinMaxValues",0,math.max(0,#matches-(self.studioLibraryVisible or 8)))
  self:Paint(self.studioLibraryBar,"SetValue",offset)
  self.studioLibraryScrolling=false
 end
 function U:CloseStudioLibrary()
+ if self.studioCDMTarget then self.studioLibraryCatalog=nil; self.studioLibraryCatalogMode=nil end
+ self.studioCDMTarget=nil
  self.studioLibraryOpen=false; self.studioLibraryDragging=nil
  self.studioLibraryBarIDs=nil
  self:Paint(self.studioLibrarySearch,"ClearFocus"); self:Paint(self.studioLibrary,"Hide")
  for _,w in ipairs(self.studioLibraryWidgets or {}) do self:Paint(w.frame,"SetAlpha",1) end
  self:HideStudioInsertion(); self:HideControlTooltip()
 
+end
+
+function U:OpenCDMCatalog(condition)
+ if not self.studioLibrary or not condition or (condition.kind~="cdmBuff" and condition.kind~="cdmCooldown") or not self:CommitCustomNumbers() then return false end
+ local row=self:CustomRow(); if not row then return false end
+ self.studioCDMTarget={engine=self.engine,row=row,condition=condition,conditionKind=condition.kind,
+  kind=condition.kind=="cdmBuff" and "buff" or "cooldown",page=self.page,source=self.strategySource}
+ self.studioLibraryDragging=nil; self.studioLibraryOffset=0; self.studioLibraryOpen=true
+ self.studioLibraryCatalog=nil
+ self:Paint(self.studioLibrarySearch,"SetText",""); self:RefreshStudioLibrary(true); self:LayoutSettings()
+ return true
+end
+function U:SelectCDMCatalogEntry(entry)
+ local target=self.studioCDMTarget
+ if not target or target.engine~=self.engine or target.row~=self:CustomRow() or target.page~=self.page or target.source~=self.strategySource
+  or target.condition.kind~=target.conditionKind then self:CustomMessage("观察条件已变化，请重新打开CDM目录。"); return false end
+ local member=false
+ for _,strategy in ipairs(target.row.strategies or {}) do for _,condition in ipairs(strategy.conditions) do if condition==target.condition then member=true end end end
+ local id=entry and S.ID(entry.spellID); local present=false
+ if id then for _,row in ipairs(T.APL.PublicConditions.CDMCatalog(target.kind).rows) do if row.spellID==id then present=true end end end
+ if not member or not present then self:CustomMessage("条目已变化或目录身份未知，请刷新CDM目录。"); return false end
+ if not self:CommitCustomNumbers() then return false end
+ local previous=target.condition.spellID
+ target.condition.spellID=id
+ if self:StoreSequencePolicy()==false then target.condition.spellID=previous; self:CustomMessage("草稿校验失败，未选用CDM条目。"); return false end
+ if self.strategySource=="groupStep" then self.groupDirty=true end
+ self:CloseStudioLibrary(); self.customFormIndex=nil; self:RefreshStrategyForm()
+ self:CustomMessage("已选用CDM默认观察ID " .. id .. "；仅修改草稿，点击保存生效。")
+ return true
 end
 function U:StudioProbeRows()
  if not self:CommitSequenceCounts() or not self:CommitCustomNumbers() then return false end
@@ -274,15 +321,18 @@ function U:CreateStudioTools()
  self:Paint(self.studioLibrary,"SetBackdropColor",.025,.055,.095,1)
  self:Paint(self.studioLibrary,"SetBackdropBorderColor",.34,.58,.78,1)
  self:BindControlTooltip(self.studioLibrary,"已学技能库","只收录公开确认的精确已学主动技能；新学技能后点击刷新。")
- self:Paint(self:Text(self.studioLibrary,12,-12,224,"GameFontNormal"),"SetText","已学主动技能 · 精确ID")
+ self.studioLibraryTitle=self:Text(self.studioLibrary,12,-12,224,"GameFontNormal")
+ self:Paint(self.studioLibraryTitle,"SetText","已学主动技能 · 精确ID")
  self:CreateActionButton(self.studioLibrary,"关闭",276,-8,72,function() self:CloseStudioLibrary(); self:LayoutSettings() end)
  self:CreateHintText(self.studioLibrary,"搜索技能名或SpellID",12,-52,280)
  self.studioLibrarySearch=self:SequenceInput(self.studioLibrary,12,-76,248); self:Paint(self.studioLibrarySearch,"SetMaxLetters",80)
  self:Paint(self.studioLibrarySearch,"SetScript","OnTextChanged",function() self.studioLibraryOffset=0; if self.studioLibraryCatalog then self:RefreshStudioLibrary(false) end end)
  self:CreateActionButton(self.studioLibrary,"刷新",272,-76,76,function() self:RefreshStudioLibrary(true) end)
- self:Paint(self:Text(self.studioLibrary,12,-118,240),"SetText","仅显示动作条上的技能")
+ self.studioLibraryFilterLabel=self:Text(self.studioLibrary,12,-118,240)
+ self:Paint(self.studioLibraryFilterLabel,"SetText","仅显示动作条上的技能")
  -- 纯视图开关，不使用会标记技能组草稿变更的策略开关。
  self.studioLibraryBarToggle=self:CreateActionButton(self.studioLibrary,"关闭",263,-112,85,function()
+  if self.studioCDMTarget then return end
   self.studioLibraryOnlyBar=not self.studioLibraryOnlyBar; self.studioLibraryBarIDs=nil; self.studioLibraryOffset=0
   self:RefreshStudioLibrary(false)
  end)
@@ -322,11 +372,12 @@ function U:CreateStudioTools()
   local ok,icon=self:Invoke(frame,"CreateTexture",nil,"ARTWORK"); if ok then self:StudioAnchor(icon,frame,8,-8,32,32) end
   local w={frame=frame,icon=icon,name=self:Text(frame,48,-6,216),id=self:Text(frame,48,-28,216,"GameFontHighlightSmall")}
   self:Paint(w.name,"SetWordWrap",false)
-  self:CreateActionButton(frame,"＋",272,-10,32,function() if w.entry then self:StudioInsert(w.entry.spellID) end end)
+  w.add=self:CreateActionButton(frame,"＋",272,-10,32,function() if w.entry then if self.studioCDMTarget then self:SelectCDMCatalogEntry(w.entry) else self:StudioInsert(w.entry.spellID) end end end)
   self:Paint(frame,"EnableMouse",true); self:Paint(frame,"RegisterForDrag","LeftButton")
   self:BindControlTooltip(frame,"已学技能","点击＋追加，拖入主编辑器插入；不会改变技能绑定。")
-  self:Paint(frame,"SetScript","OnDragStart",function() if w.entry then self.studioLibraryDragging=w.entry.spellID; self:Paint(frame,"SetAlpha",.5) end end)
+  self:Paint(frame,"SetScript","OnDragStart",function() if w.entry and not self.studioCDMTarget then self.studioLibraryDragging=w.entry.spellID; self:Paint(frame,"SetAlpha",.5) end end)
   self:Paint(frame,"SetScript","OnDragStop",function() self:Guard(function()
+   if self.studioCDMTarget then self.studioLibraryDragging=nil; self:Paint(frame,"SetAlpha",1); return end
    local id=self.studioLibraryDragging; self.studioLibraryDragging=nil; self:Paint(frame,"SetAlpha",1); self:HideStudioInsertion()
    local _,source=self:StudioActiveRows(); local index=self:StudioDropTarget(source)
    local overOK,over=S.Call("MouseIsOver",self.studioLibrary); if overOK and S.Public(over,"boolean")==true then index=nil end

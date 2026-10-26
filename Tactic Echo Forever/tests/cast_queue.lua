@@ -24,6 +24,18 @@ local function fixture(repeats)
     now=12.29
 end
 local function tick() T.Runtime:Reconcile(); T.Dispatch:TickContinuous() end
+test("queue_rejects_other_channel_ranks_and_unknown_types",function()
+ fixture(); now=12.31
+ local info=C_Spell.GetSpellInfo
+ for _,case in ipairs({{5144,"奥术飞弹"},{400001,"暴风雪"},{400002,"未知技能"}}) do
+  T.engine.steps[2].spellID=case[1]
+  C_Spell.GetSpellInfo=function() return {name=case[2]} end
+  eq(T.Dispatch:CastQueueWindow(),nil)
+ end
+ T.engine.steps[2].spellID=205; C_Spell.GetSpellInfo=info
+ assert(T.Dispatch:CastQueueWindow())
+end)
+
 test("queue_next_disabled_policy_never_publishes_and_current_receipt_survives",function()
     fixture(); now=12.31; T.engine.steps[2].enabled=false
     tick(); eq(T.Dispatch.castQueue,nil); eq(T.Dispatch:Packet(),nil); eq(T.engine.receiptSerial or 0,0)

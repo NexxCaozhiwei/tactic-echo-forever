@@ -1,0 +1,14 @@
+R01 | combat | False | maintenance | None | token | 5 | state | running
+R02 | inputRequireReady | True | cleanedRequireReady | None | ready | False | allowed | True | reason | CUSTOM_CONDITIONS_TRUE
+R03 | group | True | childIndex | 2 | childID | 2136 | reason | RUNTIME_RUNNING
+R04 | queueIndex | 2 | nextID | 5144 | reason | WINDOW_OPEN
+R05 | bothViewers | True | iconStillVisible | True | missingUnrelatedBar | None | reason | CDM_VIEWER_UNAVAILABLE
+R06 | before | 8 | unknownReasonRetained | False
+R09 | token | 5 | categoryCallsInOnePacket | 4
+R10 | consumedBeforeHUD | True | consumedAfterHUD | None | index | 1
+R11 | defaultMode | auto | autoStart | True | ordinaryContinuous | True
+R12 | disabledInvalidMaintenanceLoginOK | False | error | ...tic-echo-forever/Tactic Echo Forever/Maintenance.lua:39: table index is nil
+R07b | input_auto_start=False | normalized_auto_start=True
+R07 | OverflowError | cannot convert float infinity to integer
+R08 | partial=1 | recovery=[(17, 2), (18, 2), (16, 2), (91, 2)] | main_up_present=False
+TEF simulated tests: 336 passed

@@ -10,6 +10,53 @@ local function setup()
  return e
 end
 local function spell(id) return {spellID=id,name="技能 " .. id,matchIDs={id},repeatCount=1,enabled=true,strategies={}} end
+test("CDM默认列表选用只修改当前观察草稿且不受动作条筛选限制",function()
+ local e=setup(); assert(U:SelectStudioRule("apl",1))
+ U:ChangeCustomStrategy(function(row) row.strategies={{mode="use",conditions={{kind="cdmBuff",value=false,spellID=1459}}}} end)
+ local condition=U:CustomRow().strategies[1].conditions[1]
+ local old=C_CooldownViewer
+ C_CooldownViewer={GetCooldownViewerCategorySet=function(cat) return cat==2 and {10} or {} end,
+  GetCooldownViewerCooldownInfo=function() return {spellID=1460} end}
+ local generation,intent=e.generation,T.Runtime.intent
+ U.studioLibraryOnlyBar=true
+ assert(U:OpenCDMCatalog(condition)); eq(#U.studioLibraryMatches,1)
+ eq(U.studioLibraryMatches[1].spellID,1460); eq(U.studioLibraryBarToggle.shown,false)
+ U.studioLibraryWidgets[1].add.scripts.OnClick()
+ eq(condition.spellID,1460); eq(U.studioCDMTarget,nil); eq(U.studioLibraryOnlyBar,true)
+ eq(#C:Rows(e),0); eq(e.generation,generation); eq(T.Runtime.intent,intent)
+ assert(U:OpenCDMCatalog(condition))
+ C_CooldownViewer.GetCooldownViewerCategorySet=function() return {} end
+ eq(U:SelectCDMCatalogEntry({spellID=1459}),false); eq(condition.spellID,1460)
+ U:CloseStudioLibrary(); C_CooldownViewer=old; U.studioLibraryOnlyBar=false
+end)
+
+test("CDM目录选择拒绝已经切换的条件身份",function()
+ setup(); U:SelectStudioRule("apl",1)
+ U:ChangeCustomStrategy(function(row) row.strategies={{mode="use",conditions={{kind="cdmCooldown",value=false}}}} end)
+ local row=U:CustomRow(); local condition=row.strategies[1].conditions[1]
+ assert(U:OpenCDMCatalog(condition))
+ row.strategies={}
+ eq(U:SelectCDMCatalogEntry({spellID=143}),false); eq(condition.spellID,nil)
+ U:CloseStudioLibrary()
+end)
+
+test("列表循环及组内CDM选择保存到各自草稿",function()
+ setup(); U:ShowPage("profiles"); U:WriteDraft({spell(143)}); U:OpenSequencePolicy(1)
+ local old=C_CooldownViewer
+ C_CooldownViewer={GetCooldownViewerCategorySet=function(cat) return cat==2 and {10} or {} end,
+  GetCooldownViewerCooldownInfo=function() return {spellID=1460} end}
+ U:ChangeCustomStrategy(function(row) row.strategies={{mode="use",conditions={{kind="cdmBuff",value=false}}}} end)
+ local condition=U:CustomRow().strategies[1].conditions[1]
+ assert(U:OpenCDMCatalog(condition)); assert(U:SelectCDMCatalogEntry({spellID=1460}))
+ eq(U:DraftRows()[1].strategies[1].conditions[1].spellID,1460)
+ setup(); U:AddSkillGroup("apl"); U:GroupAdd(143); U:SelectStudioRule("group",1)
+ U:ChangeCustomStrategy(function(row) row.strategies={{mode="use",conditions={{kind="cdmBuff",value=false}}}} end)
+ condition=U:CustomRow().strategies[1].conditions[1]
+ assert(U:OpenCDMCatalog(condition)); assert(U:SelectCDMCatalogEntry({spellID=1460}))
+ eq(U.groupDraft.steps[1].strategies[1].conditions[1].spellID,1460); eq(U.groupDirty,true)
+ U:CloseSkillGroup(true); C_CooldownViewer=old
+end)
+
 test("规则选择直接绑定嵌入Inspector且保留原保存接口",function()
  local e=setup(); assert(U:SelectStudioRule("apl",2)); eq(U:CustomRow(),U.customDraft[2]); eq(U.strategyPanel.parent,U.studioInspector)
  U:ChangeCustomStrategy(function(r) r.strategies={{mode="use",conditions={{kind="range",value=true}}}} end)

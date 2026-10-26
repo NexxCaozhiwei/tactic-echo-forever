@@ -69,12 +69,26 @@ class AppSettings:
         if not isinstance(data, dict):
             return cls.defaults()
         allowed = {field.name for field in fields(cls)}
+        defaults = cls.defaults()
         normalized = {key: value for key, value in data.items() if key in allowed}
+        # 单字段损坏只恢复该字段，不覆盖其他有效的用户偏好。
+        for key, value in tuple(normalized.items()):
+            default = getattr(defaults, key)
+            if isinstance(default, bool):
+                if not isinstance(value, bool):
+                    normalized[key] = False if key == "auto_start_ui_linked" else default
+            elif isinstance(default, int):
+                try:
+                    if isinstance(value, bool):
+                        raise ValueError("boolean_is_not_integer_setting")
+                    normalized[key] = int(value)
+                except (TypeError, ValueError, OverflowError):
+                    normalized[key] = default
         # 0.9.39 shortened the product recovery defaults. Migrate only the exact
         # legacy custom triplet so deliberately tuned custom values remain intact.
         try:
             stored_schema = int(data.get("schema_version", data.get("schemaVersion", 1)))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             stored_schema = 1
         if stored_schema < SETTINGS_SCHEMA_VERSION:
             try:
@@ -84,7 +98,7 @@ class AppSettings:
                     and int(normalized.get("manual_priority_custom_freshness_frames", 2)) == 2
                     and int(normalized.get("manual_priority_custom_replay_guard_ms", 1000)) == 1000
                 )
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
                 is_legacy_triplet = False
             if is_legacy_triplet:
                 normalized.update({
@@ -96,7 +110,7 @@ class AppSettings:
         try:
             settings = cls(**normalized)
             return settings.normalized()
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return cls.defaults()
 
     def normalized(self) -> "AppSettings":
@@ -182,7 +196,7 @@ def _normalize_window_coordinate(value) -> int | None:
         return None
     try:
         return max(-32768, min(32767, int(value)))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
 
 
@@ -211,7 +225,7 @@ def _normalize_signal_layout_cache(value) -> dict | None:
             "block_gap": int(layout.get("block_gap", 0)),
             "block_count": int(layout.get("block_count", 20)),
         }
-    except (KeyError, TypeError, ValueError):
+    except (KeyError, TypeError, ValueError, OverflowError):
         return None
     floats = (
         normalized_relative["x_ratio"], normalized_relative["y_ratio"],
@@ -270,8 +284,8 @@ class SettingsStore:
 
     def load(self) -> AppSettings:
         try:
-            data = json.loads(self.path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError, TypeError):
+            data = json.loads(self.path.read_text(encoding="utf-8-sig"))
+        except (OSError, UnicodeError, json.JSONDecodeError, TypeError):
             return AppSettings.defaults()
         return AppSettings.from_dict(data)
 

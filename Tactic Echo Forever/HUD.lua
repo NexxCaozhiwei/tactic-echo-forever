@@ -3,6 +3,9 @@ local H, U, S = {}, TEF.UI, TEF.Safety
 TEF.HUD = H
 -- Presentation only: retain the Runtime reason as the diagnostic source.
 local blockReasons={
+    CONTINUOUS_WAIT_CURRENT_RECEIPT={"回执", "已确认起手，停止重发并等待精确成功回执"},
+    CONTINUOUS_RETRY_DELAY={"重试", "施法失败，等待配置的重试间隔"},
+    CONTINUOUS_RETRY_CLOCK_UNKNOWN={"重试", "重试时钟未知，暂不派发"},
     CONTINUOUS_CAST_PRESENT_OR_UNKNOWN={"施法", "正在施法、引导，或施法状态未知"},
     APL_WAIT_CURRENT_RECEIPT={"回执", "等待当前技能的施法回执"},
     SKIP_WAIT_CURRENT_RECEIPT={"回执", "等待当前技能的施法回执"},
@@ -47,10 +50,14 @@ function H:BlockCategory(reason)
 end
 -- 文案只解释运行状态；公开施法显示不授予输入资格。
 local statusReasons={
+ CONTINUOUS_WAIT_CURRENT_RECEIPT={"等待回执","已确认起手，不重复派发当前技能"},
+ CONTINUOUS_RETRY_DELAY={"等待重试","施法失败，等待配置的重试间隔"},
+ CONTINUOUS_RETRY_CLOCK_UNKNOWN={"重试时钟未知","等待公开时钟后重新计时"},
  RUNTIME_SETTINGS_STANDBY={"设置中","关闭设置后重新确认派发"},
  RUNTIME_COMBAT_UNKNOWN={"战斗状态未知","暂不派发，等待公开战斗状态"},
  RUNTIME_PROFILE_UNCONFIGURED={"方案未配置","请选择有效方案"},
  RUNTIME_AUTO_STANDBY={"自动待命","等待进入战斗"},
+ RUNTIME_MANUAL_START_REQUIRED={"手动待命","脱战派发需手动开启"},
  RUNTIME_OUT_OF_COMBAT_STOP={"脱战待命","战斗来源等待进入战斗"},
  MAINTENANCE_IDLE={"增益已维护","当前没有需要补充的增益"},
  MANUAL_TAKEOVER_PAUSED={"手动接管","等待手动接管结束"},

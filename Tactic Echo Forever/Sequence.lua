@@ -115,7 +115,7 @@ function Engine.New(config, db)
                 local session, generation = S.ID(r.session), S.ID(r.generation)
                 local current, following = S.ID(r.current), S.ID(r.next)
                 local event = S.Public(r.event, "string")
-                if kind and kinds[kind] and reason and #reason <= 80 and reason:match("^[A-Z_]+$")
+                if kind and kinds[kind] and reason and #reason <= 80 and reason:match("^[A-Za-z_][A-Za-z0-9_:]*$")
                     and session and generation and current and following then
                     clean.diagnostics[#clean.diagnostics+1] = {kind=kind,reason=reason,
                         session=session,generation=generation,current=current,next=following,spellID=S.ID(r.spellID),
@@ -127,7 +127,8 @@ function Engine.New(config, db)
                         castCount=S.Field(r,"castCount","number"),requiredCasts=S.Field(r,"requiredCasts","number"),
                         groupName=TEF.SkillGroups:LogName(r),groupRound=TEF.SkillGroups:LogNumber(r,"groupRound",99),groupIndex=TEF.SkillGroups:LogNumber(r,"groupIndex",8),
                         research=TEF.Research and TEF.Research.CleanSummary(S.Field(r,"research","table")) or nil,
-                        apl=TEF.APL and TEF.APL.Trace.Clean(S.Field(r,"apl","table")) or nil}
+                        apl=TEF.APL and TEF.APL.Trace.Clean(S.Field(r,"apl","table")) or nil,
+                        policy=TEF.APL and TEF.APL.Trace.Clean(S.Field(r,"policy","table")) or nil}
                 end
             end
         end
@@ -166,7 +167,7 @@ function Engine.New(config, db)
             local value=S.Field(raw,key,"string")
             if value and #value<=128 then row[key]=value end
         end
-        for _,key in ipairs({"session","generation","cycle","request","time","spellID","index","count","receiptSerial","queueRequest","queueIndex","nextIndex","queueSpellID","queueSerial","lead","clientWindow","remaining","effectiveLead"}) do
+        for _,key in ipairs({"session","generation","cycle","request","time","spellID","index","count","receiptSerial","queueRequest","queueIndex","nextIndex","queueSpellID","queueSerial","lead","retryDelay","clientWindow","remaining","effectiveLead"}) do
             row[key]=S.Field(raw,key,"number")
         end
         if row.reason and row.session then clean.queueDiagnostics[#clean.queueDiagnostics+1]=row end

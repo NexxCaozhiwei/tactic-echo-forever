@@ -53,7 +53,9 @@ function E:UsageEligibility(index)
     local generation,current,serial=self.generation,self.index,self.receiptSerial or 0
     if not self:ObserveUsageCombat() then return nil,"SEQUENCE_USAGE_CONTEXT_UNKNOWN" end
     local u=self.usage
-    local context={policy=step.usagePolicy,epoch=u.epoch,index=index or self.index}
+    -- 稳定配置身份隔离父列表与组内同索引；重建组轮次仍复用原步骤额度。
+    local context={policy=step.usagePolicy,epoch=u.epoch,index=index or self.index,
+        key=TEF.APL.Custom.PolicyIdentities[step] or step}
     if step.usagePolicy=="target" then
         context.target=self:UsageTargetIdentity()
         if not context.target then return nil,"SEQUENCE_USAGE_CONTEXT_UNKNOWN" end
@@ -62,13 +64,13 @@ function E:UsageEligibility(index)
         return nil,"SEQUENCE_USAGE_CONTEXT_UNKNOWN"
     end
     local used=step.usagePolicy=="combat" and u.combatUsed or u.targets[context.target]
-    if used and used[context.index] then return false,"SEQUENCE_USAGE_ALREADY_DONE",context end
+    if used and used[context.key] then return false,"SEQUENCE_USAGE_ALREADY_DONE",context end
     if step.usagePolicy=="target" and not used and u.targetCount>=256 then return nil,"SEQUENCE_USAGE_CAPACITY" end
     return true,nil,context
 end
 function E:SameUsageContext(a,b)
     if not a and not b then return true end
-    return a and b and a.policy==b.policy and a.index==b.index
+    return a and b and a.policy==b.policy and a.index==b.index and a.key==b.key
         and (a.policy=="target" and a.target==b.target or a.policy=="combat" and a.epoch==b.epoch) or false
 end
 function E:MarkUsage(context)
@@ -86,7 +88,7 @@ function E:MarkUsage(context)
             used={}; u.targets[context.target]=used; u.targetCount=u.targetCount+1
         end
     end
-    used[context.index]=true; self.usageProgress=nil
+    used[context.key]=true; self.usageProgress=nil
 end
 function E:PrepareUsage()
     if not self:HasUsagePolicy() then return true end

@@ -5,6 +5,69 @@ local function test(name,fn) fn(); n=n+1 end
 local function spell(id,count,skip) return {spellID=id,name="技能 " .. id,matchIDs={id},repeatCount=count or 1,skipUnavailable=skip,enabled=true,strategies={}} end
 local function group() return {name="技能组A",rounds=1,steps={spell(143),spell(205,2)}} end
 local function receipt(id,guid) F.receipt("UNIT_SPELLCAST_SENT",id,guid); F.receipt("UNIT_SPELLCAST_SUCCEEDED",id,guid) end
+test("usage_scopes_isolate_parent_and_groups_and_preserve_rounds",function()
+ for _,policy in ipairs({"target","combat"}) do
+  local e=F.runtime(); assert(T.Recommendation:SetSource(e,"manual","single"))
+  local a,b=group(),group(); a.rounds=2
+  a.steps={spell(205),spell(2136)}; b.steps={spell(205),spell(2136)}
+  a.steps[1].usagePolicy=policy; b.steps[1].usagePolicy=policy
+  local parent=spell(143); parent.usagePolicy=policy
+  assert(T.Profiles:Save(e,"single",{parent,T.SkillGroups:Row(a),T.SkillGroups:Row(b)})); e:SetLoop(false)
+  T.Runtime:SetIntent(true); receipt(143,"scope-parent-" .. policy); T.Runtime:Reconcile()
+  assert(e.groupRun); eq(e.index,1); eq(e.steps[1].spellID,205)
+  receipt(205,"scope-a-" .. policy); T.Runtime:Reconcile()
+  receipt(2136,"scope-a-tail-" .. policy); T.Runtime:Reconcile(); T.Runtime:Reconcile()
+  eq(e.groupRun.round,2); eq(e.index,2)
+  receipt(2136,"scope-a-round2-" .. policy); T.Runtime:Reconcile(); T.Runtime:Reconcile()
+  assert(e.groupRun); eq(e.groupRun.index,3); eq(e.index,1); eq(e.steps[1].spellID,205)
+  T.Runtime:Stop(); T.Runtime:SetIntent(true); eq(e.index,1)
+  T.Runtime:Stop()
+ end
+end)
+
+test("hud_preview_cannot_rearm_edge_or_replace_runtime_snapshot",function()
+ local e=F.runtime(); assert(T.Recommendation:SetSource(e,"manual","single"))
+ local first,other=spell(143),spell(205)
+ other.behavior={trigger="edge",scope="entry",after="resume"}
+ other.strategies={{mode="use",conditions={{kind="moving",value=true}}}}
+ assert(T.Profiles:Save(e,"single",{first,other})); T.Runtime:SetIntent(true)
+ IsPlayerMoving=function() return false end
+ T.APL.Custom:PolicySucceeded(e,e.steps[2])
+ local record=T.APL.Custom:PolicyRecord(e,e.steps[2],false)
+ local snapshot=T.Dispatch.manualPolicySnapshot
+ for _=1,3 do T.Recommendation:HUDSteps(e) end
+ eq(record.consumed,true); eq(T.Dispatch.manualPolicySnapshot,snapshot); eq(e.index,1)
+ T.Runtime:Stop()
+end)
+
+test("invalid_disabled_maintenance_does_not_break_initialization",function()
+ for _,rows in ipairs({{{spellID=0,enabled=false}},{{enabled=false}}}) do
+  local e=T.Engine.New(T.Config,{maintenance={MAGE={enabled=false,rows=rows}}})
+  eq(e.db.maintenance.MAGE.enabled,false); assert(e.db.maintenance.MAGE.rows[1].invalid)
+ end
+end)
+
+test("manual_strategy_unknown_evidence_survives_reload",function()
+ local e=F.runtime(); assert(T.Recommendation:SetSource(e,"manual","single"))
+ local row=spell(143); row.strategies={}
+ for i=1,2 do
+  local conditions={}; for j=1,8 do conditions[j]={kind="range",value=true} end
+  row.strategies[i]={mode="use",conditions=conditions}
+ end
+ row.strategies[3]={mode="use",conditions={{kind="moving",value=true}}}
+ assert(T.Profiles:Save(e,"single",{row})); IsPlayerMoving=function() return F.secret end
+ T.Runtime:SetIntent(true); eq(T.Runtime.reason,"UNKNOWN:custom:strategy")
+ local last=e.db.diagnostics[#e.db.diagnostics]
+ assert(last.policy); eq(last.policy.actions.custom_1.conditionObservations[1].kind,"range")
+ local restored=T.Engine.New(T.Config,e.db); local found
+ for _,r in ipairs(restored.db.diagnostics) do if r.reason=="UNKNOWN:custom:strategy" then found=r end end
+ assert(found and found.policy); eq(found.policy.actions.custom_1.conditionObservations[1].kind,"range")
+ eq(found.policy.actions.custom_1.conditionObservations[1].strategyIndex,1)
+ eq(found.policy.actions.custom_1.conditionObservations[1].conditionIndex,1)
+ eq(found.policy.policyBlock.strategyIndex,3); eq(found.policy.policyBlock.kind,"moving")
+ T.Runtime:Stop()
+end)
+
 test("manual_group_success_counts_and_returns_to_parent",function()
  local e=F.runtime(); assert(T.Recommendation:SetSource(e,"manual","single"))
  assert(T.Profiles:Save(e,"single",{T.SkillGroups:Row(group()),spell(143)})); e:SetLoop(false)

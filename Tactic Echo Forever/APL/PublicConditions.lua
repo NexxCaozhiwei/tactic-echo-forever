@@ -145,6 +145,35 @@ local categories={
  {kind="buff",value=2,viewer="BuffIconCooldownViewer"},
  {kind="buff",value=3,viewer="BuffBarCooldownViewer"}}
 local function key(kind,id) return kind .. ":" .. id end
+-- 仅供显式打开目录时选择观察身份；目录存在不授予技能或增益资格。
+function P.CDMCatalog(kind)
+ local result={rows={},partial=false}; local seen={}
+ if kind~="buff" and kind~="cooldown" then result.partial=true; return result end
+ for _,cat in ipairs(categories) do if cat.kind==kind then
+  local ok,raw=S.Call("C_CooldownViewer.GetCooldownViewerCategorySet",cat.value,true)
+  local list=ok and S.Public(raw,"table")
+  local measured,size=pcall(function() return list and #list end)
+  if not measured or not size or size>128 then result.partial=true
+  else for i=1,size do
+   local cooldownID=S.ID(S.Field(list,i,"number"))
+   local got,info
+   if cooldownID then got,info=S.Call("C_CooldownViewer.GetCooldownViewerCooldownInfo",cooldownID) end
+   local value,why
+   if got then value,why=S.Field(info,"spellID","number") end
+   local id=value and S.ID(value)
+   if id then
+    if not seen[id] then
+     local view=S.Spell(id,"技能 " .. id)
+     local row={spellID=id,name=view.name,icon=view.icon,cooldownID=cooldownID,
+      category=kind=="buff" and "CDM增益" or "CDM冷却"}
+     seen[id]=row; result.rows[#result.rows+1]=row
+    end
+   elseif not got or why~="NO_DATA" then result.partial=true end
+  end end
+ end end
+ table.sort(result.rows,function(a,b) if a.name==b.name then return a.spellID<b.spellID end; return a.name<b.name end)
+ return result
+end
 local function visible(frame)
  local method=frame and S.Field(frame,"IsVisible","function")
  if method then
@@ -154,6 +183,7 @@ local function visible(frame)
 end
 function P.CDM(rows)
  local requests,needed,out,skipped={},{},{},{}
+ local evidence,matched,frames={},{},{}
  for _,row in ipairs(rows) do
   if row.enabled and not row.invalid and row.cdmKind and row.cdmKind~="none" then
    local id=row.cdmSpellID or row.spellID; local k=key(row.cdmKind,id)
@@ -161,6 +191,8 @@ function P.CDM(rows)
   end
  end
  for _,cat in ipairs(categories) do if needed[cat.kind] then
+  local diagnostic=evidence[cat.kind]
+  if not diagnostic then diagnostic={entries=0,scanned=0,ids={},seen={}}; evidence[cat.kind]=diagnostic end
   local ok,list=S.Call("C_CooldownViewer.GetCooldownViewerCategorySet",cat.value,true)
   list=ok and S.Public(list,"table")
   local mappings,bad={},nil
@@ -168,6 +200,7 @@ function P.CDM(rows)
   if not measured or not size then bad="CDM_CATALOG_UNKNOWN"
   elseif size>128 then bad="CDM_CAPACITY"
   else
+   diagnostic.entries=diagnostic.entries+size
    for i=1,size do
     local id=S.ID(S.Field(list,i,"number"))
     if not id then bad="CDM_CATALOG_UNKNOWN"; break end
@@ -176,18 +209,26 @@ function P.CDM(rows)
     if not record then bad="CDM_MAPPING_UNKNOWN"; break end
     local raw,why=S.Field(record,"spellID","number")
     local spell=raw and S.ID(raw)
+    if spell and not diagnostic.seen[spell] then
+     diagnostic.seen[spell]=true
+     if #diagnostic.ids<16 then diagnostic.ids[#diagnostic.ids+1]=spell end
+    end
     -- Official spellID is nilable (for example an equipment entry). A
     -- public missing spellID cannot be a direct spell identity. Secret or
     -- malformed identity remains unknown, never a proxy match.
     if not spell and why~="NO_DATA" then bad="CDM_MAPPING_UNKNOWN"; break end
     -- Exact directory spellID only; overrides/linked spells are not identity.
-    if spell and requests[key(cat.kind,spell)] then mappings[id]=key(cat.kind,spell) end
+    if spell and requests[key(cat.kind,spell)] then
+     local k=key(cat.kind,spell); mappings[id]=k; matched[k]=(matched[k] or 0)+1
+    end
    end
   end
   local viewer=S.Field(_G,cat.viewer,"table")
   local pool=viewer and S.Field(viewer,"itemFramePool","table")
   local enumerate=pool and S.Field(pool,"EnumerateActive","function")
-  if not bad and enumerate then
+  if not bad and not next(mappings) then
+   -- 公开目录中没有本次请求：不扫描无关面板，也不让其缺失污染精确结果。
+  elseif not bad and enumerate then
    local got,iterator,state,var=pcall(enumerate,pool)
    iterator=got and S.Public(iterator,"function")
    if not iterator then bad="CDM_ENUMERATION_UNKNOWN"
@@ -199,6 +240,7 @@ function P.CDM(rows)
      if why=="NO_DATA" then break end
      if not frame then bad="CDM_FRAME_UNKNOWN"; break end
      if i>80 then bad="CDM_CAPACITY"; break end
+     diagnostic.scanned=diagnostic.scanned+1
      var=frame
      local id=S.ID(S.Field(frame,"cooldownID","number"))
      if not id then
@@ -210,6 +252,7 @@ function P.CDM(rows)
      if not id then skipped[cat.kind]=(skipped[cat.kind] or 0)+1 end
      local k=id and mappings[id]
      if k then
+      frames[k]=(frames[k] or 0)+1
       local shown=visible(frame)
       local active,classification
       if shown==true then active,classification=S.Field(frame,"isActive","boolean")
@@ -234,6 +277,12 @@ function P.CDM(rows)
  end end
  for k in pairs(requests) do
   local kind=k:match("^([a-z]+):")
+  local diagnostic=evidence[kind]
+  if diagnostic then
+   out[k].catalogEntryCount=diagnostic.entries; out[k].frameScanCount=diagnostic.scanned
+   out[k].catalogMatchCount=matched[k] or 0; out[k].frameMatchCount=frames[k] or 0
+   out[k].catalogSpellIDs=diagnostic.ids
+  end
   local count=skipped[kind]
   if count then
    out[k].scanReason="CDM_FRAME_ID_UNKNOWN"; out[k].skippedFrames=count

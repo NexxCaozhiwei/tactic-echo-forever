@@ -87,7 +87,7 @@ function R:HUDSteps(e)
             if target==false then add(row.spellID,row.name)
             elseif target==true then
                 local action=TEF.APL.Custom:Read(row.spellID,false,row.targetMode)
-                local allowed=TEF.Dispatch:ManualPolicy(e,row)
+                local allowed=TEF.Dispatch:ManualPolicy(e,row,false,false,true)
                 if allowed==true and action.known==true and action.usable==true and action.power_ok==true and action.in_range==true then add(row.spellID,row.name) end
             end
             if #result>=3 then break end

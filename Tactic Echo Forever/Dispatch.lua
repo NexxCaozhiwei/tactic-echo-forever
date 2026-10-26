@@ -14,6 +14,7 @@ function D:TraceQueue(reason,event,id,guid,queue)
         session=e.session,generation=e.generation,version=TEF.Version,index=e.index,count=e.stepCasts or 0,
         receiptSerial=e.receiptSerial or 0,cycle=TEF.Runtime.cycle,request=TEF.Runtime.requestSerial,
         time=ok and S.Public(clock,"number"),lead=S.Field(e.db.dispatch,"castQueueLead","number"),
+        retryDelay=S.Field(e.db.dispatch,"retryDelay","number"),
         source=q and "queue" or "ordinary",windowReason=self.queueWindowReason,
         currentGUID=self.initiation and S.Identity(self.initiation.guid),loopMode=e.db.loopMode}
     if q then
@@ -117,7 +118,7 @@ function D:IsSelfAction(id)
     local harmful=S.Resolve("C_Spell.IsSpellHarmful") and "C_Spell.IsSpellHarmful" or "IsHarmfulSpell"
     return publicBoolean(helpful,id)==true and publicBoolean(harmful,id)==false
 end
-function D:ManualPolicy(e,step,live,groupEntry)
+function D:ManualPolicy(e,step,live,groupEntry,readOnly)
     if TEF.Recommendation:Source(e)~="manual" then return true end
     if step and not step.group and TEF.Maintenance:Owns(e,step.spellID) then return false,"MAINTENANCE_OWNS_SPELL" end
     if not step then return nil,"SEQUENCE_POLICY_STEP_UNKNOWN" end
@@ -130,18 +131,35 @@ function D:ManualPolicy(e,step,live,groupEntry)
     end
     local now=TEF.APL.State.Time(); local revision=TEF.APL.State.revision or 0
     local cached=self.manualPolicySnapshot
-    if not live and cached and cached.engine==e and cached.step==step and cached.state.generation==e.generation and cached.state.receiptSerial==(e.receiptSerial or 0)
+    if not readOnly and not live and cached and cached.engine==e and cached.step==step and cached.state.generation==e.generation and cached.state.receiptSerial==(e.receiptSerial or 0)
         and cached.state.revision==revision and now and cached.state.sampledAt and now>=cached.state.sampledAt and now-cached.state.sampledAt<.05 then
         return cached.allowed,cached.reason
     end
     local row={spellID=step.spellID,enabled=true,moving="any",activity="any",distanceOp="any",cdmKind="none",strategies=step.strategies,targetMode=step.targetMode,behavior=step.behavior}
-    local state={policyOwner=step,generation=e.generation,receiptSerial=e.receiptSerial or 0,revision=revision,sampledAt=now,scene=e.scene,actions={},moving=TEF.APL.State.Boolean("IsPlayerMoving")}
+    local state={readOnly=readOnly==true,policyOwner=step,generation=e.generation,receiptSerial=e.receiptSerial or 0,revision=revision,sampledAt=now,scene=e.scene,actions={},moving=TEF.APL.State.Boolean("IsPlayerMoving")}
     local index=e.index
     TEF.APL.Custom:Sample(e,state,{row})
     if state.generation~=e.generation or state.receiptSerial~=(e.receiptSerial or 0) or index~=e.index or revision~=(TEF.APL.State.revision or 0) then return nil,"SEQUENCE_POLICY_STALE" end
     local allowed,reason=TEF.APL.Custom:Check(state,row,1)
-    self.manualPolicySnapshot={engine=e,step=step,state=state,allowed=allowed,reason=reason}
+    if not readOnly then self.manualPolicySnapshot={engine=e,step=step,state=state,allowed=allowed,reason=reason} end
     return allowed,reason
+end
+function D:PolicyEvidence(reason)
+    local e=TEF.engine; local p=self.manualPolicySnapshot
+    if not p or p.engine~=e or p.step~=(e.steps and e.steps[e.index]) or p.reason~=reason
+        or p.state.generation~=e.generation or p.state.receiptSerial~=(e.receiptSerial or 0)
+        or p.state.revision~=(TEF.APL.State.revision or 0) then return nil end
+    local detail=p.state.strategyBlockDetails and p.state.strategyBlockDetails[1]
+    local block
+    if detail then
+        block={strategyIndex=detail.strategy,conditionIndex=detail.condition,kind=detail.kind,spellID=detail.spellID}
+        if detail.kind=="cdmBuff" or detail.kind=="cdmCooldown" then
+            local action=p.state.actions.custom_1
+            local probe=action and action.strategyCDM and action.strategyCDM[(detail.kind=="cdmBuff" and "buff:" or "cooldown:") .. detail.spellID]
+            block.cdmReason=probe and probe.reason
+        end
+    end
+    return TEF.APL.Trace.Clean({reason="MANUAL_POLICY_BLOCKED",sampledAt=p.state.sampledAt,actions=p.state.actions,policyBlock=block})
 end
 function D:EvidenceBlock(reason,title,description,unknown)
  local e=TEF.engine
@@ -293,6 +311,18 @@ function D:DropCastQueue()
         if e.associations[q.guid] then e.associations[q.guid]=nil; e.associationCount=e.associationCount-1 end
     end
 end
+function D:QueueStepAllowed(step)
+    local id=step and step.spellID
+    if not id then return false end
+    local ok,info=S.Call("C_Spell.GetSpellInfo",id)
+    local name=ok and S.Field(info,"name","string")
+    if not name then return false end
+    local catalog=TEF.APL.CatalogByID[id]
+    local key=catalog and catalog.key or TEF.APL.AbilityNames[name]
+    local ability=key and TEF.APL.Abilities[key]
+    -- 只对已登记的普通施放类型提前排队；未知、引导、地面引导均不预测。
+    return ability and ({filler=true,cast=true,instant=true})[ability.type]==true or false
+end
 function D:CastQueueWindow()
     self.queueWindowReason="LIFECYCLE_OR_CURRENT_INITIATION"
     local e=TEF.engine
@@ -332,7 +362,7 @@ function D:CastQueueWindow()
     if (e.stepCasts or 0)+1>=step.repeatCount then nextIndex=index+1 end
     -- Do not speculate across loop/completion, channel or Shoot boundaries.
     local nextStep=e.steps[nextIndex]
-    if not nextStep or nextStep.group or nextStep.unverified or nextStep.spellID==5019 or nextStep.spellID==6603 or nextStep.spellID==75 or nextStep.spellID==5143 then return nil end
+    if not nextStep or nextStep.group or nextStep.unverified or not self:QueueStepAllowed(nextStep) then return nil end
     if (step.behavior and step.behavior.trigger~="continuous") or (nextStep.behavior and nextStep.behavior.trigger~="continuous") then return nil end
     if e:UsageEligibility(nextIndex)~=true then return nil end
     if generation~=e.generation or index~=e.index or serial~=(e.receiptSerial or 0)
@@ -372,10 +402,8 @@ function D:SequenceSucceeded(guid)
     self.castQueueAttempt=nil
     local q,e=self.castQueue,TEF.engine
     if not q then
-        if self:OrdinaryContinuous() then
-            self:Cancel("CONTINUOUS_SUCCESS_RECOMMENDATION_CHANGED")
-            self.waitReceipt=nil; self.initiation=nil
-        end
+        self:Cancel("CONTINUOUS_SUCCESS_RECOMMENDATION_CHANGED")
+        self.waitReceipt=nil; self.initiation=nil
         return
     end
     if guid~=q.originGUID or e.generation~=q.generation or e.index~=q.nextIndex
@@ -436,7 +464,10 @@ function D:TickContinuous()
         self.waitReceipt=nil; self.initiation=nil
         e:Log("transport","CONTINUOUS_UNINITIATED_WAIT_RELEASED")
     end
-    if self.pending or (not self:OrdinaryContinuous() and self.waitReceipt==(e.receiptSerial or 0)) then return end
+    if self:HasCurrentInitiation() or self.waitReceipt==(e.receiptSerial or 0) then
+        self:ContinuousStatus("CONTINUOUS_WAIT_CURRENT_RECEIPT"); return
+    end
+    if self.pending then return end
     if not self:TransportCastAllowed(true) then self:ContinuousStatus("CONTINUOUS_CAST_PRESENT_OR_UNKNOWN"); return end
     local recommendation=TEF.Recommendation:Current(e)
     local step=recommendation and e.steps[e.index]
@@ -547,7 +578,7 @@ function D:CastIdle()
     if e and (generation~=e.generation or index~=e.index or serial~=e.receiptSerial) then return false end
     return true
 end
--- 普通读条采用TE式持续推荐输出；引导仍是输入锁。
+-- 保留旧配置字段用于识别普通派发路径；起手后统一等待回执。
 function D:OrdinaryContinuous()
     local e=TEF.engine; local r=TEF.Runtime
     local step=e and e.steps and e.steps[e.index]
@@ -556,11 +587,6 @@ function D:OrdinaryContinuous()
 end
 function D:TransportCastAllowed(continuous)
     if TEF.engine.db.dispatch.ordinaryContinuous and self.channelInputLock then return false end
-    if continuous and self:OrdinaryContinuous() then
-        local ok,raw=S.Call("UnitChannelInfo","player")
-        local _,reason=S.Public(raw,"string")
-        return ok and reason=="NO_DATA"
-    end
     return self:CastIdle()
 end
 function D:Request(fromContinuous,queue)
@@ -581,7 +607,8 @@ function D:Request(fromContinuous,queue)
         and TEF.Runtime.state=="standby" and TEF.Runtime.reason=="RUNTIME_AUTO_STANDBY" then blocked="RUNTIME_AUTO_STANDBY"
     elseif not step or step.unverified then blocked="TEK_STEP_UNRESOLVED"
     elseif queue and (queue~=self.castQueue or self:CastQueueWindow()~=queue.nextIndex) then blocked="CAST_QUEUE_WINDOW_CLOSED"
-    elseif not queue and not self:TransportCastAllowed(fromContinuous==true) then blocked="TEK_CAST_PRESENT_OR_UNKNOWN" end
+    elseif not queue and not self:TransportCastAllowed(fromContinuous==true) then blocked="TEK_CAST_PRESENT_OR_UNKNOWN"
+    elseif not queue and self:HasCurrentInitiation() then blocked="CONTINUOUS_WAIT_CURRENT_RECEIPT" end
     if blocked then e:Log("transport",blocked); return false,blocked end
     local policyAllowed,policyReason=self:ManualPolicy(e,queue and e.steps[queue.nextIndex] or step,true)
     if policyAllowed~=true then return false,policyReason end
@@ -647,6 +674,7 @@ end
 function D:Packet()
     local p,e=self.pending,TEF.engine
     if not p then return nil end
+    if not p.castQueue and self:HasCurrentInitiation() then self:Cancel("CONTINUOUS_WAIT_CURRENT_RECEIPT"); return nil end
     local policyStep=e.steps and e.steps[p.castQueue and p.castQueue.nextIndex or e.index]
     local policyAllowed,policyReason=self:ManualPolicy(e,policyStep,true)
     if policyAllowed~=true then self:Cancel(policyReason or "SEQUENCE_POLICY_UNKNOWN"); return nil end
@@ -664,20 +692,22 @@ function D:Packet()
             self:Cancel("CAST_QUEUE_WINDOW_CLOSED"); return nil
         end
     elseif not self:TransportCastAllowed(self.continuous) then self:Cancel("TEK_CAST_PRESENT_OR_UNKNOWN"); return nil end
-    if TEF.APL and TEF.APL:IsActive(e) then
-        local allowed,reason=TEF.APL:Allowed(e,p.binding.spellID)
-        if not allowed then self:Cancel(reason); return nil end
-    end
     if self:ShootActive(p.binding)~=false then self:Cancel("SHOOT_ACTIVE_OR_UNKNOWN"); return nil end
     if self.continuous then
         local allowed,reason=self:ContinuousEvidence(p.binding.spellID)
         if not allowed then self:Block(reason); return nil end
         if self.pending~=p or not self.continuous or e.generation~=p.generation or e.index~=p.index then return nil end
+    elseif TEF.APL and TEF.APL:IsActive(e) then
+        -- 连续路径已在ContinuousEvidence实时复查；单次请求仍独立复查。
+        local allowed,reason=TEF.APL:Allowed(e,p.binding.spellID)
+        if not allowed then self:Cancel(reason); return nil end
     end
     local ok,rawCombat=S.Call("InCombatLockdown")
     local combat
     if ok then combat=S.Public(rawCombat,"boolean") end
     if combat==nil then self:Cancel("TEK_COMBAT_UNKNOWN"); return nil end
+    if TEF.Runtime and TEF.Runtime.e==e and TEF.Runtime.intent and combat==false and e.db.dispatch.mode=="manual"
+        and not TEF.Runtime:CombatAllowed(e,combat) then self:Cancel("RUNTIME_MANUAL_START_REQUIRED"); return nil end
     if e.groupRun and not e.maintenanceActive and combat~=true then self:Cancel("GROUP_COMBAT_REQUIRED"); return nil end
     if TEF.Runtime and TEF.Runtime.e==e and TEF.Runtime.intent
         and e.db.dispatch.mode=="auto" and combat~=true and not TEF.Maintenance:OutsideAllowed(e) then self:Cancel("RUNTIME_AUTO_STANDBY"); return nil end
@@ -807,7 +837,7 @@ function D:Event(event,unit,id,guidRaw)
                     end
                     local reason=moving==true and "CONTINUOUS_MOVEMENT_FAILURE_RETRY" or (moving==false and "CONTINUOUS_FAILURE_RETRY" or "CONTINUOUS_FAILURE_MOVEMENT_UNKNOWN")
                     e:Log("observed",reason,spell,nil,nil,event)
-                    runtime:Suspend(reason); return true
+                    runtime:Suspend(reason); runtime:DeferRetry(); return true
                 elseif not a or a.generation~=generation or a.index~=index or a.spellID~=spell then
                     -- A same-ID failure without this attempt's initiation is not
                     -- proof of current failure, especially adjacent rank repeats.
@@ -835,8 +865,7 @@ function D:Event(event,unit,id,guidRaw)
     if u=="player" and guid and (event=="UNIT_SPELLCAST_SENT" or event=="UNIT_SPELLCAST_START")
         and spell==self.pending.binding.spellID
         and (not self.pending.castQueue or guid==self.pending.castQueue.guid) then
-        if self.continuous and self:OrdinaryContinuous() and not self.pending.castQueue then
-            self:TraceQueue("ORDINARY_CONTINUOUS_INITIATED",event,spell,guid)
-        else self:Cancel("TEK_GAME_EVENT_RECEIVED") end
+        self:TraceQueue("DISPATCH_INITIATION_CONFIRMED",event,spell,guid)
+        self:Cancel("TEK_GAME_EVENT_RECEIVED")
     end
 end

@@ -346,6 +346,19 @@ class EngineManualGateTests(unittest.TestCase):
 
 
 class P1PhysicalInputQueryTests(unittest.TestCase):
+    def test_recovery_query_distinguishes_real_hold_and_injected_events(self):
+        monitor = WindowsPhysicalInputMonitor(PhysicalInputPause())
+        monitor.health_reason = lambda: None
+        self.assertFalse(monitor.is_key_physically_down("2"))
+        monitor.observe_keyboard_event(vk_code=0x32, message=WM_KEYDOWN, flags=LLKHF_INJECTED)
+        self.assertFalse(monitor.is_key_physically_down("2"))
+        monitor.observe_keyboard_event(vk_code=0x32, message=WM_KEYDOWN)
+        self.assertTrue(monitor.is_key_physically_down("2"))
+        monitor.observe_keyboard_event(vk_code=0x32, message=WM_KEYUP)
+        self.assertFalse(monitor.is_key_physically_down("2"))
+        monitor.health_reason = lambda: "physical_input_hook_unhealthy"
+        self.assertIsNone(monitor.is_key_physically_down("2"))
+
     def test_is_paused_is_read_only_and_does_not_clear_an_elapsed_replay_guard(self):
         now = [100.0]
         guard = PhysicalInputPause(profile="aggressive", clock=lambda: now[0])

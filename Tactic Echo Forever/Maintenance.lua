@@ -36,7 +36,7 @@ function M:Initialize(e,old)
  for _,class in ipairs({"MAGE","WARRIOR","PALADIN","HUNTER","ROGUE","PRIEST","SHAMAN","WARLOCK","DRUID","DEATHKNIGHT","MONK","DEMONHUNTER","EVOKER"}) do
   local config=S.Field(saved,class,"table")
   local rows=A.Custom.CleanRows(S.Field(config,"rows","table"))
-  local seen={}; for _,row in ipairs(rows) do seen[row.spellID]=true end
+  local seen={}; for _,row in ipairs(rows) do if row.spellID then seen[row.spellID]=true end end
   if first then
    -- 首次从既有配置提取已登记增益。原配置保留，可关闭维护恢复旧行为。
    local manual=e.db.classProfiles[class .. ":base"] or {}; local priority=e.db.apl.custom[class] or {}

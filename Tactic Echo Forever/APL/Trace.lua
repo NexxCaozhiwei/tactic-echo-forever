@@ -24,6 +24,10 @@ function T:Record(e,trace,reason,candidate,state,channel)
     parts[#parts+1]=(a.cdmScanReason or "NONE") .. ":" .. tostring(a.cdmSkippedFrames)
     for _,v in ipairs(a.conditionObservations or {}) do
      parts[#parts+1]=v.kind .. ":" .. tostring(v.result) .. ":" .. tostring(v.number) .. ":" .. (v.reason or "UNKNOWN") .. ":" .. (v.text or "UNKNOWN")
+     if v.catalogEntryCount~=nil then
+      for _,field in ipairs({"catalogEntryCount","frameScanCount","catalogMatchCount","frameMatchCount"}) do parts[#parts+1]=field .. "=" .. tostring(v[field]) end
+      for _,id in ipairs(v.catalogSpellIDs or {}) do parts[#parts+1]="catalogID=" .. id end
+     end
      for _,field in ipairs({"probeRadius","lower","upper","unknownCount","probeReason","probeResult","identitySource","identityIndex"}) do parts[#parts+1]=field .. "=" .. tostring(v[field]) end
      for _,d in ipairs(v.details or {}) do
       parts[#parts+1]=(d.identityReason or "UNKNOWN") .. ":" .. (d.source or "UNKNOWN") .. ":" .. (d.rangeReason or "UNKNOWN") .. ":" .. (d.visibleReason or "UNKNOWN") .. ":" .. tostring(d.inside)
@@ -76,6 +80,16 @@ function T.Clean(raw)
  local reason=S.Field(raw,"reason","string")
  if not reason or #reason>80 or not reason:match("^[A-Z_]+$") then return nil end
  local out={reason=reason,build={},rules={},actions={},talents={},inCombat=S.Field(raw,"inCombat","boolean"),gcd=S.Field(raw,"gcd","boolean")}
+ local sampledAt=S.Field(raw,"sampledAt","number"); if sampledAt and sampledAt>=0 then out.sampledAt=sampledAt end
+ local block=S.Field(raw,"policyBlock","table")
+ if block then
+  local si=S.Field(block,"strategyIndex","number"); local ci=S.Field(block,"conditionIndex","number")
+  local kind=S.Field(block,"kind","string")
+  if si and ci and si>=1 and si<=8 and si%1==0 and ci>=1 and ci<=8 and ci%1==0 and kind and #kind<=24 and kind:match("^[A-Za-z]+$") then
+   out.policyBlock={strategyIndex=si,conditionIndex=ci,kind=kind,spellID=S.ID(S.Field(block,"spellID","number"))}
+   local why=S.Field(block,"cdmReason","string"); if why and #why<=80 and why:match("^[A-Z_]+$") then out.policyBlock.cdmReason=why end
+  end
+ end
  out.moving=S.Field(raw,"moving","boolean")
  local health=S.Field(raw,"healthProbe","table")
  if health then
@@ -138,6 +152,17 @@ function T.Clean(raw)
      local kind=S.Field(raw,"kind","string")
      if kind and #kind<=24 and kind:match("^[A-Za-z]+$") then
       local v={kind=kind,spellID=S.ID(S.Field(raw,"spellID","number")),result=S.Field(raw,"result","boolean")}
+      for _,field in ipairs({"catalogEntryCount","frameScanCount","catalogMatchCount","frameMatchCount"}) do
+       local n=S.Field(raw,field,"number"); if n and n>=0 and n<=256 and n%1==0 then v[field]=n end
+      end
+      local ids=S.Field(raw,"catalogSpellIDs","table")
+      if ids then
+       v.catalogSpellIDs={}
+       for j=1,16 do local id=S.ID(S.Field(ids,j,"number")); if not id then break end; v.catalogSpellIDs[#v.catalogSpellIDs+1]=id end
+      end
+      for _,field in ipairs({"strategyIndex","conditionIndex"}) do
+       local index=S.Field(raw,field,"number"); if index and index>=1 and index<=8 and index%1==0 then v[field]=index end
+      end
       local number=S.Field(raw,"number","number"); if number and number>=0 and number<=255 then v.number=number end
       local reason=S.Field(raw,"reason","string"); if reason and #reason<=80 and reason:match("^[A-Z_]+$") then v.reason=reason end
       local text=S.Field(raw,"text","string"); if text=="enemy" or text=="friendly" or text=="self" or text=="none" or text=="stun" or text=="fear" or text=="confuse" or text=="any" then v.text=text end

@@ -1,6 +1,12 @@
 # TEF文档
 
-- [1.2.4当前基线](baselines/tef/BASELINE_1.2.4.md)
+- [2026年10月26日代码审计](audits/2026-10-26/REPORT.md)
+- [本轮修复与验收记录](audits/2026-10-26/REPAIRS.md)
+- [CDM默认观察ID目录](CDM_DEFAULT_ID_CATALOG.md)
+- [起手确认与派发接续](DISPATCH_PACING.md)
+
+- [2.0.1当前基线](baselines/tef/BASELINE_2.0.1.md)
+- [1.2.4历史基线](baselines/tef/BASELINE_1.2.4.md)
 - [UI/UX开发与验收标准](UI_UX_STANDARD.md)
 - [技能组使用与验收](SKILL_GROUPS_DRAFT.md)
 - [增益维护使用与验收](BUFF_MAINTENANCE_DRAFT.md)

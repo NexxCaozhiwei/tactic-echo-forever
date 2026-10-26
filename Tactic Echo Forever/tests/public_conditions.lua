@@ -63,6 +63,39 @@ test("cdm_inactive_buff_auto_hide_is_generic_and_preserves_unknown",function()
  end
 end)
 
+test("empty_unrelated_cdm_category_does_not_poison_exact_match",function()
+ local frame=fixtures(true); BuffBarCooldownViewer=nil
+ local request={{enabled=true,cdmKind="buff",cdmSpellID=133}}
+ eq(P.CDM(request)["buff:133"].value,true)
+ frame.isActive=F.secret; eq(P.CDM(request)["buff:133"].value,nil)
+ fixtures(true)
+ C_CooldownViewer.GetCooldownViewerCategorySet=function(cat) return cat==2 and {10} or nil end
+ eq(P.CDM(request)["buff:133"].value,nil)
+end)
+
+test("cdm_directory_and_frame_evidence_distinguishes_missing_identity",function()
+ local frame=fixtures(false)
+ local requests={{enabled=true,cdmKind="buff",cdmSpellID=133},{enabled=true,cdmKind="buff",cdmSpellID=1459}}
+ local observed=P.CDM(requests)
+ eq(observed["buff:133"].value,false); eq(observed["buff:133"].catalogMatchCount,1); eq(observed["buff:133"].frameMatchCount,1)
+ eq(observed["buff:1459"].value,nil); eq(observed["buff:1459"].catalogMatchCount,0)
+ eq(observed["buff:1459"].catalogSpellIDs[1],133)
+ local clean=T.APL.Trace.Clean({reason="MAINTENANCE_IDLE",actions={custom_1={conditionObservations={{kind="cdmBuff",spellID=1459,
+  catalogEntryCount=1,frameScanCount=1,catalogMatchCount=0,frameMatchCount=0,catalogSpellIDs={133,F.secret}}}}}})
+ local v=clean.actions.custom_1.conditionObservations[1]
+ eq(v.catalogMatchCount,0); eq(v.catalogSpellIDs[1],133); eq(#v.catalogSpellIDs,1)
+end)
+
+test("cdm_catalog_uses_default_public_id_not_alias_or_frame_state",function()
+ C_CooldownViewer={GetCooldownViewerCategorySet=function(cat) return cat==2 and {10,11} or cat==3 and {12} or {} end,
+  GetCooldownViewerCooldownInfo=function(id) return {spellID=id==11 and F.secret or 1460,linkedSpellIDs={1459},overrideSpellID=133} end}
+ local catalog=P.CDMCatalog("buff")
+ eq(#catalog.rows,1); eq(catalog.rows[1].spellID,1460); eq(catalog.partial,true)
+ eq(#P.CDMCatalog("cooldown").rows,0)
+ C_CooldownViewer.GetCooldownViewerCategorySet=function() local list={}; for i=1,129 do list[i]=i end; return list end
+ catalog=P.CDMCatalog("buff"); eq(#catalog.rows,0); eq(catalog.partial,true)
+end)
+
 test("numeric_operators_boundaries_unknown",function()
  for _,op in ipairs({"lt","le","eq","ne","ge","gt"}) do eq(P.Compare(nil,op,20),nil) end
  eq(P.Compare(20,"lt",20),false); eq(P.Compare(20,"le",20),true); eq(P.Compare(20,"eq",20),true)
@@ -128,6 +161,8 @@ test("cdm_capacity_failure_conflict_block",function()
  BuffIconCooldownViewer.itemFramePool=pool({{cooldownID=10,IsVisible=function() return true end,isActive=false},{cooldownID=10,IsVisible=function() return true end,isActive=true}})
  eq(P.CDM({r})["buff:133"].value,nil)
  fixtures(false); BuffBarCooldownViewer.itemFramePool.EnumerateActive=function() error("RAW_FAILURE") end
+ eq(P.CDM({r})["buff:133"].value,false)
+ C_CooldownViewer.GetCooldownViewerCategorySet=function(cat) return cat==2 and {10} or {11} end
  eq(P.CDM({r})["buff:133"].value,nil)
  fixtures(false); C_CooldownViewer.GetCooldownViewerCategorySet=function() local ids={}; for i=1,129 do ids[i]=i end; return ids end
  eq(P.CDM({r})["buff:133"].reason,"CDM_CAPACITY")
@@ -267,6 +302,12 @@ test("strategy_multiple_cdm_live_recheck_revokes_changed_packet",function()
  local r={spellID=143,strategies={{mode="use",conditions={{kind="distance",min=20,max=30},
   {kind="cdmCooldown",spellID=116,value=false},{kind="cdmBuff",spellID=133,value=true}}}}}
  assert(C:Save(e,{r},"single","MAGE")); T.Runtime:SetIntent(true); T.Dispatch:TickContinuous(); assert(T.Dispatch.pending)
+ local cdm,scans=P.CDM,0
+ P.CDM=function(rows)
+  for _,row in ipairs(rows) do if row.enabled and row.cdmKind and row.cdmKind~="none" then scans=scans+1; break end end
+  return cdm(rows)
+ end
+ assert(T.Dispatch:Packet()); eq(scans,1); P.CDM=cdm
  eq(T.APL:Allowed(e,143),true)
  buff.IsVisible=function() return false end; eq(T.APL:Allowed(e,143),false); eq(T.Dispatch:Packet(),nil)
  buff.IsVisible=function() return true end; buff.isActive=false; eq(T.Dispatch:Packet(),nil)

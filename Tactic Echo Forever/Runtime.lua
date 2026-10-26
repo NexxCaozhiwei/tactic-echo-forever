@@ -11,6 +11,7 @@ function C.Clean(raw)
     local mode=S.Field(raw,"mode","string")
     local key=S.Field(raw,"hotkey","string")
     local lead=S.Field(raw,"castQueueLead","number")
+    local retry=S.Field(raw,"retryDelay","number")
     local ordinary,ordinaryReason=S.Field(raw,"ordinaryContinuous","boolean")
     return {mode=modes[mode] and mode or "auto",autoStart=S.Field(raw,"autoStart","boolean")~=false,
         permission=S.Field(raw,"permission","boolean")~=false,signal=S.Field(raw,"signal","boolean")~=false,
@@ -18,7 +19,8 @@ function C.Clean(raw)
         hotkey=key and #key<=40 and key:match("^[A-Z0-9%-=]+$") and key or "",
         ordinaryContinuous=ordinary==true or ordinaryReason=="NO_DATA",
         castQueue=S.Field(raw,"castQueue","boolean")==true,
-        castQueueLead=lead and math.max(0,math.min(.5,lead)) or .2}
+        castQueueLead=lead and math.max(0,math.min(.5,lead)) or .2,
+        retryDelay=retry and math.max(0,math.min(.5,retry)) or .15}
 end
 function C:SetLoopMode(mode)
     if mode~="none" and mode~="normal" and mode~="target" and mode~="combat" then return false end
@@ -70,6 +72,7 @@ function C:ReplaceRecommendation(rows)
     return result
 end
 function C:Initialize(e)
+    self.retryWait=nil
     self.maintenanceManual=false
     self.e=e; self.intent=false; self.worldSeen=false; self.state="paused"
     self.reason=nil; self.displayBlock=nil; self.cycle=0; self.requestSerial=0
@@ -79,6 +82,7 @@ end
 function C:Invalidated(e)
     -- Explicit edits/reset and the retained developer Engine API stop intent.
     if e==self.e and not self.internal then
+        self.retryWait=nil
         self.maintenanceManual=false
         if e.maintenanceActive then TEF.Maintenance:Restore(e,"MAINTENANCE_INVALIDATED") end
         if e.groupRun then TEF.SkillGroups:Restore(e,"GROUP_INVALIDATED") end
@@ -87,6 +91,7 @@ function C:Invalidated(e)
     end
 end
 function C:Stop(reason,state)
+    self.retryWait=nil
     self.maintenanceManual=false
     if self.e.maintenanceActive then TEF.Maintenance:Restore(self.e,"MAINTENANCE_STOPPED") end
     if self.e.groupRun and reason~=nil and reason~="USER_TOGGLE_DISPATCH" and reason~="RUNTIME_MANUAL_PAUSE" and reason~="MANUAL_TAKEOVER_PAUSED" then TEF.SkillGroups:Restore(self.e,"GROUP_STOPPED") end
@@ -103,17 +108,42 @@ function C:Fault(reason) self:Stop(reason or "RUNTIME_FATAL_ERROR","error") end
 function C:OnDispatchFault(reason)
     -- A game failure yields the ordinary candidate; only fatal errors stop intent.
     if self.e~=TEF.engine then return end
-    if reason=="CONTINUOUS_FAILURE_STOP" then self:Suspend("CONTINUOUS_FAILURE_RETRY")
+    if reason=="CONTINUOUS_FAILURE_STOP" then self:Suspend("CONTINUOUS_FAILURE_RETRY"); self:DeferRetry()
     else self:Fault(reason) end
+end
+-- 复用现有心跳；缓冲只延后同一步重试，不计成功、不推进序列。
+function C:DeferRetry()
+    local e=self.e
+    local delay=S.Field(e.db.dispatch,"retryDelay","number")
+    if not self.intent or not delay or delay<=0 then self.retryWait=nil; return end
+    self.retryWait={engine=e,generation=e.generation,index=e.index,serial=e.receiptSerial or 0,
+        startedAt=TEF.APL.State.Time(),delay=delay}
+end
+function C:RetryReady()
+    local w,e=self.retryWait,self.e
+    if not w then return true end
+    if w.engine~=e or w.generation~=e.generation or w.index~=e.index or w.serial~=(e.receiptSerial or 0) then
+        self.retryWait=nil; return true
+    end
+    local now=TEF.APL.State.Time()
+    if not now then return false,"CONTINUOUS_RETRY_CLOCK_UNKNOWN" end
+    if not w.startedAt or now<w.startedAt then w.startedAt=now end
+    if now-w.startedAt<w.delay then return false,"CONTINUOUS_RETRY_DELAY" end
+    self.retryWait=nil; return true
 end
 function C:Suspend(reason,state)
     if not self.e then return end
     local detail=TEF.Dispatch:BlockDetail(reason)
+    local policy=TEF.Dispatch:PolicyEvidence(reason)
     if self.e.running and not self:EngineCall("Pause") then return end
     self.displayBlock=detail and {engine=self.e,generation=self.e.generation,index=self.e.index,serial=self.e.receiptSerial or 0,reason=reason,
         title=detail.title,description=detail.description,unknown=detail.unknown} or nil
     TEF.Dispatch:StopContinuous(reason); TEF.Dispatch:Cancel(reason)
     self:Changed(self.intent and (state or "blocked") or "paused",reason)
+    if policy then
+        local rows=self.e.db.diagnostics; local row=rows[#rows]
+        if row and row.reason==reason and row.generation==self.e.generation then row.policy=policy end
+    end
 end
 -- 仅用户手动开启且选择手动启停时授予普通来源脱战资格。
 function C:OutsideCombatAllowed(e)
@@ -207,6 +237,14 @@ function C:SetCastQueueLead(value)
     self.e.db.dispatch.castQueueLead=lead
     return true
 end
+function C:SetRetryDelay(value)
+    local delay=S.Public(value,"number")
+    if not delay or delay<0 or delay>.5 then return false end
+    if self.e.db.dispatch.retryDelay==delay then return true end
+    self:Stop("RETRY_DELAY_SETTING_CHANGED")
+    self.e.db.dispatch.retryDelay=delay
+    return true
+end
 function C:SetMode(mode)
     if not modes[mode] then return false end
     self.e.db.dispatch.mode=mode; self:Reconcile(); return true
@@ -294,6 +332,8 @@ function C:Reconcile()
         and not (e.groupRun and TEF.Dispatch:HasCurrentInitiation()) then self:Stop("RUNTIME_OUT_OF_COMBAT_STOP"); return end
     if TEF.UI.settingsOpen then self:Suspend("RUNTIME_SETTINGS_STANDBY","standby"); return end
     if combat==nil then self:Suspend("RUNTIME_COMBAT_UNKNOWN"); return end
+    if combat==false and e.db.dispatch.mode=="manual" and not self:OutsideCombatAllowed(e)
+        and not TEF.Maintenance:OutsideAllowed(e) then self:Suspend("RUNTIME_MANUAL_START_REQUIRED","standby"); return end
     if e.groupRun and not e.maintenanceActive and combat~=true then
         if TEF.Dispatch:HasCurrentInitiation() then
             TEF.Dispatch:YieldCast("GROUP_COMBAT_REQUIRED"); self:Changed("standby","GROUP_COMBAT_REQUIRED")
@@ -369,7 +409,6 @@ function C:Reconcile()
     if not current() then return end
     -- Keep the already initiated receipt while showing a cast block. Pausing
     -- the Engine here would erase its initiation and lose SUCCEEDED (S61).
-    local ordinary=TEF.Dispatch:OrdinaryContinuous()
     local idle=TEF.Dispatch:TransportCastAllowed(true)
     if not current() then return end
     if not idle then
@@ -379,18 +418,20 @@ function C:Reconcile()
         TEF.Dispatch:YieldCast("CONTINUOUS_CAST_PRESENT_OR_UNKNOWN")
         self:Changed("blocked","CONTINUOUS_CAST_PRESENT_OR_UNKNOWN"); return
     end
-    if not ordinary and TEF.Recommendation:Source(e)=="manual" and not TEF.Dispatch:HasCurrentInitiation()
+    if TEF.Recommendation:Source(e)=="manual" and not TEF.Dispatch:HasCurrentInitiation()
         and e:RecommendationLocked() then
         -- 手动起手的回执可能早于客户端公开读条；先等该次结果。
         TEF.Dispatch:YieldCast("MANUAL_WAIT_CURRENT_RECEIPT")
         self:Changed("blocked","MANUAL_WAIT_CURRENT_RECEIPT"); return
     end
-    if not ordinary and TEF.APL:IsActive(e) and TEF.Dispatch:HasCurrentInitiation() then
-        -- SENT may precede visible cast presence, and SUCCEEDED can precede
-        -- cast disappearance. A dirty APL snapshot must not erase its receipt.
-        TEF.Dispatch:YieldCast("APL_WAIT_CURRENT_RECEIPT")
-        self:Changed("blocked","APL_WAIT_CURRENT_RECEIPT"); return
+    if TEF.Dispatch:HasCurrentInitiation() then
+        -- 起手事件可早于公开读条，资源也可立即扣除；保留身份并等待结果。
+        local reason=TEF.APL:IsActive(e) and "APL_WAIT_CURRENT_RECEIPT" or "CONTINUOUS_WAIT_CURRENT_RECEIPT"
+        TEF.Dispatch:YieldCast(reason)
+        self:Changed("blocked",reason); return
     end
+    local retryReady,retryReason=self:RetryReady()
+    if not retryReady then TEF.Dispatch:Cancel(retryReason); self:Changed("blocked",retryReason); return end
     if not TEF.Recommendation:Current(e) then self:Suspend("APL_NO_CANDIDATE"); return end
     local allowed,reason=TEF.Dispatch:ContinuousEvidence(e.steps[e.index].spellID)
     if not current() then return end
@@ -399,7 +440,7 @@ function C:Reconcile()
         and (allowed or reason=="CONTINUOUS_USABLE_UNKNOWN_OR_BLOCKED") then
         -- Focus/target/range and cast gates precede omission; an in-flight
         -- initiation always owns its receipt, even if resources changed.
-        if e:RecommendationLocked() and not ordinary then
+        if e:RecommendationLocked() then
             TEF.Dispatch:YieldCast("SKIP_WAIT_CURRENT_RECEIPT")
             self:Changed("blocked","SKIP_WAIT_CURRENT_RECEIPT"); return
         end

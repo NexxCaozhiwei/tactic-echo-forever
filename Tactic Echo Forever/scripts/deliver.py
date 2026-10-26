@@ -26,15 +26,33 @@ def archive_name(source):
     return "Tactic Echo Forever/docs/baselines/" + source.name
 
 
+def deployment_target(raw):
+    target = Path(raw)
+    if not target.is_absolute():
+        raise ValueError("部署目标必须是绝对路径")
+    resolved = target.resolve()
+    if (resolved.name != "Tactic Echo Forever" or resolved.parent.name.lower() != "addons"
+            or resolved.parent.parent.name.lower() != "interface" or not resolved.parent.is_dir()):
+        raise ValueError("目标必须位于已存在的 Interface/AddOns 内，且目录名为 Tactic Echo Forever")
+    return resolved
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--deploy", action="store_true")
+    parser.add_argument("--target", type=Path, help="插件安装绝对路径，仅与--deploy一起使用")
     args = parser.parse_args()
+    if args.target and not args.deploy:
+        parser.error("--target仅与--deploy一起使用")
+    try:
+        target = deployment_target(args.target or TARGET) if args.deploy else TARGET
+    except ValueError as error:
+        parser.error(str(error))
     out = ROOT.parent / "dist/tef"
     out.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     receipt = {"version": VERSION, "interface": 16001, "client_evidence_exe": "1.60.1.70338",
-               "simulation_only": True, "target": str(TARGET), "backup": None}
+               "simulation_only": True, "target": str(target), "backup": None}
     receipt["validation"] = {"performed_by_packager": False,
         "report": "docs/CAST_QUEUE_TRIAL_1.0.2.md", "in_game_verified": False}
     receipt["skip_unavailable"] = {"default_enabled": False, "source": "manual",
@@ -77,7 +95,10 @@ def main():
         "sequence": [116, 205, 205, 143], "game_success_receipts_verified": True,
         "proves_current_version": False}
     receipt["transport"] = {"protocol": 3, "mode": "unified_intent_auto_standby_or_fixed_attempt", "default_binding_token": 0,
-        "default_enabled": True, "default_request_permission": True, "desktop_tek_ui_linked": True, "per_step_explicit_request": False, "continuous_default_enabled": False, "default_runtime_mode": "auto", "auto_start_preference": True, "runtime_in_game_verified": False, "continuous_requires_public_numeric_evidence": False}
+        "default_enabled": True, "default_request_permission": True, "desktop_tek_ui_linked": True, "per_step_explicit_request": False, "continuous_default_enabled": False, "ordinary_continuous_preference_default": True, "continuous_initially_running": False, "default_runtime_mode": "auto", "auto_start_preference": True, "runtime_in_game_verified": False, "continuous_requires_public_numeric_evidence": False}
+    receipt["dispatch_pacing"] = {"confirmed_start_stops_repetition": True,
+        "failure_retry_default_seconds": 0.15, "failure_retry_max_seconds": 0.50,
+        "uses_existing_heartbeat": True, "in_game_verified": False}
     sources = sorted([ROOT / name for name in RUNTIME] +
                      list((ROOT / "docs").rglob("*.md")) + list((ROOT / "docs/references/wotlk").glob("*.json")) +
                      [ROOT / "tests/run.lua", ROOT / "tests/run.py", ROOT / "tests/apl.lua", ROOT / "tests/foundation.lua", ROOT / "tests/custom_apl.lua", ROOT / "tests/public_conditions.lua", ROOT / "tests/strategy_conditions.lua", ROOT / "tests/cast_queue.lua", ROOT / "tests/skip_unavailable.lua", ROOT / "tests/test_acceptance_harness.py", ROOT / "scripts/deliver.py", ROOT / "scripts/import_apl_catalog.py", ROOT / "scripts/import_wotlk_apl.py", ROOT / "scripts/tek_acceptance.py"])
@@ -96,29 +117,28 @@ def main():
     receipt["archive"] = {"path": str(archive), "sha256": digest(archive), "files": len(sources)}
     if args.deploy:
         # Exact absolute TEF path only. No MIR, deletion, or access to WTF.
-        assert TARGET.resolve().name == "Tactic Echo Forever"
-        assert TARGET.resolve().parent == Path(r"C:\Program Files (x86)\World of Warcraft\_cn_beta_\Interface\AddOns").resolve()
-        if TARGET.exists():
+        TARGET_INSTALL = target
+        if TARGET_INSTALL.exists():
             backup = out / ("backup-TEF-" + stamp)
-            shutil.copytree(TARGET, backup)
+            shutil.copytree(TARGET_INSTALL, backup)
             receipt["backup"] = str(backup)
-        TARGET.mkdir(parents=True, exist_ok=True)
+        TARGET_INSTALL.mkdir(parents=True, exist_ok=True)
         receipt["files"] = []
         for relative in RUNTIME:
-            source, destination = ROOT / relative, TARGET / relative
+            source, destination = ROOT / relative, TARGET_INSTALL / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, destination)
             original, installed = digest(source), digest(destination)
             assert original == installed, relative
             receipt["files"].append({"path": relative, "source_sha256": original, "installed_sha256": installed})
-        toc = (TARGET / "Tactic Echo Forever.toc").read_text(encoding="utf-8")
+        toc = (TARGET_INSTALL / "Tactic Echo Forever.toc").read_text(encoding="utf-8")
         entries = [line.strip() for line in toc.splitlines() if line.strip() and not line.startswith("#")]
         assert entries == LOAD
         assert f"## Version: {VERSION}" in toc and "## Interface: 16001" in toc
-        assert all((TARGET / entry).is_file() for entry in entries)
+        assert all((TARGET_INSTALL / entry).is_file() for entry in entries)
         receipt["toc_load_list"] = entries
-        receipt["unknown_files_preserved"] = [str(p.relative_to(TARGET)) for p in TARGET.rglob("*")
-                                                if p.is_file() and p.relative_to(TARGET).as_posix() not in RUNTIME]
+        receipt["unknown_files_preserved"] = [str(p.relative_to(TARGET_INSTALL)) for p in TARGET_INSTALL.rglob("*")
+                                                if p.is_file() and p.relative_to(TARGET_INSTALL).as_posix() not in RUNTIME]
     receipt_path = out / f"TEF-{VERSION}-delivery.json"
     receipt_path.write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"archive": str(archive), "zip_sha256": digest(archive),
