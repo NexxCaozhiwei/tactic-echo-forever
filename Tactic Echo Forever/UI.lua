@@ -398,7 +398,17 @@ function UI:CreateSettings()
         end,slider)
     end
     self:CreateHintText(self.pages.hud,"迷你HUD固定图标大小与间距，以上几何设置仅用于标准HUD。左键主卡启停，右键设置；空白可拖动。",16,-1208,548)
-    self:Paint(self.pages.hud,"SetHeight",1268)
+    self:CreateSectionCard(self.pages.hud,"HUD底纹与外框透明度",0,-1268,580,240)
+    self.hudOpacityControls={}
+    for i,spec in ipairs({{"background","底纹透明度（%）"},{"border","外框透明度（%）"}}) do
+        local field=spec[1]
+        local slider,input=self:CreateSliderRow(self.pages.hud,spec[2],16,-1316-(i-1)*64,548,0,100,1,
+            function() return math.floor((1-e.db.hud.opacity[field])*100+.5) end,
+            function(value) e.db.hud.opacity[field]=1-value/100; TEF.HUD:ApplyOpacity() end,true)
+        self.hudOpacityControls[field]={slider=slider,input=input}
+    end
+    self:CreateHintText(self.pages.hud,"0%不透明，100%完全透明；标准与迷你HUD共用。仅改变底纹和外框，技能图标与文字保持原样。",16,-1448,548)
+    self:Paint(self.pages.hud,"SetHeight",1532)
     self:CreateSectionCard(self.pages.tek,"派发与接续参数",0,-138,580,332)
     self.signalToggle=self:CreateToggleRow(self.pages.tek,"TEAP输出",12,-176,556,function() return e.db.dispatch.signal end,function(v) TEF.Runtime:SetSignal(v) end)
     self.permissionToggle=self:CreateToggleRow(self.pages.tek,"TEK请求许可",12,-220,556,function() return e.db.dispatch.permission end,function(v) TEF.Runtime:SetPermission(v) end)

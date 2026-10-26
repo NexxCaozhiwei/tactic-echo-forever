@@ -212,6 +212,7 @@ function P:Initialize(e, old)
         locked=locked==true, preview=preview~=false, mode=mode=="mini" and "mini" or "standard"}
     e.db.hud.geometry=TEF.HudStyles.CleanGeometry(hud and S.Field(hud,"geometry","table"))
     e.db.hud.styles=TEF.HudStyles.Clean(hud and S.Field(hud,"styles","table"))
+    e.db.hud.opacity=TEF.HudStyles.CleanOpacity(hud and S.Field(hud,"opacity","table"))
     local x=hud and S.Field(hud,"x","number"); local y=hud and S.Field(hud,"y","number")
     if x and y and math.abs(x)<=10000 and math.abs(y)<=10000 then e.db.hud.x=x; e.db.hud.y=y end
 end

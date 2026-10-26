@@ -10,6 +10,9 @@ function A.CleanGeometry(raw)
  return {mainSize=number(raw,"mainSize",32,112,64),preview1Size=number(raw,"preview1Size",24,96,44),
   preview2Size=number(raw,"preview2Size",24,96,44),gap1=number(raw,"gap1",2,40,12),gap2=number(raw,"gap2",2,40,12)}
 end
+function A.CleanOpacity(raw)
+ return {background=number(raw,"background",0,1,.94),border=number(raw,"border",0,1,1)}
+end
 local labels={{module="main",key="key",name="主卡键位",size=12,cap=10},
  {module="global",key="name",name="技能名称",size=16,cap=14},
  {module="global",key="status",name="进度行",size=14,cap=12}}
