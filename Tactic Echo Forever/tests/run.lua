@@ -1697,7 +1697,18 @@ end)
 local function shootFixture()
     continuousFixture(T.Profiles:Parse("5019*2\n143"))
     C_ActionBar=nil; IsCurrentAction=function() return false end
+    IsAutoRepeatAction=function() return false end
 end
+
+test("wand_repeat_between_shots_revokes_packet_without_advancing",function()
+    shootFixture(); T.Dispatch:TickContinuous(); assert(T.Dispatch.pending)
+    IsAutoRepeatAction=function() return true end
+    eq(T.Dispatch:Packet(),nil); T.Dispatch:TickContinuous(); eq(T.Dispatch.pending,nil); eq(T.engine.stepCasts,0)
+    IsAutoRepeatAction=function() return secret end
+    eq(T.Dispatch:Request(true),false)
+    IsAutoRepeatAction=function() return false end
+    T.Dispatch:TickContinuous(); assert(T.Dispatch.pending)
+end)
 test("shoot_starts_then_active_zero_token_own_success_counts",function()
     shootFixture(); T.Dispatch:TickContinuous(); assert(T.Dispatch.pending)
     IsCurrentAction=function() return true end; eq(T.Dispatch:Packet(),nil); eq(T.Dispatch.pending,nil)

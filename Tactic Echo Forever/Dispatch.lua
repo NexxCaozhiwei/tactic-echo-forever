@@ -280,6 +280,14 @@ end
 function D:ShootActive(binding)
     if binding.spellID~=5019 and binding.spellID~=6603 and binding.spellID~=75 then return false end
     if not self:VerifyCurrent(binding) then return nil end
+    if binding.spellID==5019 then
+        local current=publicBoolean(S.Resolve("C_ActionBar.IsCurrentAction") and "C_ActionBar.IsCurrentAction" or "IsCurrentAction",binding.slot)
+        local repeating=publicBoolean(S.Resolve("C_ActionBar.IsAutoRepeatAction") and "C_ActionBar.IsAutoRepeatAction" or "IsAutoRepeatAction",binding.slot)
+        -- 魔杖在两发之间仍可能处于自动重复状态，不能只凭当前动作结束重新按键。
+        if current==true or repeating==true then return true end
+        if current==false and repeating==false then return false end
+        return nil
+    end
     local path
     if binding.spellID==75 then
         path=S.Resolve("C_ActionBar.IsAutoRepeatAction") and "C_ActionBar.IsAutoRepeatAction" or "IsAutoRepeatAction"
