@@ -54,7 +54,7 @@ function U:RefreshSkillGroup()
    self:SetInputValue(w.count,tostring(row.repeatCount)); self:Paint(w.skip,"SetText",row.skipUnavailable and "不可用跳过：开" or "不可用跳过：关")
   end
  end
- self:Paint(self.groupChild,"SetHeight",math.max(120,#self.groupDraft.steps*88)); self:RefreshStudio(); self:LayoutSettings()
+ self:Paint(self.groupChild,"SetHeight",math.max(120,#self.groupDraft.steps*80)); self:RefreshStudio(); self:LayoutSettings()
 end
 function U:GroupAdd(id,index)
  if not self:CommitGroupFields() then return false end
@@ -158,7 +158,7 @@ function U:CreateSkillGroupEditor()
  self.groupWidgets={}
  for i=1,8 do
   local index=i; local frame=self:CreateRuleRow(self.groupChild,i)
-  self:Paint(frame,"SetPoint","TOPLEFT",self.groupChild,"TOPLEFT",0,-(i-1)*88); self:Paint(frame,"SetSize",530,80)
+  self:Paint(frame,"SetPoint","TOPLEFT",self.groupChild,"TOPLEFT",0,-(i-1)*80); self:Paint(frame,"SetSize",530,76)
   self:Paint(frame,"SetBackdropColor",.05,.08,.12,1); self:Paint(frame,"SetBackdropBorderColor",.25,.42,.58,1)
   self:BindGroupDrop(frame,index,true)
   self:BindControlTooltip(frame,"组内技能","精确成功回执推进组内步骤。")

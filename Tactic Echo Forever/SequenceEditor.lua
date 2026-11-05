@@ -172,7 +172,7 @@ function U:RefreshSequenceEditor(force)
             self:SetControlEnabled(widgets.up,i>1); self:SetControlEnabled(widgets.down,i<#rows)
         end
     end
-    self:Paint(self.sequenceChild,"SetHeight",math.max(355,rows and math.min(#rows,16)*88 or 355))
+    self:Paint(self.sequenceChild,"SetHeight",math.max(355,rows and math.min(#rows,16)*80 or 355))
     self:RefreshStudio()
 end
 function U:CreateSequenceEditor(parent)
@@ -204,7 +204,7 @@ function U:CreateSequenceEditor(parent)
     for i=1,16 do
         local index=i
         local row=self:CreateRuleRow(child,i)
-        self:Paint(row,"SetPoint","TOPLEFT",child,"TOPLEFT",0,-(i-1)*88); self:Paint(row,"SetSize",530,80)
+        self:Paint(row,"SetPoint","TOPLEFT",child,"TOPLEFT",0,-(i-1)*80); self:Paint(row,"SetSize",530,76)
         self:BindSequenceDrop(row,index,true)
         self:BindControlTooltip(row,"技能条目","可拖入插入，或使用上下箭头排序。")
         self:Paint(row,"SetBackdropColor",.05,.08,.12,1); self:Paint(row,"SetBackdropBorderColor",.25,.42,.58,1)

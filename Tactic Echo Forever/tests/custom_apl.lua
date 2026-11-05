@@ -293,7 +293,7 @@ test("strategy_drag_reorders_and_keeps_conditions",function()
  T.UI:ChangeCustomStrategy(function(r) r.strategies={{mode="skip",conditions={{kind="moving",value=true}}}} end)
  local original=MouseIsOver; MouseIsOver=function(frame) return frame==T.UI.customWidgets[3].frame end
  T.UI.customWidgets[1].frame.scripts.OnDragStart(); T.UI.customWidgets[1].frame.scripts.OnDragStop()
- eq(T.UI.customDraft[2].spellID,143); eq(T.UI.customDraft[2].strategies[1].mode,"skip")
+ eq(T.UI.customDraft[3].spellID,143); eq(T.UI.customDraft[3].strategies[1].mode,"skip")
  eq(C:Rows(e)[1].spellID,143); MouseIsOver=original
 end)
 test("strategy_saved_slots_independent_and_reorder_keeps_conditions",function()

@@ -274,7 +274,7 @@ end
 function U:LayoutStudioBottom(width,height)
  self.studioBottomHeight=height
  local trace=(self.studioBottomMode or "trace")=="trace"
- self:Paint(self.studioTextScroll,not trace and "Show" or "Hide")
+ self:Paint(self.studioTextScroll,not trace and height>=100 and "Show" or "Hide")
  self:Paint(self.studioTraceScroll,trace and height>=100 and "Show" or "Hide")
  self:Paint(self.studioTraceHeader,trace and "Show" or "Hide")
  local signature=width .. ":" .. height
@@ -387,8 +387,9 @@ function U:CreateStudioTools()
  end
  self.studioBottomTabs={}
  for i,entry in ipairs({{"trace","APL TRACE"},{"problems","问题"},{"output","输出"}}) do
-  local key=entry[1]; self.studioBottomTabs[key]=self:CreateActionButton(self.studioBottom,entry[2],8+(i-1)*116,-4,108,function() self.studioBottomMode=key; self.studioBottomExpanded=true; self:RefreshStudioBottom(); self.settingsLayoutSignature=nil; self:LayoutSettings() end)
+  local key=entry[1]; self.studioBottomTabs[key]=self:CreateActionButton(self.studioBottom,entry[2],8+(i-1)*116,-4,108,function() self.studioBottomExpanded=not (self.studioBottomMode==key and self.studioBottomExpanded); self.studioBottomMode=key; self:RefreshStudioBottom(); self.settingsLayoutSignature=nil; self:LayoutSettings() end)
   self:CompactControl(self.studioBottomTabs[key],108)
+  self:BindControlTooltip(self.studioBottomTabs[key],entry[2],"点击展开；再次点击当前标签收起，为技能列表腾出空间。")
  end
  self.studioSampleButton=self:CreateActionButton(self.studioBottom,"只读采样",420,-4,120,function() self:StudioProbeRows() end); self:CompactControl(self.studioSampleButton,120)
  self.studioLiveButton=self:CreateActionButton(self.studioBottom,"实时：关",360,-4,80,function()

@@ -44,7 +44,7 @@ function U:CreateStudioPanel(parent)
 end
 function U:CreateRuleRow(parent,index)
  local frame=self:CreateStudioPanel(parent)
- self:Paint(frame,"SetSize",530,80)
+ self:Paint(frame,"SetSize",530,76)
  local handle=self:Text(frame,8,-12,24,"GameFontHighlightSmall"); self:Paint(handle,"SetText","≡")
  local ok,icon=self:Invoke(frame,"CreateTexture",nil,"ARTWORK")
  if ok then anchor(self,icon,frame,32,-8); self:Paint(icon,"SetSize",28,28) end
@@ -64,6 +64,12 @@ function U:CreateRuleRow(parent,index)
 end
 function U:RefreshStudioRow(w,row,index,source)
  if not row then return end
+ w.studioAPLGroup=source=="apl" and row.group~=nil
+ if source=="apl" then
+  anchor(self,w.groupEdit,w.frame,136,-44)
+  anchor(self,w.frame.studioSummary,w.frame,w.studioAPLGroup and 264 or 136,-56)
+  self:Paint(w.frame.studioSummary,"SetWidth",math.max(120,(self.studioEditorWidth or 580)-48-(w.studioAPLGroup and 276 or 148)))
+ end
  local view=S.Spell(row.spellID,row.name or ("技能 " .. (row.spellID or "未知")))
  self:Paint(w.frame.studioIcon,"SetTexture",view.icon)
  self:Paint(w.frame.studioID,"SetText","ID " .. (row.spellID or "未知"))
@@ -109,13 +115,30 @@ function U:StudioDropTarget(source)
  if source~="manual" and source~="apl" and source~="group" then return nil end
  local widgets=source=="group" and self.groupWidgets or source=="manual" and self.sequenceRows or self.customWidgets
  local rows=source=="group" and self.groupDraft and self.groupDraft.steps or source=="manual" and self:DraftRows() or self.customDraft
- for i,w in ipairs(widgets or {}) do
-  local ok,over=S.Call("MouseIsOver",w.frame)
-  if rows and rows[i] and ok and S.Public(over,"boolean")==true then return i,w.frame end
- end
  local scroll=source=="group" and self.groupScroll or source=="manual" and self.sequenceScroll or self.customScroll
+ local cursor=S.Resolve("GetCursorPosition")
+ local got,x,y
+ if cursor then got,x,y=pcall(cursor) end
+ x=got and S.Public(x,"number"); y=got and S.Public(y,"number")
+ local function hit(frame)
+  if not x or not y then return nil end
+  local ok,left,bottom,width,height=self:Invoke(frame,"GetRect")
+  left=ok and S.Public(left,"number"); bottom=ok and S.Public(bottom,"number")
+  width=ok and S.Public(width,"number"); height=ok and S.Public(height,"number")
+  local read,raw=self:Invoke(frame,"GetEffectiveScale"); local scale=read and S.Public(raw,"number")
+  if not left or not bottom or not width or not height or not scale or scale<=0 or width<=0 or height<=0 then return nil end
+  return x>=left*scale and x<=(left+width)*scale and y>=bottom*scale and y<=(bottom+height)*scale
+ end
+ -- 拖动捕获期间不只依赖悬停状态；坐标必须同时落在可见视口内。
+ local inView=hit(scroll)
+ if inView==false then return nil end
+ for i,w in ipairs(widgets or {}) do
+  local inside=hit(w.frame)
+  local ok,over=S.Call("MouseIsOver",w.frame)
+  if rows and rows[i] and (inside==true or (inside==nil and ok and S.Public(over,"boolean")==true)) then return i,w.frame end
+ end
  local ok,over=S.Call("MouseIsOver",scroll)
- if rows and ok and S.Public(over,"boolean")==true then return #rows+1,scroll end
+ if rows and (inView==true or (inView==nil and ok and S.Public(over,"boolean")==true)) then return #rows+1,scroll end
 end
 function U:HideStudioInsertion()
  if self.studioInsertion then self:Paint(self.studioInsertion,"Hide") end
@@ -127,6 +150,7 @@ function U:ShowStudioInsertion(frame)
   line.label=self:Text(line,144,16,260,"GameFontHighlightSmall"); self:Paint(line.label,"SetText","↓ 拖放插入到此处")
  end
  local line=self.studioInsertion
+ self:Paint(line.label,"SetText",self.studioDragging and "↓ 拖放移动到此位置" or "↓ 拖放插入到此处")
  self:Paint(line,"SetParent",frame); self:Paint(line,"ClearAllPoints")
  self:Paint(line,"SetPoint","TOPLEFT",frame,"TOPLEFT",0,4); self:Paint(line,"SetPoint","TOPRIGHT",frame,"TOPRIGHT",0,4)
  self:Paint(line,"Show")
@@ -166,6 +190,7 @@ function U:BindStudioDrag(w,index,source)
   if not self:CommitSequenceCounts() or not self:CommitCustomNumbers() then return end
   if source=="group" and not self:CommitGroupFields() then return end
   self.studioDragging={source=source,index=index,frame=frame}; self:Paint(frame,"SetAlpha",.5)
+  self.engine:Log("display","STUDIO_DRAG_STARTED",nil,nil,nil,source .. ":" .. index)
  end) end)
  self:Paint(frame,"SetScript","OnDragStop",function() self:Guard(function()
   local drag=self.studioDragging; self.studioDragging=nil; self:Paint(frame,"SetAlpha",1); self:HideStudioInsertion()
@@ -173,16 +198,25 @@ function U:BindStudioDrag(w,index,source)
   local target=self:StudioDropTarget(source)
   local rows=source=="group" and self.groupDraft and self.groupDraft.steps or source=="manual" and self:DraftRows() or self.customDraft
   if target and rows then
-   if target>index then target=target-1 end
+   -- 落在条目上表示移动到该位置；空白尾部由下方钳制为末项。
    target=math.min(target,#rows)
    if source=="manual" then self:ReorderSequenceRow(index,target) elseif source=="group" then self:GroupMove(index,target) else self:ReorderCustomRule(index,target) end
    self.studioSelected={source=source,index=target}
+   self:StudioMessage(target==index and "落点仍是原位置，顺序未变化。" or "已调整草稿顺序，保存后生效。")
+   self.engine:Log("display","STUDIO_DRAG_DROPPED",nil,nil,nil,source .. ":" .. index .. ":" .. target)
   else
    if source=="manual" then self:SequenceMessage("已取消拖动，草稿顺序保持。") else self:CustomMessage("已取消拖动，草稿顺序保持。") end
+   self.engine:Log("display","STUDIO_DRAG_NO_TARGET")
   end
   self:RefreshStudio()
  end) end)
  self:Paint(frame,"SetScript","OnMouseUp",function(f,button)
+  if S.Public(button,"string")=="LeftButton" and self.studioDragging and self.studioDragging.frame==frame then
+   -- 子控件捕获或不同客户端事件顺序下，鼠标释放也完成同一拖动；随后原生停止事件幂等返回。
+   local ok,finish=self:Invoke(frame,"GetScript","OnDragStop")
+   if ok and type(finish)=="function" then finish(frame) end
+   return
+  end
   if S.Public(button,"string")=="LeftButton" and not self.studioDragging then self:Guard(function()
    if source=="manual" then self:ReceiveSequenceSpell(index) elseif source=="group" then self:GroupReceive(index) else self:ReceiveCustomSpell(index) end
    self:SelectStudioRule(source,index)
@@ -191,6 +225,8 @@ function U:BindStudioDrag(w,index,source)
  self:Paint(frame,"SetScript","OnHide",function()
   self:HideControlTooltip(frame); self:HideStudioInsertion()
   self:Paint(frame,"SetAlpha",1)
-  if self.studioDragging and self.studioDragging.frame==frame then self.studioDragging=nil end
+  if self.studioDragging and self.studioDragging.frame==frame then
+   self.studioDragging=nil; self.engine:Log("display","STUDIO_DRAG_HIDDEN_CANCELLED")
+  end
  end)
 end

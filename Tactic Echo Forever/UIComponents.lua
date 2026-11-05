@@ -2,7 +2,7 @@ local _,TEF=...
 local U,S=TEF.UI,TEF.Safety
 -- Independent TEUI-style components. Presentation holds no input authority.
 U.controls={}
-U.theme={fontBody=14,fontHint=12,fontSection=16,fontPage=18,fontTitle=20,controlHeight=32,spaceInline=8,spaceSection=24,
+U.theme={fontBody=14,fontHint=12,fontSection=16,fontPage=18,fontTitle=20,controlHeight=28,spaceInline=8,spaceSection=24,
  panel={.086,.102,.133,1},border={.204,.251,.322,1},
  colorText={.94,.96,1,1},colorHint={.70,.76,.84,1},colorBorder={.34,.44,.58,1},colorFocus={.35,.85,1,1}}
 U.controlHeight=U.theme.controlHeight

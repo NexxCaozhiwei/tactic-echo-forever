@@ -306,7 +306,7 @@ function U:LayoutStudioSettingsContent(width,height)
  local workspace=w>=1400 and 200 or 0
  local dock=w>=64+workspace+620+448+48
  local left=80+workspace; local editorWidth=w-left-16-(dock and 460 or 0)
- local bottom=(h>=760 or self.studioBottomExpanded) and math.max(64,math.min(164,h-504)) or 64
+ local bottom=self.studioBottomExpanded and math.max(64,math.min(164,h-504)) or 64
  local bodyHeight=h-64-28; local editorHeight=bodyHeight-44
  local listPage=self.page=="profiles" or self.page=="customapl" or self.page=="maintenance"
  local rows,source=self:StudioActiveRows()
@@ -372,5 +372,5 @@ function U:LayoutStudioRow(w,width)
  self:StudioAnchor(w.delete,w.frame,width-96,-8,88,28)
  if w.usage then self:StudioAnchor(w.usage,w.frame,width-212,-44,204,28) end
  self:Paint(w.name,"SetWidth",math.max(120,width-348))
- self:Paint(w.frame.studioSummary,"SetWidth",math.max(120,width-148))
+ self:Paint(w.frame.studioSummary,"SetWidth",math.max(120,width-(w.studioAPLGroup and 276 or 148)))
 end

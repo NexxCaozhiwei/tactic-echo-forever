@@ -300,7 +300,7 @@ end)
 
 test("theme_typography_footer_and_owned_tooltip",function()
  F.runtime(); T.UI:ShowPage("profiles")
- eq(T.UI.controlHeight,32); eq(T.UI.controlFontSize,14); assert(T.UI.manualSave.parent~=T.UI.pages.profiles)
+ eq(T.UI.controlHeight,28); eq(T.UI.controlFontSize,14); assert(T.UI.manualSave.parent~=T.UI.pages.profiles)
  local old=GameTooltip; local owner,hidden=nil,0
  GameTooltip={SetOwner=function(_,v) owner=v end,GetOwner=function() return owner end,Hide=function() hidden=hidden+1 end}
  local control=T.UI.manualSave; T.UI:ShowControlTooltip(control); owner={}; T.UI:HideControlTooltip(control); eq(hidden,0)
@@ -367,7 +367,7 @@ test("matching_plan_toolbar_and_visible_list_bottom",function()
 end)
 test("hud_slider_columns_do_not_overlap_and_accept_signed_decimal",function()
  F.runtime(); T.UI:ShowPage("hud"); eq(T.UI.labelStylePanel.point[5],-48)
- for _,row in pairs(T.UI.hudGeometryControls) do assert(row.slider.point[4]+row.slider.width<row.input.point[4]); eq(row.input.height,32) end
+ for _,row in pairs(T.UI.hudGeometryControls) do assert(row.slider.point[4]+row.slider.width<row.input.point[4]); eq(row.input.height,28) end
  local value=0; local _,box=T.UI:CreateSliderRow(T.UI.settings,"偏移",0,0,548,-100,100,1,function() return value end,function(v) value=v end,true)
  box.text="-35"; box.scripts.OnEnterPressed(); eq(value,-35)
  local scale=1; local _,decimal=T.UI:CreateSliderRow(T.UI.settings,"缩放",0,0,548,.6,2,.1,function() return scale end,function(v) scale=v end,true)
@@ -424,11 +424,11 @@ test("compact_list_controls_stay_inside_row_bounds",function()
    local x,y=point[4],-point[5]; assert(x>=0 and y>=0); assert(x+control.width<=frame.width); assert(y+control.height<=frame.height)
   end
  end
- for _,w in ipairs(T.UI.sequenceRows) do inside(w.frame,{w.count,w.groupEdit,w.policy,w.up,w.down,w.delete,w.skip,w.usage}); eq(w.frame.height,80) end
+ for _,w in ipairs(T.UI.sequenceRows) do inside(w.frame,{w.count,w.groupEdit,w.policy,w.up,w.down,w.delete,w.skip,w.usage}); eq(w.frame.height,76) end
  T.UI:ShowPage("customapl"); T.UI:AddCustomSpell(143)
- for _,w in ipairs(T.UI.customWidgets) do if w.frame.shown then inside(w.frame,{w.policy,w.up,w.down,w.delete}); eq(w.frame.height,80) end end
+ for _,w in ipairs(T.UI.customWidgets) do if w.frame.shown then inside(w.frame,{w.policy,w.up,w.down,w.delete}); eq(w.frame.height,76) end end
  T.UI:AddSkillGroup("apl"); T.UI:GroupAdd(143)
- for _,w in ipairs(T.UI.groupWidgets) do inside(w.frame,{w.count,w.policy,w.up,w.down,w.delete,w.skip}); eq(w.frame.height,80) end
+ for _,w in ipairs(T.UI.groupWidgets) do inside(w.frame,{w.count,w.policy,w.up,w.down,w.delete,w.skip}); eq(w.frame.height,76) end
  T.UI:CloseSkillGroup(true)
 end)
 
@@ -482,7 +482,7 @@ test("studio_apl_cursor_inserts_before_target_and_failure_preserves_cursor",func
  eq(T.UI:ReceiveCustomSpell(1),false); eq(cleared,1); eq(T.UI.customDraft[1].spellID,143)
  GetCursorInfo,ClearCursor=cursor,clear
 end)
-test("studio_drag_cancel_and_drop_before_keep_strategy_identity",function()
+test("studio_drag_cancel_and_drop_at_target_keep_strategy_identity",function()
  F.runtime(); T.UI:ShowPage("customapl"); T.UI.customDraft={}; T.UI:AddCustomSpell(143); T.UI:AddCustomSpell(205); T.UI:AddCustomSpell(2136)
  T.UI.customDraft[1].strategies={{mode="skip",conditions={{kind="moving",value=true}}}}
  local over=MouseIsOver; MouseIsOver=function() return false end
@@ -490,7 +490,7 @@ test("studio_drag_cancel_and_drop_before_keep_strategy_identity",function()
  eq(T.UI.customDraft[1],row)
  MouseIsOver=function(frame) return frame==T.UI.customWidgets[3].frame end
  T.UI.customWidgets[1].frame.scripts.OnDragStart(); T.UI:RefreshStudio(); eq(T.UI.studioInsertion.shown,true)
- T.UI.customWidgets[1].frame.scripts.OnDragStop(); eq(T.UI.customDraft[2],row); eq(row.strategies[1].mode,"skip"); eq(T.UI.studioInsertion.shown,false)
+ T.UI.customWidgets[1].frame.scripts.OnDragStop(); eq(T.UI.customDraft[3],row); eq(row.strategies[1].mode,"skip"); eq(T.UI.studioInsertion.shown,false)
  MouseIsOver=over
 end)
 test("studio_layout_collapses_panels_without_mutating_draft_and_reuses_frames",function()

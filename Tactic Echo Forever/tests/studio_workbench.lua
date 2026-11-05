@@ -370,4 +370,68 @@ test("紧凑下拉不依赖缺失箭头字形",function()
  local menu=choices.a.parent.parent.parent; local toggle=menu.parent
  U:RefreshControls(); eq(toggle.text,"持续参与推荐 v")
 end)
+test("底部诊断默认收起且重复点击当前标签可恢复列表空间",function()
+ setup(); U.studioBottomExpanded=false; U.settingsLayoutSignature=nil; U:LayoutSettings()
+ local collapsed=U.studioListHeight; eq(U.studioBottomHeight,64)
+ U.studioBottomTabs.trace.scripts.OnClick(); assert(U.studioBottomHeight>64)
+ assert(U.studioListHeight<collapsed); U.studioBottomTabs.trace.scripts.OnClick()
+ eq(U.studioBottomHeight,64); eq(U.studioListHeight,collapsed)
+end)
+test("策略条件按内容分配高度且重排保留草稿与原配置",function()
+ local e=setup(); assert(U:SelectStudioRule("apl",1))
+ eq(U.strategySpellID.point[5],U.strategyAudit.point[5])
+ eq(U.strategyReplaceDrop.point[5],U.strategyAudit.point[5])
+ assert(U.strategyAudit.point[4]+U.strategyAudit.width<=390)
+ assert(U.strategyUpgrade.width<390)
+ U:ChangeCustomStrategy(function(row) row.strategies={{mode="use",conditions={{kind="usable",value=true}}}} end)
+ local small=U.strategyForm.height
+ U:ChangeCustomStrategy(function(row) row.strategies[1].conditions[1]={kind="cdmBuff",value=false,spellID=1460} end)
+ eq(U.strategyForm.height-small,92)
+ U:ChangeCustomStrategy(function(row) row.strategies[1].conditions[1]={kind="distance",min=10,max=30} end)
+ eq(U.strategyForm.height-small,56)
+ U:ChangeCustomStrategy(function(row) row.strategies[1].conditions[2]={kind="moving",value=false} end)
+ eq(U.strategyForm.height-small,140)
+ local conditions=U:CustomRow().strategies[1].conditions
+ eq(conditions[1].min,10); eq(conditions[1].max,30); eq(conditions[2].value,false)
+ eq(#C:Rows(e),0); assert(U:CommitCustomNumbers())
+end)
+test("优先级技能组编辑按钮与状态和组摘要分列",function()
+ setup(); U:AddSkillGroup("apl"); U:RefreshStudio()
+ local found=false
+ for _,w in ipairs(U.customWidgets) do if w.studioAPLGroup then
+  found=true; eq(w.groupEdit.point[4],136); eq(w.groupEdit.point[5],-44)
+  assert(w.frame.studioBadge.point[4]+w.frame.studioBadge.width<w.groupEdit.point[4])
+  assert(w.groupEdit.point[4]+w.groupEdit.width<w.frame.studioSummary.point[4])
+  U:LayoutStudioRow(w,U.studioEditorWidth-48)
+  assert(w.frame.studioSummary.point[4]+w.frame.studioSummary.width<=w.frame.width)
+ end end
+ assert(found)
+end)
+test("优先级相邻向下和向上拖动确实改变位置",function()
+ setup(); U:AddCustomSpell(143); U:AddCustomSpell(205)
+ local over=MouseIsOver
+ MouseIsOver=function(frame) return frame==U.customWidgets[2].frame end
+ U.customWidgets[1].frame.scripts.OnDragStart(); U.customWidgets[1].frame.scripts.OnDragStop()
+ eq(U.customDraft[1].spellID,205); eq(U.customDraft[2].spellID,143)
+ MouseIsOver=function(frame) return frame==U.customWidgets[1].frame end
+ U.customWidgets[2].frame.scripts.OnDragStart(); U.customWidgets[2].frame.scripts.OnDragStop()
+ eq(U.customDraft[1].spellID,143); eq(U.customDraft[2].spellID,205)
+ MouseIsOver=over
+end)
+test("鼠标悬停为假时仍按缩放坐标识别可见拖动落点",function()
+ setup(); U:AddCustomSpell(143); U:AddCustomSpell(205)
+ local cursor,over=GetCursorPosition,MouseIsOver
+ MouseIsOver=function() return false end
+ GetCursorPosition=function() return 120,180 end
+ local scroll=U.customScroll; local first,second=U.customWidgets[1].frame,U.customWidgets[2].frame
+ scroll.GetRect=function() return 100,100,400,300 end; scroll.GetEffectiveScale=function() return .5 end
+ first.GetRect=function() return 100,400,400,76 end; first.GetEffectiveScale=function() return .5 end
+ second.GetRect=function() return 100,320,400,76 end; second.GetEffectiveScale=function() return .5 end
+ first.scripts.OnDragStart(); first.scripts.OnMouseUp(first,"LeftButton"); first.scripts.OnDragStop()
+ eq(U.customDraft[1].spellID,205); eq(U.customDraft[2].spellID,143)
+ GetCursorPosition=function() return 120,225 end -- 在条目几何范围内，但超出可见视口。
+ eq(U:StudioDropTarget("apl"),nil)
+ scroll.GetRect=nil; scroll.GetEffectiveScale=nil; first.GetRect=nil; first.GetEffectiveScale=nil; second.GetRect=nil; second.GetEffectiveScale=nil
+ GetCursorPosition,MouseIsOver=cursor,over
+end)
 return n

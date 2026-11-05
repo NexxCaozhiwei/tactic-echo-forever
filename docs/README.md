@@ -1,5 +1,6 @@
 # TEF文档
 
+- [设置界面紧凑化与拖动验收](UI_COMPACT_2026-11-05.md)
 - [2026年10月26日代码审计](audits/2026-10-26/REPORT.md)
 - [本轮修复与验收记录](audits/2026-10-26/REPAIRS.md)
 - [CDM默认观察ID目录](CDM_DEFAULT_ID_CATALOG.md)

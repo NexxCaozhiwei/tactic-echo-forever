@@ -55,8 +55,8 @@ function U:RefreshCustomAPL()
  for i,w in ipairs(self.customWidgets) do
   local row=self.customDraft[i]; self:Paint(w.frame,row and "Show" or "Hide")
   if row then
-   local height=80
-   self:Paint(w.frame,"ClearAllPoints"); self:Paint(w.frame,"SetPoint","TOPLEFT",self.customChild,"TOPLEFT",0,-listHeight); self:Paint(w.frame,"SetHeight",height); listHeight=listHeight+height+8
+   local height=76
+   self:Paint(w.frame,"ClearAllPoints"); self:Paint(w.frame,"SetPoint","TOPLEFT",self.customChild,"TOPLEFT",0,-listHeight); self:Paint(w.frame,"SetHeight",height); listHeight=listHeight+height+4
    self:Paint(w.groupEdit,row.group and "Show" or "Hide"); self:Paint(w.name,"SetWidth",232)
    if not self.studio then
    local view=S.Spell(row.spellID,tostring(row.spellID or "未解析")); if row.group then view.name="【" .. row.group.name .. "】" end
@@ -289,61 +289,75 @@ function U:RefreshStrategyForm()
  self.strategyInputs={}; self.customNumbers={}
  local y=0
  if row then
-  if not row.group then
-  self:CreateHintText(form,"更换当前技能（保留策略条件）",0,y,390); y=y-28
-  self:CreateHintText(form,"精确技能ID",0,y,112); y=y-24
-  self.strategySpellID=self:SequenceInput(form,0,y,112); self:Paint(self.strategySpellID,"SetText",tostring(row.spellID))
-  self.strategyReplaceID=self:CreateActionButton(form,"ID替换",122,y,100,function()
-   local ok,raw=self:Invoke(self.strategySpellID,"GetText"); local text=ok and S.Public(raw,"string")
-   self:ReplaceStrategySpell(text and text:match("^%s*(%d+)%s*$") and tonumber(text))
-  end)
-  self.strategyReplaceDrop=self:CreateActionButton(form,"拖入替换",234,y,150,function() self:ReceiveStrategySpell() end)
-  self:Paint(self.strategyReplaceDrop,"SetScript","OnReceiveDrag",function() self:Guard(function() self:ReceiveStrategySpell() end) end)
-  y=y-40
-  self.strategyUpgrade=self:CreateActionButton(form,"替换为已学最高等级",0,y,390,function() self:UpgradeStrategySpell() end); y=y-40
+  local function audit(x,width)
+   self.strategyAudit=self:CreateActionButton(form,"体检当前条目",x,y,width,function()
+    if not self:CommitCustomNumbers() then return end
+    local valid,errors,warnings=C:Audit({row},self.engine)
+    self:CustomMessage(not valid and errors or warnings~="" and warnings or "未发现可证明的条件矛盾。")
+   end)
   end
-  self:CreateToggleRow(form,"启用当前技能",0,y,390,function() return row.enabled end,function(v) row.enabled=v end); y=y-40
+  if not row.group then
+   self:CreateHintText(form,"精确技能ID · 更换技能保留策略条件",0,y,390); y=y-20
+   self.strategySpellID=self:SequenceInput(form,0,y,96); self:Paint(self.strategySpellID,"SetText",tostring(row.spellID))
+   self.strategyReplaceID=self:CreateActionButton(form,"ID替换",104,y,72,function()
+    local ok,raw=self:Invoke(self.strategySpellID,"GetText"); local text=ok and S.Public(raw,"string")
+    self:ReplaceStrategySpell(text and text:match("^%s*(%d+)%s*$") and tonumber(text))
+   end)
+   self.strategyReplaceDrop=self:CreateActionButton(form,"拖入替换",184,y,88,function() self:ReceiveStrategySpell() end)
+   self:Paint(self.strategyReplaceDrop,"SetScript","OnReceiveDrag",function() self:Guard(function() self:ReceiveStrategySpell() end) end)
+   audit(280,110); y=y-36
+   self.strategyUpgrade=self:CreateActionButton(form,"替换为已学最高等级",0,y,204,function() self:UpgradeStrategySpell() end)
+   self:CreateToggleRow(form,"启用",212,y,178,function() return row.enabled end,function(v) row.enabled=v end); y=y-36
+  else
+   audit(0,180)
+   self:CreateToggleRow(form,"启用",196,y,194,function() return row.enabled end,function(v) row.enabled=v end); y=y-36
+  end
   local function behavior() if self.strategySource=="groupStep" then self.groupDirty=true end; if not row.behavior then row.behavior={trigger="continuous",scope="entry",emergency=false,after="resume"} end; return row.behavior end
-  local triggers={{"continuous","持续参与推荐"},{"edge","条件重新满足一次"},{"target","每个目标一次"},{"combat","每次战斗一次"}}
-  if row.group then table.insert(triggers,1,{"legacy","原组触发方式（完成后等待重触发）"}) end
-  self.strategyTriggerControls=self:CreateSelectRow(form,"触发方式（成功后消耗，未知不重新武装）",triggers,0,y,390,
+  local triggers={{"continuous","持续推荐"},{"edge","条件重触发"},{"target","每目标一次"},{"combat","每战斗一次"}}
+  if row.group then table.insert(triggers,1,{"legacy","原组触发"}) end
+  self.strategyTriggerControls=self:CreateSelectRow(form,"触发方式",triggers,0,y,190,
    function() return row.behavior and row.behavior.trigger or row.group and "legacy" or "continuous" end,function(v)
     if v=="legacy" then row.behavior=nil; return end
     local b=behavior(); b.trigger=v; if v=="edge" then b.scope="entry" end
-   end); y=y-68
-  self.strategyScopeControls=self:CreateSelectRow(form,"额度范围（条件触发一次仅支持本条目）",{{"entry","本条目"},{"spell","同方案同技能共享"}},0,y,390,
+   end)
+  self.strategyScopeControls=self:CreateSelectRow(form,"额度范围",{{"entry","本条目"},{"spell","同技能共享"}},198,y,192,
    function() return row.behavior and row.behavior.scope or "entry" end,function(v)
     if row.group and v=="entry" then return end
     if v=="spell" and (row.group or (row.behavior and row.behavior.trigger=="edge")) then self:CustomMessage("技能组及条件重新满足一次仅支持本条目额度。"); return end
     behavior().scope=v
-   end); y=y-68
-  self:CreateActionButton(form,"体检当前条目",0,y,390,function()
-   if not self:CommitCustomNumbers() then return end
-   local valid,errors,warnings=C:Audit({row},self.engine)
-   self:CustomMessage(not valid and errors or warnings~="" and warnings or "未发现可证明的条件矛盾。")
-  end); y=y-40
+   end); y=y-60
+  self:CreateHintText(form,"成功后消耗，未知不重新武装；条件重触发仅本条目。",0,y,390); y=y-36
+  if row.group then self:CreateHintText(form,"原组触发：完成后等待重新触发。",0,y,390); y=y-24 end
   if self.strategySource=="maintenance" then
-   self.strategyEmergencyToggle=self:CreateToggleRow(form,"紧急规则（优先于普通维护，等待施法结束）",0,y,390,function() return row.behavior and row.behavior.emergency or false end,function(v) behavior().emergency=v end); y=y-40
+   self.strategyEmergencyToggle=self:CreateToggleRow(form,"紧急规则（优先于普通维护，等待施法结束）",0,y,390,function() return row.behavior and row.behavior.emergency or false end,function(v) behavior().emergency=v end); y=y-36
    self.strategyAfterControls=self:CreateSelectRow(form,"紧急技能成功后的原技能组",{{"resume","恢复原位置"},{"exit","结束原技能组"}},0,y,390,
-    function() return row.behavior and row.behavior.after or "resume" end,function(v) behavior().after=v end); y=y-68
-   self:CreateHintText(form,"紧急规则沿用已确认的增益／解控技能资格；不自动中断读条。",0,y,390); y=y-48
+    function() return row.behavior and row.behavior.after or "resume" end,function(v) behavior().after=v end); y=y-60
+   self:CreateHintText(form,"紧急规则沿用已确认的增益／解控技能资格；不自动中断读条。",0,y,390); y=y-40
   end
   if row.group then
-   self:CreateToggleRow(form,"执行期间继续满足入口策略",0,y,390,function() return row.group.maintain end,function(v) row.group.maintain=v end); y=y-40
+   self:CreateToggleRow(form,"执行期间继续满足入口策略",0,y,390,function() return row.group.maintain end,function(v) row.group.maintain=v end); y=y-36
    self:CreateSelectRow(form,"保持条件明确不满足时（未知等待）",{{"next","结束组并回到父列表"},{"stop","结束组并停止派发"}},0,y,390,
-    function() return row.group.exit or "next" end,function(v) row.group.exit=v end); y=y-68
+    function() return row.group.exit or "next" end,function(v) row.group.exit=v end); y=y-60
   end
   if not row.group then
   self:CreateSelectRow(form,"施放类型（自动无法确认时手动选择）",{{"auto","自动"},{"self","自身"},{"friendly","友方"},{"enemy","敌方"},{"ground","地面"}},0,y,390,
-   function() return row.targetMode or "auto" end,function(v) row.targetMode=v end); y=y-68
+   function() return row.targetMode or "auto" end,function(v) row.targetMode=v end); y=y-60
   self:CreateHintText(form,"地面技能只发送现有按键，落点由玩家操作。",0,y,390); y=y-32
   end
   if (row.moving and row.moving~="any") or (row.activity and row.activity~="any") or (row.distanceOp and row.distanceOp~="any") or (row.cdmKind and row.cdmKind~="none") or row.enemyMin or row.enemyMax then
-   self:CreateHintText(form,"保留旧配置条件，与新策略共同判断；清空可移除旧条件。",0,y,390); y=y-40
+   self:CreateHintText(form,"保留旧配置条件，与新策略共同判断；清空可移除旧条件。",0,y,390); y=y-36
   end
   for si,strategy in ipairs(row.strategies or {}) do
    local index=si; local card=self:Frame("Frame",form,"BackdropTemplate")
-   local height=56+#strategy.conditions*192
+   local heights={}; local height=44
+   for ci,c in ipairs(strategy.conditions) do
+    local size=84
+    if c.kind=="cdmBuff" or c.kind=="cdmCooldown" or c.kind=="rangedEnemies" or c.kind=="nearbyEnemies" then size=176
+    elseif c.kind=="learned" or c.kind=="succeeded" or c.kind=="comboPoints" or c.kind=="distance" or c.kind=="enemies" then size=140
+    elseif c.kind=="lossOfControl" then size=112
+    elseif c.kind=="targetType" then size=124 end
+    heights[ci]=size; height=height+size
+   end
    self:Paint(card,"SetPoint","TOPLEFT",form,"TOPLEFT",0,y); self:Paint(card,"SetSize",390,height)
    self:Paint(card,"SetBackdrop",{bgFile="Interface\\Buttons\\WHITE8X8",edgeFile="Interface\\Buttons\\WHITE8X8",edgeSize=1})
    self:Paint(card,"SetBackdropColor",.045,.075,.11,1); self:Paint(card,"SetBackdropBorderColor",.25,.45,.60,1)
@@ -353,8 +367,9 @@ function U:RefreshStrategyForm()
     local added={kind="usable",value=true}; strategy.conditions[#strategy.conditions+1]=added; self.strategyKindTarget=added
    end); if self.OpenStudioConditionPicker then self:OpenStudioConditionPicker() end end)
    self:CreateActionButton(card,"删除策略",279,-8,102,function() self:ConfirmAction("确认删除这条策略及全部条件？保存后生效。",function() self:ChangeCustomStrategy(function(r) table.remove(r.strategies,index) end) end,"删除策略") end)
+   local cy=-44
    for ci,condition in ipairs(strategy.conditions) do
-    local conditionIndex=ci; local cy=-56-(ci-1)*192
+    local conditionIndex=ci
     local typeButton=self:CreateActionButton(card,condition.kind=="comboPoints" and self.engine.classToken~="ROGUE" and "当前职业不支持此条件" or strategyNames[condition.kind] or "未知条件",8,cy,190,function() end)
     self:Paint(typeButton,"SetScript","OnClick",function() self:Guard(function()
      self:Paint(self.strategyKindMenu,"ClearAllPoints"); self:Paint(self.strategyKindMenu,"SetPoint","TOPLEFT",typeButton,"BOTTOMLEFT",0,-2)
@@ -371,13 +386,13 @@ function U:RefreshStrategyForm()
     end) end,"删除条件") end)
     local function input(field,x,width)
      local labels={min="下限",max="上限",threshold="阈值",spellID="观察技能ID",radius="自身范围（码）"}
-     local label=self:CreateHintText(card,labels[field] or field,x,cy-48,width)
-     local box=self:SequenceInput(card,x,cy-68,width)
+     local label=self:CreateHintText(card,labels[field] or field,x,cy-36,width)
+     local box=self:SequenceInput(card,x,cy-56,width)
      self:Paint(box,"SetText",condition[field] and tostring(condition[field]) or "")
      self.strategyInputs[#self.strategyInputs+1]={box=box,condition=condition,field=field,label=label,labelText=labels[field] or field}
     end
     if condition.kind=="cdmStacks" then
-     self:CreateHintText(card,"此条件已移除，旧配置保持未知阻断。请删除此条件或更换类型后保存。",8,cy-48,370)
+     self:CreateHintText(card,"此条件已移除，旧配置保持未知阻断。请删除此条件或更换类型后保存。",8,cy-36,370)
     elseif condition.kind=="comboPoints" and self.engine.classToken~="ROGUE" then
      self:CreateHintText(card,"当前职业不支持，保持未知阻断；可以删除或更换条件。",8,cy-40,370)
     elseif condition.kind=="comboPoints" or condition.kind=="distance" or condition.kind=="enemies" or condition.kind=="rangedEnemies" or condition.kind=="nearbyEnemies" then
@@ -385,43 +400,44 @@ function U:RefreshStrategyForm()
       local ops={{"lt","<"},{"le","≤"},{"eq","="},{"ne","≠"},{"ge","≥"},{"gt",">"}}
       self:CreateSegmentedControl(card,ops,8,cy-36,250,function() return condition.op end,function(v) condition.op=v end)
       input("threshold",280,92)
-      self:CreateHintText(card,"保留旧条件的比较方式；重新选择目标距离可改为区间。",8,cy-112,370)
+      self:CreateHintText(card,"保留旧条件的比较方式；重新选择目标距离可改为区间。",8,cy-96,370)
      else
-     self:CreateHintText(card,condition.kind=="comboPoints" and "连击点：下限～上限（0～10整数）" or condition.kind=="distance" and "码数：下限～上限（含边界）" or "数量：下限～上限（可见姓名板）",8,cy-48,160)
+     self:CreateHintText(card,condition.kind=="comboPoints" and "连击点：下限～上限（0～10整数）" or condition.kind=="distance" and "码数：下限～上限（含边界）" or "数量：下限～上限（可见姓名板）",8,cy-36,160)
      input("min",176,96); input("max",280,96)
      if condition.kind=="rangedEnemies" or condition.kind=="nearbyEnemies" then
       local choices={{5,"5码"},{10,"10码"},{20,"20码"},{25,"25码"},{30,"30码"},{35,"35码"},{40,"40码"}}
-      self:CreateSegmentedControl(card,choices,8,cy-112,370,function() return condition.radius end,
+      self:CreateSegmentedControl(card,choices,8,cy-96,370,function() return condition.radius end,
        function(value) if self:CommitCustomNumbers() then condition.radius=value; self.customFormIndex=nil; self:RefreshStrategyForm() end end)
       local supported=false; for _,choice in ipairs(choices) do if condition.radius==choice[1] then supported=true end end
-      self:CreateHintText(card,supported and "自身所选码数内；探针未知不视为满足。" or ("旧半径 " .. tostring(condition.radius) .. "码；请选择新档位，原条件暂保留。"),8,cy-152,370)
-     else self:CreateHintText(card,"单边可留空；距离区间跨越阈值时视为未知。",8,cy-112,370) end
+      self:CreateHintText(card,supported and "自身所选码数内；探针未知不视为满足。" or ("旧半径 " .. tostring(condition.radius) .. "码；请选择新档位，原条件暂保留。"),8,cy-132,370)
+     else self:CreateHintText(card,"单边可留空；距离区间跨越阈值时视为未知。",8,cy-96,370) end
      end
     elseif condition.kind=="lossOfControl" then
-     self:CreateSegmentedControl(card,{{"stun","昏迷"},{"confuse","迷惑"},{"fear","恐惧"},{"any","任意失控"}},8,cy-44,370,
+     self:CreateSegmentedControl(card,{{"stun","昏迷"},{"confuse","迷惑"},{"fear","恐惧"},{"any","任意失控"}},8,cy-36,370,
       function() return condition.control end,function(v) condition.control=v end)
-     self:CreateSegmentedControl(card,{{true,"存在"},{false,"不存在"}},8,cy-88,190,function() return condition.value end,function(v) condition.value=v end)
+     self:CreateSegmentedControl(card,{{true,"存在"},{false,"不存在"}},8,cy-72,190,function() return condition.value end,function(v) condition.value=v end)
     elseif condition.kind=="targetType" then
-     self:CreateSegmentedControl(card,{{"enemy","敌对"},{"friendly","友方"},{"self","自己"},{"none","无目标"}},8,cy-44,370,
+     self:CreateSegmentedControl(card,{{"enemy","敌对"},{"friendly","友方"},{"self","自己"},{"none","无目标"}},8,cy-36,370,
       function() return condition.target end,function(v) condition.target=v end)
-     self:CreateHintText(card,"只检查当前目标，不选择或切换目标。",8,cy-112,370)
+     self:CreateHintText(card,"只检查当前目标，不选择或切换目标。",8,cy-80,370)
     else
      local labels=condition.kind=="combat" and {"战斗中","脱战"} or condition.kind=="learned" and {"已学","未学"}
       or condition.kind=="succeeded" and {"本轮已成功","本轮未成功"} or condition.kind=="moving" and {"移动中","站定"} or condition.kind=="cdmBuff" and {"存在","不存在"}
       or (condition.kind=="cdmCooldown" or condition.kind=="cooldown") and {"冷却中","可用"} or condition.kind=="range" and {"范围内","范围外"} or {"可用","不可用"}
-     self:CreateSegmentedControl(card,{{true,labels[1]},{false,labels[2]}},8,cy-68,190,function() return condition.value end,function(v) condition.value=v end)
+     self:CreateSegmentedControl(card,{{true,labels[1]},{false,labels[2]}},8,(condition.kind=="cdmCooldown" or condition.kind=="cdmBuff" or condition.kind=="learned" or condition.kind=="succeeded") and cy-56 or cy-40,190,function() return condition.value end,function(v) condition.value=v end)
      if condition.kind=="cdmCooldown" or condition.kind=="cdmBuff" or condition.kind=="learned" or condition.kind=="succeeded" then
       input("spellID",264,112)
       if condition.kind=="cdmCooldown" or condition.kind=="cdmBuff" then
-       self:CreateActionButton(card,"选择CDM技能",8,cy-112,180,function() self:OpenCDMCatalog(condition) end)
-       self:CreateHintText(card,"从CDM目录选默认观察ID；活动信号不等于光环真值。",8,cy-152,370)
+       self:CreateActionButton(card,"选择CDM技能",8,cy-96,180,function() self:OpenCDMCatalog(condition) end)
+       self:CreateHintText(card,"从CDM目录选默认观察ID；活动信号不等于光环真值。",8,cy-132,370)
       else
-       self:CreateHintText(card,condition.kind=="succeeded" and "ID空白=本技能；开始/重置/编辑清除，暂停保留。" or "精确已学ID；空白=本技能，不按名称或最高等级推断。",8,cy-112,370)
+       self:CreateHintText(card,condition.kind=="succeeded" and "ID空白=本技能；开始/重置/编辑清除，暂停保留。" or "精确已学ID；空白=本技能，不按名称或最高等级推断。",8,cy-96,370)
       end
      end
     end
+    cy=cy-heights[ci]
    end
-   y=y-height-12
+   y=y-height-8
   end
   if #(row.strategies or {})==0 then self:CreateHintText(form,"点击 [+] 添加策略；没有策略时按基础可用性判断。",0,y,390); y=y-55 end
  end
