@@ -58,7 +58,7 @@ function U:RefreshSkillGroup()
 end
 function U:GroupAdd(id,index)
  if not self:CommitGroupFields() then return false end
- id=S.ID(id); if not id or id==7268 or #self.groupDraft.steps>=8 then self:Paint(self.groupMessage,"SetText","精确ID无效或组内已达到8步。"); return false end
+ id=S.ID(id); if not id or id==7268 or #self.groupDraft.steps>=G.MaxSteps then self:Paint(self.groupMessage,"SetText","精确ID无效或组内已达到36步。"); return false end
  local view=S.Spell(id,"技能 " .. id)
  table.insert(self.groupDraft.steps,index and math.min(index,#self.groupDraft.steps+1) or #self.groupDraft.steps+1,{spellID=id,name=view.name,matchIDs={id},repeatCount=1,enabled=true,usagePolicy="always",strategies={}})
  self.groupDirty=true; self:RefreshSkillGroup()
@@ -134,7 +134,7 @@ function U:CreateSkillGroupEditor()
  self:Paint(panel,"SetBackdrop",{bgFile="Interface\\Buttons\\WHITE8X8",edgeFile="Interface\\Buttons\\WHITE8X8",edgeSize=2})
  self:Paint(panel,"SetBackdropColor",.025,.035,.055,.98); self:Paint(panel,"SetBackdropBorderColor",.25,.45,.60,1)
  self:Paint(self:Text(panel,15,-18,390,"GameFontNormal"),"SetText","技能组编辑 · 顺序执行")
- self:CreateHintText(panel,"组策略决定进入；组内精确成功推进。最多8步，不嵌套。",15,-51,395)
+ self:CreateHintText(panel,"组策略决定进入；组内精确成功推进。最多36步，不嵌套。",15,-51,395)
  self:CreateHintText(panel,"组名（1～64字节）",16,-88,240); self:CreateHintText(panel,"循环轮数（1～99）",280,-88,136)
  self.groupName=self:SequenceInput(panel,16,-112,248); self.groupRounds=self:SequenceInput(panel,280,-112,120); self:Paint(self.groupName,"SetMaxLetters",64)
 
@@ -156,7 +156,7 @@ function U:CreateSkillGroupEditor()
  self.groupChild=self:Frame("Frame",scroll); self:Paint(self.groupChild,"SetSize",385,120); self:Paint(scroll,"SetScrollChild",self.groupChild)
  self:BindGroupDrop(scroll,nil,true); self:BindGroupDrop(self.groupChild,nil,true)
  self.groupWidgets={}
- for i=1,8 do
+ for i=1,G.MaxSteps do
   local index=i; local frame=self:CreateRuleRow(self.groupChild,i)
   self:Paint(frame,"SetPoint","TOPLEFT",self.groupChild,"TOPLEFT",0,-(i-1)*80); self:Paint(frame,"SetSize",530,76)
   self:Paint(frame,"SetBackdropColor",.05,.08,.12,1); self:Paint(frame,"SetBackdropBorderColor",.25,.42,.58,1)

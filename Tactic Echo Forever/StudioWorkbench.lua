@@ -27,7 +27,7 @@ function U:DuplicateStudioRow()
  if self.groupEditing and not self:CommitGroupFields() then return false end
  local rows,source=self:StudioActiveRows(); local selected=self.studioSelected
  if not selected or selected.source~=source or not rows or not rows[selected.index] then return false end
- if #rows>=(source=="group" and 8 or 16) then self:StudioMessage("已达到列表容量，未复制。"); return false end
+ if #rows>=(source=="group" and T.SkillGroups.MaxSteps or 16) then self:StudioMessage("已达到列表容量，未复制。"); return false end
  local copy=source=="apl" and T.APL.Custom.CleanRows({rows[selected.index]}) or T.Profiles:Clean({rows[selected.index]},1)
  if not copy or not copy[1] then return false end
  table.insert(rows,selected.index+1,copy[1])
@@ -254,7 +254,7 @@ function U:RefreshStudioContent()
   button.tefControlSelected=key==scene; self:SetControlEnabled(button,true)
   button.tefTooltipTitle=T.Profiles:PlanName(key,e,planSource); button.tefTooltipBody=e.db.enabledPlans[planSource][key] and "已启用；切换编辑保留会话草稿。" or "未启用；切换编辑保留会话草稿。"
  end
- self:Paint(self.studioListHeading,"SetText",self.groupDraft and (self.groupDraft.name .. " · " .. #self.groupDraft.steps .. "/8步") or (name .. " · " .. (rows and #rows or 0) .. "/16项"))
+ self:Paint(self.studioListHeading,"SetText",self.groupDraft and (self.groupDraft.name .. " · " .. #self.groupDraft.steps .. "/" .. T.SkillGroups.MaxSteps .. "步") or (name .. " · " .. (rows and #rows or 0) .. "/16项"))
  self.studioCurrentProbe=self:StudioProbeCurrent()
  local widgets=source=="group" and self.groupWidgets or source=="manual" and self.sequenceRows or self.customWidgets
  for i,w in ipairs(widgets or {}) do self:RefreshStudioRow(w,rows and rows[i],i,source) end

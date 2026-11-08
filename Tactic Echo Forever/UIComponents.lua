@@ -103,7 +103,7 @@ function U:UndoDelete(source)
  local scene=source=="manual" and self.editScene or self.customLoadedScene
  if source=="group" then if undo.group~=self.groupDraft then return false end elseif undo.scene~=scene then return false end
  local rows=source=="manual" and self:DraftRows() or source=="group" and self.groupDraft.steps or self.customDraft
- if not rows or #rows>=(source=="group" and 8 or 16) or not self:CommitCustomNumbers() then return false end
+ if not rows or #rows>=(source=="group" and TEF.SkillGroups.MaxSteps or 16) or not self:CommitCustomNumbers() then return false end
  table.insert(rows,math.min(undo.index,#rows+1),undo.row); self.undoDelete=nil
  self.studioSelected=nil; self:Paint(self.strategyPanel,"Hide"); self.sequencePolicyRow=nil; self.strategyInputs={}; self.customFormIndex=nil
  if source=="group" then self.strategySource=nil; self:Paint(self.groupPanel,"Show") end

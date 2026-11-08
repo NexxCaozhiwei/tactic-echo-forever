@@ -387,17 +387,17 @@ function UI:CreateSettings()
     self.hudGeometryControls={}
     for i,row in ipairs(geometryRows) do local field=row[1]
         local slider,input=self:CreateSliderRow(self.pages.hud,row[2],16,-840-(i-1)*64,548,row[3],row[4],1,
-            function() return math.min(row[4],e.db.hud.geometry[field]) end,function(value) if e.db.hud.mode=="mini" then return end; e.db.hud.geometry[field]=value; TEF.HUD:Layout() end,true)
+            function() return math.min(row[4],e.db.hud.geometry[field]) end,function(value) if e.db.hud.mode~="standard" then return end; e.db.hud.geometry[field]=value; TEF.HUD:Layout() end,true)
         self.hudGeometryControls[field]={slider=slider,input=input}
         self:AddControlSync(function()
-            local enabled=e.db.hud.mode~="mini"
+            local enabled=e.db.hud.mode=="standard"
             self:Paint(slider,enabled and "Enable" or "Disable"); self:Paint(input,"EnableMouse",enabled); self:Paint(input,"EnableKeyboard",enabled)
             if not enabled then self:Paint(input,"ClearFocus") end
-            slider.tefDisabledReason=not enabled and "迷你HUD采用固定图标大小与间距；切回标准HUD后可调整。" or nil
+            slider.tefDisabledReason=not enabled and "简略与最小HUD采用固定图标大小与间距；切回标准HUD后可调整。" or nil
             input.tefDisabledReason=slider.tefDisabledReason
         end,slider)
     end
-    self:CreateHintText(self.pages.hud,"迷你HUD固定图标大小与间距，以上几何设置仅用于标准HUD。左键主卡启停，右键设置；空白可拖动。",16,-1208,548)
+    self:CreateHintText(self.pages.hud,"简略与最小HUD固定图标大小与间距，以上几何设置仅用于标准HUD。左键主卡启停，右键设置；空白可拖动。",16,-1208,548)
     self:CreateSectionCard(self.pages.hud,"HUD底纹与外框透明度",0,-1268,580,240)
     self.hudOpacityControls={}
     for i,spec in ipairs({{"background","底纹透明度（%）"},{"border","外框透明度（%）"}}) do
@@ -407,7 +407,7 @@ function UI:CreateSettings()
             function(value) e.db.hud.opacity[field]=1-value/100; TEF.HUD:ApplyOpacity() end,true)
         self.hudOpacityControls[field]={slider=slider,input=input}
     end
-    self:CreateHintText(self.pages.hud,"0%不透明，100%完全透明；标准与迷你HUD共用。仅改变底纹和外框，技能图标与文字保持原样。",16,-1448,548)
+    self:CreateHintText(self.pages.hud,"0%不透明，100%完全透明；全部HUD模式共用。仅改变底纹和外框，技能图标与文字保持原样。",16,-1448,548)
     self:Paint(self.pages.hud,"SetHeight",1532)
     self:CreateSectionCard(self.pages.tek,"派发与接续参数",0,-138,580,332)
     self.signalToggle=self:CreateToggleRow(self.pages.tek,"TEAP输出",12,-176,556,function() return e.db.dispatch.signal end,function(v) TEF.Runtime:SetSignal(v) end)

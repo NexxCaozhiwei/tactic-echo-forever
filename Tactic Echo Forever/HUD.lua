@@ -214,7 +214,7 @@ function H:CreateQuickPlans()
 end
 function H:RefreshQuickPlans()
  if not self.quickPlans then return end
- U:Paint(self.quickPlans,self.displayMode=="mini" and "Hide" or "Show")
+ U:Paint(self.quickPlans,self.displayMode~="standard" and "Hide" or "Show")
  local e=self.engine; local source=TEF.Recommendation:BaseSource(e)
  for rowIndex,spec in ipairs(quickRows) do
   for index,slot in ipairs(quickSlots) do
@@ -236,7 +236,7 @@ function H:RefreshQuickPlans()
 end
 function H:SetMode(mode)
  mode=S.Public(mode,"string")
- if (mode~="standard" and mode~="mini") or U:Combat()~=false or not self.engine then return false end
+ if (mode~="standard" and mode~="mini" and mode~="minimal") or U:Combat()~=false or not self.engine then return false end
  self.engine.db.hud.mode=mode
  self:Layout(); self:Refresh()
  if U.settingsOpen and U.page=="hud" and U.engine==self.engine then U:RefreshPage() end
@@ -249,13 +249,13 @@ function H:CreateModeButton()
  U:Paint(button,"RegisterForClicks","LeftButtonUp")
  U:Paint(button,"SetScript","OnClick",function(_,rawButton)
   if S.Public(rawButton,"string")=="LeftButton" then
-   U:Guard(function() self:SetMode(self.displayMode=="mini" and "standard" or "mini") end)
+   U:Guard(function() self:SetMode(({standard="mini",mini="minimal",minimal="standard"})[self.displayMode] or "standard") end)
    U:Call(GameTooltip,"Hide")
   end
  end)
  U:Paint(button,"SetScript","OnEnter",function()
   U:Call(GameTooltip,"SetOwner",button,"ANCHOR_RIGHT")
-  U:Call(GameTooltip,"AddLine",self.displayMode=="mini" and "切换为标准HUD" or "切换为迷你HUD")
+  U:Call(GameTooltip,"AddLine",({standard="切换为三图标简略HUD",mini="切换为单图标最小HUD",minimal="切换为全尺寸HUD"})[self.displayMode])
   U:Call(GameTooltip,"AddLine","脱战可用；保留派发意图与列表进度。",.7,.8,.9,true)
   U:Call(GameTooltip,"Show")
  end)
@@ -360,7 +360,7 @@ function H:Card(x,size,primary)
         U:Call(f,"RegisterForClicks","LeftButtonUp","RightButtonUp")
         U:Call(f,"SetScript","OnClick",function(_,rawButton)
             U:Guard(function()
-                if self.dragging then return end
+                if self.dragging or card.suppressClick then card.suppressClick=nil; return end
                 local button=S.Public(rawButton,"string")
                 if button=="LeftButton" then TEF_ToggleDispatchIntent()
                 elseif button=="RightButton" then U:OpenSettings() end
@@ -383,7 +383,19 @@ function H:Card(x,size,primary)
             U:Call(GameTooltip,"AddLine","不会直接施法",.7,.7,.7); U:Call(GameTooltip,"Show")
         end)
         U:Call(f,"SetScript","OnLeave",function() card.hover=false; card.pressed=false; self:RefreshState(); U:Call(GameTooltip,"Hide") end)
-        U:Call(f,"SetScript","OnMouseDown",function() card.pressed=true; self:RefreshState() end)
+        U:Call(f,"RegisterForDrag","LeftButton")
+        U:Call(f,"SetScript","OnDragStart",function()
+            if self.displayMode~="minimal" then return end
+            local ok,start=U:Invoke(self.frame,"GetScript","OnDragStart")
+            if ok and start then start(self.frame); card.suppressClick=self.dragging or nil end
+            U:Call(GameTooltip,"Hide")
+        end)
+        U:Call(f,"SetScript","OnDragStop",function()
+            local ok,stop=U:Invoke(self.frame,"GetScript","OnDragStop")
+            if ok and stop then stop(self.frame) end
+            card.pressed=false; self:RefreshState()
+        end)
+        U:Call(f,"SetScript","OnMouseDown",function() card.suppressClick=nil; card.pressed=true; self:RefreshState() end)
         U:Call(f,"SetScript","OnMouseUp",function() card.pressed=false; self:RefreshState() end)
     end
     return card
@@ -407,7 +419,8 @@ function H:TooltipDetails(card)
  if card.fullKeyText then U:Call(GameTooltip,"AddLine","键位：" .. card.fullKeyText,.7,.8,.9) end
 end
 function H:CompactVisibility()
- local mini=self.displayMode=="mini"
+ local mini=self.displayMode~="standard"
+ local minimal=self.displayMode=="minimal"
  local styles=self.engine.db.hud.styles.global
  U:Paint(self.name,not mini and styles.name.enabled and "Show" or "Hide")
  U:Paint(self.status,not mini and "Show" or "Hide")
@@ -415,14 +428,17 @@ function H:CompactVisibility()
  local count=not mini or (styles.status.enabled and TEF.Recommendation:Source(self.engine)~="apl")
  U:Paint(self.countText,count and "Show" or "Hide")
  U:Paint(self.miniCountChip,mini and count and "Show" or "Hide")
+ for _,field in ipairs({self.chrome,self.chromeInner,self.castBar,self.castTrack}) do U:Paint(field,minimal and "Hide" or "Show") end
+ if minimal then U:Paint(self.cards[1].key,"Hide"); U:Paint(self.cards[1].keycap,"Hide") end
  for _,field in ipairs({self.role,self.castText,self.castTime}) do U:Paint(field,mini and "Hide" or "Show") end
 end
 function H:Layout()
  if not self.frame then return end
  if U:Combat()~=false then self.pending=true; return end
- self.pending=false; self.displayMode=self.engine.db.hud.mode=="mini" and "mini" or "standard"
- local mini=self.displayMode=="mini"
- local width,height=mini and 156 or 260,mini and 60 or 108
+ self.pending=false; self.displayMode=({mini=true,minimal=true})[self.engine.db.hud.mode] and self.engine.db.hud.mode or "standard"
+ local mini=self.displayMode~="standard"
+ local minimal=self.displayMode=="minimal"
+ local width,height=minimal and 44 or mini and 156 or 260,minimal and 44 or mini and 60 or 108
  self.layoutWidth=width; self.layoutHeight=height
  local g=self.engine.db.hud.geometry
  local sizes=mini and {44,36,36} or {math.min(44,g.mainSize),math.min(36,g.preview1Size),math.min(36,g.preview2Size)}
@@ -439,7 +455,7 @@ function H:Layout()
  self:RoundSurface(self.chromeInner,width-2,height-2,7,false,true); self:ApplyOpacity()
  local xs=mini and {6,62,108} or {6,previewX,previewX+sizes[2]+gap}
  for i,card in ipairs(self.cards or {}) do
-  card.size=sizes[i]; anchor(card.frame,self.frame,xs[i],mini and (i==1 and -6 or -10) or (i==1 and -8 or -12),sizes[i],sizes[i])
+  card.size=sizes[i]; anchor(card.frame,self.frame,minimal and i==1 and 0 or xs[i],minimal and i==1 and 0 or mini and (i==1 and -6 or -10) or (i==1 and -8 or -12),sizes[i],sizes[i])
   self:RoundSurface(card.frame,sizes[i],sizes[i],i==1 and 6 or 4,true,false)
   self:SurfaceColor(card.frame,"fill",.025,.045,.07,1)
   self:RoundSurface(card.border,sizes[i],sizes[i],i==1 and 6 or 4,false,true)
@@ -472,6 +488,7 @@ function H:Layout()
  anchor(self.miniCountChip,self.cards[1].frame,11,-29,32,14)
  self:RoundSurface(self.miniCountChip,32,14,3,true,false)
  self:SurfaceColor(self.miniCountChip,"fill",.015,.03,.055,.96)
+ U:Paint(self.statusDot,"Show")
  anchor(self.modeButton,self.frame,width-10,-2,8,8)
  self:RoundSurface(self.modeButton,8,8,2,true,true)
  self:SurfaceColor(self.modeButton,"fill",.035,.10,.16,1)
@@ -568,7 +585,7 @@ function H:RefreshState()
     U:Paint(primary.overlay,"SetColorTexture",c[1],c[2],c[3],primary.pressed and .22 or primary.hover and .12 or .025)
     self:ReadCastVisual()
     for i,card in ipairs(self.cards) do
-        if i>1 then U:Paint(card.frame,card.displayStep and e.db.hud.preview and "Show" or "Hide") end
+        if i>1 then U:Paint(card.frame,self.displayMode~="minimal" and card.displayStep and e.db.hud.preview and "Show" or "Hide") end
     end
     local apl=TEF.Recommendation:Source(e)=="apl"
     local badge,description,unknown=self:StatusText(v)

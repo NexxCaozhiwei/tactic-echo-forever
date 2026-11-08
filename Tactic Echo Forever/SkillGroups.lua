@@ -1,6 +1,7 @@
 local _,T=...
 local S,G=T.Safety,{}
 T.SkillGroups=G
+G.MaxSteps=36
 function G:LogName(row)
  local name=S.Field(row,"groupName","string"); return name and #name<=64 and not name:find("[|%c]") and name or nil
 end
@@ -17,9 +18,9 @@ function G:Clean(raw)
  local rounds,status=S.Field(record,"rounds","number"); if status=="NO_DATA" then rounds=1 end
  if not name or #name<1 or #name>64 or name:find("[|%c]") or not rounds or rounds<1 or rounds>99 or rounds%1~=0 then return nil,"GROUP_INVALID" end
  local rows=S.Field(record,"steps","table"); local got,size=pcall(function() return rows and #rows end)
- if not got or not size or size>8 then return nil,"GROUP_CAPACITY" end
+ if not got or not size or size>self.MaxSteps then return nil,"GROUP_CAPACITY" end
  for i=1,size do local _,kind=S.Field(S.Field(rows,i,"table"),"group","table"); if kind~="NO_DATA" then return nil,"GROUP_NESTED" end end
- local clean=T.Profiles:Clean(rows,8); if not clean then return nil,"GROUP_STEPS_INVALID" end
+ local clean=T.Profiles:Clean(rows,self.MaxSteps); if not clean then return nil,"GROUP_STEPS_INVALID" end
  local maintain,maintainType=S.Field(record,"maintain","boolean")
  local exit,exitType=S.Field(record,"exit","string")
  if (maintainType~="PUBLIC" and maintainType~="NO_DATA") or (exitType~="PUBLIC" and exitType~="NO_DATA")
@@ -55,7 +56,7 @@ function G:Begin(e,row,source,observedGUID)
  if e.groupRun or e.maintenanceActive or (not observedGUID and e:RecommendationLocked()) or not row.group or #row.group.steps==0 then return false end
  local group=self:Clean(row.group); if not group then return false end
  for i,step in ipairs(group.steps) do T.APL.Custom.PolicyIdentities[step]=row.group.steps[i] end
- local steps=T.Engine.Validate(group.steps); if not steps then return false end
+ local steps=T.Engine.Validate(group.steps,self.MaxSteps); if not steps then return false end
  local run={row=row,group=group,source=source,steps=e.steps,index=e.index,count=e.stepCasts,completed=e.completed,running=e.running,
   usageProgress=e.usageProgress,shootHandoff=e.shootHandoff,candidate=e.aplCandidate,round=1,
   skipStreak=e.skipStreak,policySkipStreak=e.policySkipStreak,attackActivationStreak=e.attackActivationStreak,

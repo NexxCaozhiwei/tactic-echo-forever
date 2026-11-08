@@ -316,3 +316,52 @@ test("hud_mini_saved_mode_is_whitelisted_and_apl_has_no_repeat_chip",function()
  eq(H.countText.shown,false); eq(H.miniCountChip.shown,false)
  H:SetMode("standard"); eq(H.countText.text,"候选预览"); eq(H.countText.shown,true)
 end)
+
+
+test("hud_three_modes_cycle_and_minimal_stays_icon_only",function()
+ local e=setup(); local generation,index,serial=e.generation,e.index,e.receiptSerial
+ local intent,pending=T.Runtime.intent,T.Dispatch.pending
+ local click=H.modeButton:GetScript("OnClick")
+ for cycle=1,3 do
+  click(nil,"LeftButton"); eq(e.db.hud.mode,"mini")
+  click(nil,"LeftButton"); eq(e.db.hud.mode,"minimal")
+  eq(H.layoutWidth,44); eq(H.layoutHeight,44)
+  eq(H.cards[1].frame.point[4],0); eq(H.cards[1].frame.point[5],0)
+  local copy=T.Engine.New(T.Config,e.db); eq(copy.db.hud.mode,"minimal")
+  H:Refresh(); H:RefreshState(); H:VisualTick()
+  for _,field in ipairs({H.cards[2].frame,H.cards[3].frame,H.name,H.status,H.badge,
+   H.quickPlans,H.castBar,H.castTrack,
+   H.castText,H.castTime,H.role,H.chrome,H.chromeInner,H.cards[1].key,H.cards[1].keycap}) do
+   eq(field.shown,false)
+  end
+  eq(H.modeButton.point[4],34)
+  eq(H.statusDot.shown,true); eq(H.countText.shown,true); eq(H.miniCountChip.shown,true)
+  InCombatLockdown=function() return true end
+  click(nil,"LeftButton"); eq(e.db.hud.mode,"minimal")
+  InCombatLockdown=function() return false end
+  click(nil,"LeftButton"); eq(e.db.hud.mode,"standard")
+  eq(H.layoutWidth,260); eq(H.castBar.shown,true); eq(H.chrome.shown,true)
+  eq(H.name.shown,true); eq(H.quickPlans.shown,true)
+ end
+ eq(e.generation,generation); eq(e.index,index); eq(e.receiptSerial,serial)
+ eq(T.Runtime.intent,intent); eq(T.Dispatch.pending,pending)
+end)
+
+
+test("hud_minimal_icon_drag_obeys_lock_and_suppresses_dispatch_click",function()
+ local e=setup(); H:SetMode("minimal")
+ local card=H.cards[1]; local before=T.Runtime.intent
+ local start=card.frame:GetScript("OnDragStart")
+ local stop=card.frame:GetScript("OnDragStop")
+ local down=card.frame:GetScript("OnMouseDown")
+ local click=card.frame:GetScript("OnClick")
+ e.db.hud.locked=true; down(); start(); assert(not H.dragging)
+ e.db.hud.locked=false
+ InCombatLockdown=function() return true end
+ start(); assert(not H.dragging)
+ InCombatLockdown=function() return false end
+ down(); start(); eq(H.dragging,true); eq(card.suppressClick,true)
+ stop(); eq(H.dragging,false)
+ click(nil,"LeftButton"); eq(T.Runtime.intent,before); eq(card.suppressClick,nil)
+ H:SetMode("standard"); start(); assert(not H.dragging)
+end)

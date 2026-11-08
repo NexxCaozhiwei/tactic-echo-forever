@@ -5,6 +5,31 @@ local function test(name,fn) fn(); n=n+1 end
 local function spell(id,count,skip) return {spellID=id,name="技能 " .. id,matchIDs={id},repeatCount=count or 1,skipUnavailable=skip,enabled=true,strategies={}} end
 local function group() return {name="技能组A",rounds=1,steps={spell(143),spell(205,2)}} end
 local function receipt(id,guid) F.receipt("UNIT_SPELLCAST_SENT",id,guid); F.receipt("UNIT_SPELLCAST_SUCCEEDED",id,guid) end
+test("group_36_steps_roundtrip_and_precise_execution",function()
+ for _,source in ipairs({"manual","apl"}) do
+  local e=F.runtime(); assert(T.Recommendation:SetSource(e,source,"single"))
+  local g=group(); g.steps={}; for i=1,36 do g.steps[i]=spell(143) end
+  assert(T.SkillGroups:Clean(g)); eq(T.Engine.Validate(g.steps),nil)
+  assert(T.Engine.Validate(g.steps,T.SkillGroups.MaxSteps))
+  local row=T.SkillGroups:Row(g)
+  if source=="manual" then assert(T.Profiles:Save(e,"single",{row,spell(205)}))
+  else assert(T.APL.Custom:Save(e,{{group=g,spellID=143,enabled=true,strategies={}},{spellID=205,enabled=true}},"single",e.classToken)) end
+  local copy=T.Engine.New(T.Config,e.db)
+  local saved=source=="manual" and copy.db.profiles.single or T.APL.Custom:Rows(copy)
+  eq(#saved[1].group.steps,36)
+  e:SetLoop(false); T.Runtime:SetIntent(true); T.Runtime:Reconcile(); assert(e.groupRun)
+  for i=1,36 do
+   eq(e.index,i); receipt(143,"group36-" .. source .. "-" .. i)
+   T.Runtime:Reconcile()
+  end
+  T.Runtime:Reconcile(); T.Runtime:Reconcile()
+  assert(not e.groupRun,"group36 source=" .. source .. " index=" .. e.index .. " completed=" .. tostring(e.completed))
+  g.steps[37]=spell(143); local clean,why=T.SkillGroups:Clean(g)
+  eq(clean,nil); eq(why,"GROUP_CAPACITY")
+  T.Runtime:Stop()
+ end
+end)
+
 test("usage_scopes_isolate_parent_and_groups_and_preserve_rounds",function()
  for _,policy in ipairs({"target","combat"}) do
   local e=F.runtime(); assert(T.Recommendation:SetSource(e,"manual","single"))
@@ -175,6 +200,21 @@ test("manual_group_editor_child_policy_and_roundtrip",function()
  T.UI:CloseSkillGroup(true)
  local bad=T.SkillGroups:Row(group()); bad.enabled=F.secret; eq(T.Profiles:Clean({bad}),nil)
 end)
+test("group_editor_36_rows_move_save_and_capacity",function()
+ local e=F.runtime(); T.UI:ShowPage("profiles"); T.UI:AddSkillGroup("manual")
+ for i=1,35 do assert(T.UI:GroupAdd(143)) end
+ assert(T.UI:GroupAdd(205)); eq(#T.UI.groupWidgets,36)
+ eq(T.UI:GroupAdd(143),false)
+ T.UI:GroupMove(36,1); eq(T.UI.groupDraft.steps[1].spellID,205)
+ T.UI.groupWidgets[36].count.text="7"
+ assert(T.UI:SaveSkillGroup())
+ local copy=T.Engine.New(T.Config,e.db)
+ local rows=copy.db.profiles.single
+ local g=rows[#rows].group
+ eq(#g.steps,36); eq(g.steps[1].spellID,205); eq(g.steps[36].repeatCount,7)
+ T.UI:CloseSkillGroup(true)
+end)
+
 test("group_drop_on_list_and_row_preserves_cursor_when_rejected",function()
  local e=F.runtime(); T.UI:ShowPage("customapl"); T.UI:AddSkillGroup("apl")
  local cursor,clear=GetCursorInfo,ClearCursor; local cleared=0
@@ -184,8 +224,8 @@ test("group_drop_on_list_and_row_preserves_cursor_when_rejected",function()
  GetCursorInfo=function() return "spell",1,nil,205 end
  T.UI.groupWidgets[1].frame.scripts.OnReceiveDrag(); eq(T.UI.groupDraft.steps[1].spellID,205); eq(T.UI.groupDraft.steps[2].spellID,143)
  eq(cleared,2)
- for i=3,8 do T.UI:GroupAdd(143) end
- T.UI.groupDrop.scripts.OnReceiveDrag(); eq(#T.UI.groupDraft.steps,8); eq(cleared,2)
+ for i=3,T.SkillGroups.MaxSteps do T.UI:GroupAdd(143) end
+ T.UI.groupDrop.scripts.OnReceiveDrag(); eq(#T.UI.groupDraft.steps,T.SkillGroups.MaxSteps); eq(cleared,2)
  assert(T.UI.groupListBox); T.UI:CloseSkillGroup(true); GetCursorInfo,ClearCursor=cursor,clear
 end)
 test("right_panel_switch_stages_group_and_never_overlaps",function()

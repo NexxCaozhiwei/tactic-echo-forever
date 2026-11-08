@@ -36,7 +36,7 @@ function U:OpenStudioConditionPicker()
 end
 function U:StudioFingerprint(rows,source)
  local clean
- if source=="manual" or source=="group" then clean=T.Profiles:Clean(rows,source=="group" and 8 or 32) else clean=C.CleanRows(rows) end
+ if source=="manual" or source=="group" then clean=T.Profiles:Clean(rows,source=="group" and T.SkillGroups.MaxSteps or 32) else clean=C.CleanRows(rows) end
  return encode(clean)
 end
 function U:StudioInsert(id,index)
@@ -186,8 +186,8 @@ function U:StudioProbeRows()
  if not self:CommitSequenceCounts() or not self:CommitCustomNumbers() then return false end
  if self.groupEditing and not self:CommitGroupFields() then return false end
  local rows,source,scene=self:StudioActiveRows(); if not rows then return false end
- if #rows>(source=="group" and 8 or 16) then self:StudioMessage("草稿超过当前列表容量，请先删减后采样。"); return false end
- local clean=source=="apl" and C.CleanRows(rows) or T.Profiles:Clean(rows,source=="group" and 8 or 32)
+ if #rows>(source=="group" and T.SkillGroups.MaxSteps or 16) then self:StudioMessage("草稿超过当前列表容量，请先删减后采样。"); return false end
+ local clean=source=="apl" and C.CleanRows(rows) or T.Profiles:Clean(rows,source=="group" and T.SkillGroups.MaxSteps or 32)
  if not clean then self:StudioMessage("草稿无效，不能采样。"); return false end
  -- 此快照只归界面所有。readOnly禁止重新武装额度和组触发。
  local e=self.engine; local state={readOnly=true,engine=e,actions={},scene=scene,classToken=e.classToken,

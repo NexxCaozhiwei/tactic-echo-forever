@@ -68,7 +68,7 @@ function A:BuildUI(U,parent)
  U.labelStyleButtons=U:CreateSegmentedControl(parent,choices,0,0,548,function() return selected.key end,function(key)
   for _,label in ipairs(labels) do if label.key==key then selected=label; break end end
  end)
- local function fixedProgress() return U.engine.db.hud.mode~="mini" and selected.key=="status" end
+ local function fixedProgress() return U.engine.db.hud.mode=="standard" and selected.key=="status" end
  U.labelEnabledButton=U:CreateToggleRow(parent,"显示当前标签",0,-48,548,function() return fixedProgress() or current().enabled end,function(v)
   if fixedProgress() then return end
   current().enabled=v; changed()
@@ -85,9 +85,9 @@ function A:BuildUI(U,parent)
  end
  local effective=U:CreateHintText(parent,"",0,-216,548)
  syncFontPanels=function()
-  local mini=U.engine.db.hud.mode=="mini"
+  local mini=U.engine.db.hud.mode~="standard"
   for _,item in ipairs(fontPanels) do U:Paint(item.frame,item.key==selected.key and (item.key~="status" or item.mini==mini) and not (mini and selected.key=="name") and "Show" or "Hide") end
-  U:Paint(effective,"SetText",mini and selected.key=="name" and "迷你HUD不显示技能名称；切回标准HUD后可设置。" or "字号按实际显示值设置；旧字号与缩放仅兼容读取，新修改使用1倍标签缩放。")
+  U:Paint(effective,"SetText",mini and selected.key=="name" and "简略与最小HUD不显示技能名称；切回标准HUD后可设置。" or "字号按实际显示值设置；旧字号与缩放仅兼容读取，新修改使用1倍标签缩放。")
  end
  for i,color in ipairs(colors) do U:CreateActionButton(parent,color[1],(i-1)*92,-280,80,function()
   current().color={r=color[2],g=color[3],b=color[4],a=1}; changed()

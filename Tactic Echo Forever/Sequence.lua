@@ -34,8 +34,8 @@ function Engine:Log(kind, reason, spellID, current, nextStep, event, attempt, at
     end
 end
 
-local function configuration(config)
-    if type(config) ~= "table" or #config == 0 or #config > 16 then return nil end
+local function configuration(config,limit)
+    if type(config) ~= "table" or #config == 0 or #config > (limit or 16) then return nil end
     local steps = {}
     for i, row in ipairs(config) do
         if type(row) ~= "table" then return nil end
@@ -125,7 +125,7 @@ function Engine.New(config, db)
                         cycle=S.Field(r,"cycle","number"),request=S.Field(r,"request","number"),
                         time=S.Field(r,"time","number"),attempt=S.ID(S.Field(r,"attempt","number")),attemptRequest=S.Field(r,"attemptRequest","number"),
                         castCount=S.Field(r,"castCount","number"),requiredCasts=S.Field(r,"requiredCasts","number"),
-                        groupName=TEF.SkillGroups:LogName(r),groupRound=TEF.SkillGroups:LogNumber(r,"groupRound",99),groupIndex=TEF.SkillGroups:LogNumber(r,"groupIndex",8),
+                        groupName=TEF.SkillGroups:LogName(r),groupRound=TEF.SkillGroups:LogNumber(r,"groupRound",99),groupIndex=TEF.SkillGroups:LogNumber(r,"groupIndex",TEF.SkillGroups.MaxSteps),
                         research=TEF.Research and TEF.Research.CleanSummary(S.Field(r,"research","table")) or nil,
                         apl=TEF.APL and TEF.APL.Trace.Clean(S.Field(r,"apl","table")) or nil,
                         policy=TEF.APL and TEF.APL.Trace.Clean(S.Field(r,"policy","table")) or nil}
@@ -245,7 +245,7 @@ function Engine:ReplaceRecommendation(rows)
     -- Reuse identity retirement and transport revocation, under Runtime's
     -- internal ownership; this is not a user/configuration reset.
     self:Invalidate("APL_RECOMMENDATION_REPLACED")
-    self.steps=configuration(rows)
+    self.steps=configuration(rows,self.groupRun and TEF.SkillGroups.MaxSteps or nil)
     self.index,self.completed,self.stepCasts=1,false,0
     self.running=wasRunning and self.steps~=nil and not self.identitySaturated
     return true
