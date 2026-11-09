@@ -1,4 +1,5 @@
 import time
+from datetime import datetime, timezone
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -86,7 +87,11 @@ class TEKRunner:
             )
 
         try:
+            read_started = time.perf_counter()
+            read_started_at = datetime.now(timezone.utc).isoformat()
             frame = self.frame_source.read()
+            read_completed = time.perf_counter()
+            read_completed_at = datetime.now(timezone.utc).isoformat()
             self.context.foreground_before_dispatch = self._foreground_dispatch_snapshot(
                 config,
                 self.context.foreground_before_read,
@@ -111,7 +116,14 @@ class TEKRunner:
                 tekState="Waiting",
                 diagnostics={"foreground": _foreground_diagnostics(self.context.foreground_before_read), "signal": _source_diagnostics(self.frame_source)},
             )
-        return self.engine.process_frame(frame, self.context)
+        process_started = time.perf_counter()
+        record = self.engine.process_frame(frame, self.context)
+        timing = dict((record.diagnostics or {}).get("delivery_timing") or {})
+        timing.update(readStartedAt=read_started_at, readCompletedAt=read_completed_at,
+                      readMS=(read_completed-read_started)*1000,
+                      foregroundCheckMS=(process_started-read_completed)*1000,
+                      processMS=(time.perf_counter()-process_started)*1000)
+        return replace(record, diagnostics={**(record.diagnostics or {}), "delivery_timing": timing})
 
     def _apply_runtime_config(self, config: RunnerConfig) -> None:
         # A finite budget is decremented by SafetyGate after an actual input.

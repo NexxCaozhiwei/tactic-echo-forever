@@ -12,8 +12,22 @@ function C.Clean(raw)
     local key=S.Field(raw,"hotkey","string")
     local lead=S.Field(raw,"castQueueLead","number")
     local retry=S.Field(raw,"retryDelay","number")
+    local channelLead=S.Field(raw,"channelTailLead","number")
+    local groupLead=S.Field(raw,"groupQueueLead","number")
+    local normalMax=S.Field(raw,"latencyAllowanceMax","number")
+    local groupMax=S.Field(raw,"groupLatencyAllowanceMax","number")
+    local groupNetwork,groupNetworkReason=S.Field(raw,"groupLatencyCompensation","boolean")
     local ordinary,ordinaryReason=S.Field(raw,"ordinaryContinuous","boolean")
-    return {mode=modes[mode] and mode or "auto",autoStart=S.Field(raw,"autoStart","boolean")~=false,
+    return {groupQueue=S.Field(raw,"groupQueue","boolean")==true,
+        groupQueueLead=math.max(0,math.min(.5,groupLead or lead or .2)),
+        queueWindowMode=S.Field(raw,"queueWindowMode","string")=="client" and "client" or "custom",
+        groupQueueWindowMode=S.Field(raw,"groupQueueWindowMode","string")=="client" and "client" or "custom",
+        latencyAllowanceMax=normalMax and math.max(0,math.min(.15,normalMax)) or .15,
+        groupLatencyAllowanceMax=groupMax and math.max(0,math.min(.15,groupMax)) or .15,
+        groupLatencyCompensation=groupNetwork==true or (groupNetworkReason=="NO_DATA" and S.Field(raw,"latencyCompensation","boolean")~=false),
+        channelTail=S.Field(raw,"channelTail","boolean")==true,
+        channelTailLead=channelLead and math.max(0,math.min(.5,channelLead)) or .05,
+        latencyCompensation=S.Field(raw,"latencyCompensation","boolean")~=false,movementReevaluate=S.Field(raw,"movementReevaluate","boolean")~=false,mode=modes[mode] and mode or "auto",autoStart=S.Field(raw,"autoStart","boolean")~=false,
         permission=S.Field(raw,"permission","boolean")~=false,signal=S.Field(raw,"signal","boolean")~=false,
         takeover=S.Field(raw,"takeover","string")=="pause" and "pause" or "continue",
         hotkey=key and #key<=40 and key:match("^[A-Z0-9%-=]+$") and key or "",
@@ -50,11 +64,13 @@ function C:Changed(state,reason)
     self.notifying=false
 end
 function C:EngineCall(method)
+    local channel=method=="Resume" and TEF.Dispatch:ChannelTailAllowed() and TEF.Dispatch.channelReceipt
     if method=="Reset" and self.e.groupRun then TEF.SkillGroups:Restore(self.e,"GROUP_RESET") end
     if method=="Reset" and self.e.maintenanceActive then TEF.Maintenance:Restore(self.e,"MAINTENANCE_RESET") end
     self.internal=true
     local ok=pcall(self.e[method],self.e)
     self.internal=false
+    if ok and channel and channel.serial==(self.e.receiptSerial or 0) and channel.group==self.e.groupRun then channel.generation=self.e.generation end
     if not ok then
         -- Last-resort containment belongs to Runtime, never to presentation.
         self.intent=false; self.e.running=false
@@ -65,14 +81,16 @@ function C:EngineCall(method)
     return ok
 end
 function C:ReplaceRecommendation(rows)
+    local channel=TEF.Dispatch:ChannelTailAllowed() and TEF.Dispatch.channelReceipt
     self.internal=true
     local ok,result=pcall(self.e.ReplaceRecommendation,self.e,rows)
     self.internal=false
     if not ok then self:Fault("RUNTIME_ENGINE_FAILED"); return false end
+    if result and channel and channel.serial==(self.e.receiptSerial or 0) then channel.generation=self.e.generation end
     return result
 end
 function C:Initialize(e)
-    self.retryWait=nil
+    self.retryWait=nil; self.movementSample=nil; self.timingFingerprint=nil; self.targetChangePending=nil
     self.maintenanceManual=false
     self.e=e; self.intent=false; self.worldSeen=false; self.state="paused"
     self.reason=nil; self.displayBlock=nil; self.cycle=0; self.requestSerial=0
@@ -91,6 +109,8 @@ function C:Invalidated(e)
     end
 end
 function C:Stop(reason,state)
+    TEF.Dispatch.handoff=nil
+    self.targetChangePending=nil; self.e.finishOldTargetReceipt=nil
     self.retryWait=nil
     self.maintenanceManual=false
     if self.e.maintenanceActive then TEF.Maintenance:Restore(self.e,"MAINTENANCE_STOPPED") end
@@ -114,6 +134,8 @@ end
 -- 复用现有心跳；缓冲只延后同一步重试，不计成功、不推进序列。
 function C:DeferRetry()
     local e=self.e
+    self.retryClass=TEF.APL:IsActive(e) and "REEVALUATE" or "RETRY"
+    if self.retryClass=="REEVALUATE" then TEF.APL:Invalidate() end
     local delay=S.Field(e.db.dispatch,"retryDelay","number")
     if not self.intent or not delay or delay<=0 then self.retryWait=nil; return end
     self.retryWait={engine=e,generation=e.generation,index=e.index,serial=e.receiptSerial or 0,
@@ -230,6 +252,25 @@ function C:SetCastQueue(value)
     self.e.db.dispatch.castQueue=value==true
     return true
 end
+-- 设置界面以毫秒显示；运行层继续统一保存秒，拒绝未知字段与受限值。
+function C:SetTimingOption(key,value)
+    key=S.Public(key,"string"); if not key then return false end
+    local numbers={castQueueLead=.5,groupQueueLead=.5,channelTailLead=.5,retryDelay=.5,latencyAllowanceMax=.15,groupLatencyAllowanceMax=.15}
+    local booleans={castQueue=true,groupQueue=true,channelTail=true,latencyCompensation=true,groupLatencyCompensation=true}
+    local clean
+    if numbers[key] then
+        clean=S.Public(value,"number"); if not clean or clean<0 or clean>numbers[key] then return false end
+    elseif booleans[key] then
+        clean=S.Public(value,"boolean"); if clean==nil then return false end
+    elseif key=="queueWindowMode" or key=="groupQueueWindowMode" then
+        clean=S.Public(value,"string"); if clean~="custom" and clean~="client" then return false end
+    else return false end
+    if self.e.db.dispatch[key]==clean then return true end
+    self:Stop("TIMING_SETTING_CHANGED")
+    self.e.db.dispatch[key]=clean
+    TEF.Dispatch.timingWindow=nil
+    return true
+end
 function C:SetCastQueueLead(value)
     local lead=S.Public(value,"number")
     if not lead or lead<0 or lead>.5 then return false end
@@ -293,7 +334,40 @@ function C:TryConfirmAttackEnabled()
     end
     return confirmed
 end
+function C:TargetChanged()
+ local e,d=self.e,TEF.Dispatch
+ TEF.APL:Invalidate(); d.aplQueuePreparation=nil
+ d:Cancel("TARGET_REEVALUATE")
+ if d:HasCurrentInitiation() or not d:CastIdle() then
+  e.finishOldTargetReceipt=true; self.targetChangePending=true
+  if d.castQueue and not d.castQueue.guid then d:DropCastQueue() end
+  self:Changed("blocked","TARGET_WAIT_CURRENT_RECEIPT")
+ else
+  if e.db.loopMode=="target" then self:ResetCycle("LOOP_TARGET_RESET")
+  else self:Suspend("RUNTIME_TARGET_CHANGED") end
+  self:Reconcile()
+ end
+end
+function C:ObserveMovement()
+    local e=self.e
+    if not e or not e.db.dispatch.movementReevaluate then return end
+    local now=TEF.APL.State.Time(); if not now then return end
+    local old=self.movementSample
+    if old and old.engine==e and now>=old.time and now-old.time<.1 then return end
+    local value=TEF.APL.State.Boolean("IsPlayerMoving")
+    self.movementSample={engine=e,time=now,value=value}
+    if old and old.engine==e and old.value~=value and self.intent and TEF.APL:IsActive(e) then
+        TEF.APL:Invalidate()
+        TEF.Dispatch:Cancel("MOVEMENT_REEVALUATE")
+        e:Log("observed","MOVEMENT_REEVALUATE")
+    end
+end
 function C:Reconcile()
+    self:ObserveMovement()
+    self:ReconcileCore()
+    self:UpdateTiming()
+end
+function C:ReconcileCore()
     if not self.e or self.e~=TEF.engine then return end
     self.cycle=self.cycle+1
     TEF.APL.State.SampleResources(self.e)
@@ -301,6 +375,15 @@ function C:Reconcile()
     TEF.APL.Custom:LifecycleContext(self.e)
     if not self.intent then return end
     local e=self.e
+    if self.targetChangePending then
+        if TEF.Dispatch:HasCurrentInitiation() or not TEF.Dispatch:CastIdle() then
+            TEF.Dispatch:Cancel("TARGET_WAIT_CURRENT_RECEIPT"); self:Changed("blocked","TARGET_WAIT_CURRENT_RECEIPT"); return
+        end
+        self.targetChangePending=nil; e.finishOldTargetReceipt=nil
+        if e.db.loopMode=="target" then self:ResetCycle("LOOP_TARGET_RESET")
+        else self:Suspend("RUNTIME_TARGET_CHANGED"); e:ClearUsage() end
+        TEF.APL:Invalidate()
+    end
     TEF.APL.Custom:ReconcilePolicyProgress(e)
     TEF.SkillGroups:Refresh(e)
     TEF.Maintenance:Refresh(e)
@@ -310,7 +393,7 @@ function C:Reconcile()
     local generation,index,serial=e.generation,e.index,e.receiptSerial or 0
     local function current() return self.intent and self.e==e and TEF.engine==e and generation==e.generation and index==e.index and serial==(e.receiptSerial or 0) end
     if e.completed and e.groupRun then
-        -- 引导成功可发生在起始；等公开读条/引导消失再由组推进轮数。
+        -- 没有获准的引导末尾窗口时，等公开施法消失再由组推进轮数。
         TEF.Dispatch:YieldCast("GROUP_WAIT_STEP_FINISH"); self:Changed("blocked","GROUP_WAIT_STEP_FINISH"); return
     end
     if e.completed then
@@ -470,6 +553,47 @@ function C:Reconcile()
         if not TEF.Dispatch:SetContinuous(true) then self:Fault("RUNTIME_DISPATCH_START_FAILED"); return end
     end
     self:Changed("running","RUNTIME_RUNNING")
+end
+local Timing={}; TEF.DispatchTiming=Timing
+function Timing:RetryDecision()
+ local r=TEF.Runtime
+ if TEF.Dispatch:HasCurrentInitiation() then return "WAIT" end
+ if r.retryWait then return r.retryClass or "RETRY" end
+ if not r.intent or r.state=="standby" then return "WAIT" end
+ if r.state=="blocked" then return TEF.APL:IsActive(r.e) and "REEVALUATE" or "WAIT" end
+ if TEF.Dispatch.pending then return "WAIT" end
+ return "READY"
+end
+function Timing:Phase()
+ local r,d=TEF.Runtime,TEF.Dispatch
+ if not r.intent then return "IDLE" end
+ if d.castQueue then return "QUEUE_WINDOW" end
+ if r.retryWait then return "RETRY_WAIT" end
+ if d.channelInputLock then return d:ChannelTailAllowed() and "CHANNEL_TAIL_WINDOW" or "CHANNELING" end
+ if d:HasCurrentInitiation() then return r.reason=="CONTINUOUS_CAST_PRESENT_OR_UNKNOWN" and "CASTING" or "WAIT_RECEIPT" end
+ if d.pending then return "REQUESTED" end
+ return r.state=="running" and "READY" or "BLOCKED"
+end
+function Timing:CanRequest() return self:Phase()=="READY" end
+function Timing:CanQueue() return TEF.Dispatch:CastQueueWindow()~=nil end
+function C:UpdateTiming()
+ local e=self.e; if not e then return end
+ local phase=Timing:Phase(); local decision=Timing:RetryDecision()
+ self.timing={phase=phase,decision=decision,reason=self.reason}
+ local step=e.steps and e.steps[e.index]
+ local fingerprint=phase .. ":" .. decision .. ":" .. tostring(step and step.spellID) .. ":" .. tostring(self.reason) .. ":" .. tostring(TEF.Dispatch.queueWindowReason)
+ if self.intent and fingerprint~=self.timingFingerprint then
+  self.timingFingerprint=fingerprint
+  TEF.Dispatch:TraceQueue("TIMING_" .. phase,nil,step and step.spellID)
+ end
+end
+function C:TimingView()
+ local t=self.timing
+ local w=TEF.Dispatch.timingWindow
+ if w and (w.engine~=self.e or w.generation~=self.e.generation) then w=nil end
+ local kinds={ordinary="普通读条",group="技能组",channel="引导"}
+ local network=w and (" · 上次" .. (kinds[w.kind] or "窗口") .. "采样 · 客户端窗口：" .. math.floor(w.clientWindow*1000+.5) .. "毫秒 · 有效提前：" .. math.floor(w.effectiveLead*1000+.5) .. "毫秒 · 世界延迟：" .. (w.worldLatency and tostring(w.worldLatency) or "未知") .. "毫秒") or ""
+ return t and ("派发阶段：" .. t.phase .. " · 决策：" .. t.decision .. " · 原因：" .. (t.reason or "无") .. network) or "派发阶段：尚未采样"
 end
 function C:DisplayBlockDetail(reason)
     local d,e=self.displayBlock,self.e

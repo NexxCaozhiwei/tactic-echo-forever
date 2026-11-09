@@ -379,6 +379,7 @@ function H:Card(x,size,primary)
                 local code=S.Public(state.reason,"string")
                 if code then U:Call(GameTooltip,"AddLine","原因码：" .. code,.7,.7,.7) end
             end
+            U:Call(GameTooltip,"AddLine",TEF.Runtime:TimingView(),.7,.8,.9,true)
             self:TooltipDetails(card)
             U:Call(GameTooltip,"AddLine","不会直接施法",.7,.7,.7); U:Call(GameTooltip,"Show")
         end)
@@ -427,7 +428,7 @@ function H:CompactVisibility()
  U:Paint(self.badge,mini and "Hide" or "Show")
  local count=not mini or (styles.status.enabled and TEF.Recommendation:Source(self.engine)~="apl")
  U:Paint(self.countText,count and "Show" or "Hide")
- U:Paint(self.miniCountChip,mini and count and "Show" or "Hide")
+ U:Paint(self.miniCountChip,mini and not minimal and count and "Show" or "Hide")
  for _,field in ipairs({self.chrome,self.chromeInner,self.castBar,self.castTrack}) do U:Paint(field,minimal and "Hide" or "Show") end
  if minimal then U:Paint(self.cards[1].key,"Hide"); U:Paint(self.cards[1].keycap,"Hide") end
  for _,field in ipairs({self.role,self.castText,self.castTime}) do U:Paint(field,mini and "Hide" or "Show") end

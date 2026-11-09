@@ -144,6 +144,15 @@ function Engine.New(config, db)
     end
     local lost=S.Field(db,"resourceEvicted","number"); if lost and lost>=0 and lost%1==0 then clean.resourceEvicted=lost end
     clean.queueDiagnostics={}; clean.queueEvicted=0
+    clean.deliveryDiagnostics={}; clean.deliveryEvicted=S.Field(db,"deliveryEvicted","number") or 0
+    local deliveries=S.Field(db,"deliveryDiagnostics","table")
+    for i=math.max(1,(deliveries and #deliveries or 0)-127),(deliveries and #deliveries or 0) do
+        local raw=S.Field(deliveries,i,"table"); local row={}
+        for _,key in ipairs({"session","generation","request","spellID","token","requestedAt","firstPublishedAt","lastPublishedAt","firstSequence","lastSequence","firstFreshness","lastFreshness","initiatedAt"}) do row[key]=S.Field(raw,key,"number") end
+        row.guid=S.Identity(S.Field(raw,"guid","string"))
+        if row.session and row.request and row.spellID and row.token and row.firstSequence and row.lastSequence
+            and row.firstFreshness and row.lastFreshness and row.firstPublishedAt then clean.deliveryDiagnostics[#clean.deliveryDiagnostics+1]=row end
+    end
     clean.rangeDiagnostics={}; clean.rangeEvicted=0
     local ranges=S.Field(db,"rangeDiagnostics","table")
     local rangeCount=ranges and #ranges or 0
@@ -163,11 +172,11 @@ function Engine.New(config, db)
     for i=math.max(1,count-511),count do
         local raw=S.Field(history,i,"table")
         local row={}
-        for _,key in ipairs({"reason","event","guid","originGUID","queuedGUID","currentGUID","loopMode","version","source","windowReason"}) do
+        for _,key in ipairs({"reason","event","guid","originGUID","queuedGUID","currentGUID","loopMode","version","source","windowReason","windowKind"}) do
             local value=S.Field(raw,key,"string")
             if value and #value<=128 then row[key]=value end
         end
-        for _,key in ipairs({"session","generation","cycle","request","time","spellID","index","count","receiptSerial","queueRequest","queueIndex","nextIndex","queueSpellID","queueSerial","lead","retryDelay","clientWindow","remaining","effectiveLead"}) do
+        for _,key in ipairs({"session","generation","cycle","request","time","spellID","index","count","receiptSerial","queueRequest","queueIndex","nextIndex","queueSpellID","queueSerial","lead","retryDelay","clientWindow","remaining","effectiveLead","worldLatency","homeLatency","latencyAllowance","windowSampledAt","windowAge"}) do
             row[key]=S.Field(raw,key,"number")
         end
         if row.reason and row.session then clean.queueDiagnostics[#clean.queueDiagnostics+1]=row end
@@ -237,7 +246,7 @@ function Engine:RecommendationLocked()
             and step.matches[a.spellID] then return true end
     end
     local d=TEF.Dispatch
-    return d and (d:HasCurrentInitiation() or not d:CastIdle()) or false
+    return d and (d:HasCurrentInitiation() or (not d:CastIdle() and not d:ChannelTailAllowed())) or false
 end
 function Engine:ReplaceRecommendation(rows)
     if self:RecommendationLocked() then return false end
@@ -302,6 +311,18 @@ function Engine:ConfirmAttackEnabled(generation,index,serial)
     if not self.completed then self.stepCasts=0 end
     return true
 end
+function Engine:PromoteQueuedRound(q,guid)
+    local e=self
+    if q.nextRound and guid==q.originGUID and e.generation==q.generation and e.completed
+        and e.groupRun==q.groupRun and q.nextRound==e.groupRun.round+1
+        and q.nextRound<=e.groupRun.group.rounds and (e.receiptSerial or 0)==q.receiptSerial+1 then
+        e.groupRun.round=q.nextRound; e.completed=false; e.running=true; e.index=1; e.stepCasts=0
+        e.usageProgress=nil; e.policyProgress=nil
+        e.skipStreak=0; e.policySkipStreak=0; e.attackActivationStreak=0
+        e:Log("observed","GROUP_QUEUE_NEXT_ROUND"); return true
+    end
+    return false
+end
 function Engine:Handle(generation, event, unitRaw, guidRaw, spellRaw)
     if not observed[event] then return end
     local logAttempt,logRequest
@@ -347,6 +368,7 @@ function Engine:Handle(generation, event, unitRaw, guidRaw, spellRaw)
             self.attemptSerial=(self.attemptSerial or 0)+1
             self.associations[guid] = {generation=generation,spellID=spellID,index=self.index,receiptSerial=self.receiptSerial or 0,usageContext=usageContext,policyRow=TEF.APL.Custom:CurrentPolicyRow(self),policyStamp=TEF.APL.Custom:PolicyStamp(self,TEF.APL.Custom:CurrentPolicyRow(self))}
             local record=self.associations[guid]; record.attempt=self.attemptSerial; record.request=TEF.Runtime and TEF.Runtime.e==self and TEF.Runtime.requestSerial or nil
+            if TEF.Dispatch and self==TEF.engine then TEF.Dispatch:ObserveDeliveryInitiation(spellID,guid) end
             logAttempt,logRequest=record.attempt,record.request
             log("associated", "PUBLIC_INITIATION", spellID)
         end
@@ -370,9 +392,12 @@ function Engine:Handle(generation, event, unitRaw, guidRaw, spellRaw)
         or a.receiptSerial~=(self.receiptSerial or 0) then
         log("ignored", "NO_CURRENT_INITIATION", spellID); return
     end
-    if (a.policyRow and a.policyRow.behavior and a.policyStamp==nil) or a.policyStamp~=TEF.APL.Custom:PolicyStamp(self,a.policyRow) then log("ignored","POLICY_RECEIPT_CONTEXT_CHANGED",spellID); return end
+    local policyStamp=TEF.APL.Custom:PolicyStamp(self,a.policyRow)
+    if self.finishOldTargetReceipt and a.policyRow and a.policyRow.behavior and a.policyRow.behavior.trigger=="target" then policyStamp=a.policyStamp end
+    if (a.policyRow and a.policyRow.behavior and a.policyStamp==nil) or a.policyStamp~=policyStamp then log("ignored","POLICY_RECEIPT_CONTEXT_CHANGED",spellID); return end
     if a.failed then log("ignored", "FAILED_INITIATION", spellID); return end
     local allowed,_,usageContext=self:UsageEligibility()
+    if self.finishOldTargetReceipt then allowed,usageContext=true,a.usageContext end
     if not allowed or generation~=self.generation or not self:SameUsageContext(a.usageContext,usageContext)
         or (self.usageProgress and not self:SameUsageContext(self.usageProgress,usageContext)) then
         log("ignored","SEQUENCE_USAGE_RECEIPT_REJECTED",spellID); return
@@ -385,15 +410,17 @@ function Engine:Handle(generation, event, unitRaw, guidRaw, spellRaw)
     self.attackActivationStreak=0
     self.seen[guid], self.seenCount = true, self.seenCount+1
     self.receiptSerial=(self.receiptSerial or 0)+1
+    if TEF.Dispatch then TEF.Dispatch:ObserveChannelSuccess(self,spellID,guid) end
     self:MarkStrategySuccess(spellID)
     if self.groupRun and not self.maintenanceActive then self.groupRun.successful=true end
     self.associations[guid]=nil; self.associationCount=self.associationCount-1
     if TEF.APL and TEF.APL:IsActive(self) then
-        TEF.APL.Custom:PolicySucceeded(self,a.policyRow)
+        TEF.APL.Custom:PolicySucceeded(self,a.policyRow,self.finishOldTargetReceipt and a.policyStamp or nil)
         if self.maintenanceActive then TEF.Maintenance:Succeeded(self,spellID) end
         self.stepCasts=0
         log("match","APL_MATCH",spellID,self.index,self.index)
         TEF.APL:Invalidate()
+        if TEF.Dispatch then TEF.Dispatch:SequenceSucceeded(guid) end
         return
     end
     self.usageProgress=usageContext
@@ -404,7 +431,7 @@ function Engine:Handle(generation, event, unitRaw, guidRaw, spellRaw)
         if TEF.Dispatch then TEF.Dispatch:SequenceSucceeded(guid) end
         return
     end
-    TEF.APL.Custom:PolicySucceeded(self,a.policyRow)
+    TEF.APL.Custom:PolicySucceeded(self,a.policyRow,self.finishOldTargetReceipt and a.policyStamp or nil)
     self.policyProgress=nil
     self:MarkUsage(usageContext)
     local current, following = self.index, self.index+1

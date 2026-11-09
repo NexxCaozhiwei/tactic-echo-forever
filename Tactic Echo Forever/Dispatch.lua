@@ -1,13 +1,40 @@
 local _, TEF = ...
 local D,S={},TEF.Safety
 TEF.Dispatch=D
+-- 独立有界证据保留逐段信号身份；运行门禁从不读取此表。
+function D:ObservePublishedFrame(sequence,freshness,token)
+ local p,e=self.pending,TEF.engine
+ local now=TEF.APL.State.Time()
+ if not p or not now or p.generation~=e.generation or token~=p.binding.token then return end
+ local row=p.deliveryRow
+ if not row or sequence~=(row.lastSequence+1)%65536 or freshness~=(row.lastFreshness+1)%65536
+  or (sequence-row.firstSequence)%65536>=4096 then
+  local rows=e.db.deliveryDiagnostics
+  if #rows>=128 then table.remove(rows,1); e.db.deliveryEvicted=(e.db.deliveryEvicted or 0)+1 end
+  row={session=e.session,generation=e.generation,request=p.request,spellID=p.binding.spellID,token=token,
+   requestedAt=p.requestedAt,firstPublishedAt=now,firstSequence=sequence,firstFreshness=freshness}
+  rows[#rows+1]=row; p.deliveryRow=row
+ end
+ row.lastSequence=sequence; row.lastFreshness=freshness; row.lastPublishedAt=now
+end
+function D:ObserveDeliveryInitiation(id,guid)
+ local e=TEF.engine; local rows=e.db.deliveryDiagnostics; local now=TEF.APL.State.Time()
+ if not now or not S.Identity(guid) then return end
+ for i=#rows,1,-1 do
+  local row=rows[i]
+  if row.session==e.session and row.generation==e.generation and row.request==TEF.Runtime.requestSerial and row.spellID==id then
+   if not row.initiatedAt then row.initiatedAt=now; row.guid=guid end
+   return
+  end
+ end
+end
 D.enabled=false
 -- Runtime-only opt-in; no timer estimates, persisted arm state or second transport.
 D.continuous=false
 -- Independent bounded evidence only; never read by queue/dispatch admission.
 function D:TraceQueue(reason,event,id,guid,queue)
     local e=TEF.engine
-    if not e or not e.db.dispatch or (not e.db.dispatch.castQueue and not e.db.dispatch.ordinaryContinuous) then return end
+    if not e or not e.db.dispatch or (not e.db.dispatch.castQueue and not e.db.dispatch.groupQueue and not e.db.dispatch.ordinaryContinuous) then return end
     local q=queue or self.castQueue or (self.pending and self.pending.castQueue)
     local ok,clock=S.Call("GetTime")
     local row={reason=S.Public(reason,"string"),event=S.Public(event,"string"),spellID=S.ID(id),guid=S.Identity(guid),
@@ -15,13 +42,20 @@ function D:TraceQueue(reason,event,id,guid,queue)
         receiptSerial=e.receiptSerial or 0,cycle=TEF.Runtime.cycle,request=TEF.Runtime.requestSerial,
         time=ok and S.Public(clock,"number"),lead=S.Field(e.db.dispatch,"castQueueLead","number"),
         retryDelay=S.Field(e.db.dispatch,"retryDelay","number"),
-        source=q and "queue" or "ordinary",windowReason=self.queueWindowReason,
+        source=q and (q.source=="apl" and "apl_queue" or (e.groupRun and "group_queue" or "queue")) or "ordinary",windowReason=self.queueWindowReason,
         currentGUID=self.initiation and S.Identity(self.initiation.guid),loopMode=e.db.loopMode}
     if q then
         row.originGUID=S.Identity(q.originGUID); row.queuedGUID=S.Identity(q.guid)
         row.queueRequest=q.request; row.queueIndex=q.index; row.nextIndex=q.nextIndex
         row.queueSpellID=q.spellID; row.queueSerial=q.receiptSerial
         row.clientWindow=q.clientWindow; row.remaining=q.remaining; row.effectiveLead=q.effectiveLead
+    end
+    local timing=q and q.windowSnapshot or self.timingWindow
+    if timing and timing.engine==e and timing.generation==e.generation then
+        row.worldLatency=timing.worldLatency; row.homeLatency=timing.homeLatency; row.latencyAllowance=timing.latencyAllowance
+        if not q then row.remaining=timing.remaining; row.clientWindow=timing.clientWindow; row.effectiveLead=timing.effectiveLead end
+        row.windowSampledAt=timing.sampledAt; row.windowAge=row.time and math.max(0,row.time-timing.sampledAt) or nil
+        row.windowKind=timing.kind
     end
     local rows=e.db.queueDiagnostics
     if not rows then rows={}; e.db.queueDiagnostics=rows end
@@ -176,7 +210,7 @@ function D:BlockDetail(reason)
   if condition and (reason=="UNKNOWN:custom:strategy" or reason=="CUSTOM_USE_STRATEGY_UNMATCHED") then return {title=condition.unknown and "条件未知" or "条件未满足",description=condition.description,unknown=condition.unknown} end
  end
 end
-function D:ContinuousEvidence(id,policyStep)
+function D:ContinuousEvidence(id,policyStep,queue)
     self.evidenceDetail=nil
     local e=TEF.engine
     if TEF.Recommendation:Source(e)=="manual" then
@@ -184,12 +218,12 @@ function D:ContinuousEvidence(id,policyStep)
         if step and step.spellID==id then local allowed,reason=self:ManualPolicy(e,step); if allowed~=true then return false,reason end end
     end
     if TEF.APL and TEF.APL:IsActive(TEF.engine) then
-        local allowed,reason=TEF.APL:Allowed(TEF.engine,id)
+        local allowed,reason=TEF.APL:Allowed(TEF.engine,id,queue)
         if not allowed then return false,reason end
     end
     if not self:InputIdle() then return false,"CONTINUOUS_TEXT_FOCUS_OR_UNKNOWN" end
     local selfAction=self:IsSelfAction(id)
-    local candidate=TEF.engine.aplCandidate
+    local candidate=queue and queue.candidate or TEF.engine.aplCandidate
     if TEF.Recommendation:Source(e)=="manual" and self.manualPolicySnapshot and self.manualPolicySnapshot.engine==e and self.manualPolicySnapshot.state.generation==e.generation and self.manualPolicySnapshot.step.spellID==id then candidate=self.manualPolicySnapshot.state.actions.custom_1 end
     if candidate and candidate.spellID==id and candidate.target=="ground" then
         if publicBoolean("SpellIsTargeting")~=false then return false,"GROUND_TARGETING_OR_UNKNOWN" end
@@ -321,21 +355,177 @@ function D:DropCastQueue()
 end
 function D:QueueStepAllowed(step)
     local id=step and step.spellID
-    if not id then return false end
+    if not id then return false,"NEXT_STEP_MISSING" end
+    if TEF.APL.State.Boolean("C_SpellBook.IsSpellKnown",id)~=true then return false,"NEXT_EXACT_LEARNED_UNKNOWN_OR_FALSE" end
     local ok,info=S.Call("C_Spell.GetSpellInfo",id)
     local name=ok and S.Field(info,"name","string")
-    if not name then return false end
+    if not name then return false,"NEXT_METADATA_UNKNOWN" end
     local catalog=TEF.APL.CatalogByID[id]
     local key=catalog and catalog.key or TEF.APL.AbilityNames[name]
     local ability=key and TEF.APL.Abilities[key]
-    -- 只对已登记的普通施放类型提前排队；未知、引导、地面引导均不预测。
-    return ability and ({filler=true,cast=true,instant=true})[ability.type]==true or false
+    -- 下一技能可以是引导；这不授予截断当前引导的资格。
+    if not ability then return false,"NEXT_TYPE_UNKNOWN" end
+    if not ({filler=true,cast=true,instant=true,channel=true})[ability.type] then return false,"NEXT_TYPE_UNSUPPORTED" end
+    return true
+end
+-- 网络延迟仅作为有界估计，不改变客户端公开的最大预载窗口。
+function D:ClientQueueWindow()
+ local path=S.Resolve("C_CVar.GetCVar") and "C_CVar.GetCVar" or "GetCVar"
+ local ok,value=S.Call(path,"SpellQueueWindow"); local text=ok and S.Public(value,"string")
+ local ms=text and S.Public(tonumber(text),"number")
+ if ms and ms>=0 and ms<=1000 then return ms/1000 end
+end
+function D:TimingWindow(channel)
+ local e=TEF.engine; local now=TEF.APL.State.Time()
+ if not e or not now then return end
+ local client=self:ClientQueueWindow()
+ if not client or client<=0 then return end
+ local net=self.networkTiming
+ if not net or net.engine~=e or now<net.at or now-net.at>=1 then
+  net={engine=e,at=now}; self.networkTiming=net
+  local fn=S.Resolve("GetNetStats")
+  if fn then
+   local got,_,__,home,world=pcall(fn)
+   if got then
+    home=S.Public(home,"number"); world=S.Public(world,"number")
+    if home and home>=0 and home<=10000 then net.homeMS=home end
+    if world and world>=0 and world<=10000 then net.worldMS=world end
+   end
+  end
+ end
+ local group=not channel and e.groupRun~=nil
+ local kind=channel and "channel" or group and "group" or "ordinary"
+ local options=e.db.dispatch
+ local lead=S.Field(options,channel and "channelTailLead" or group and "groupQueueLead" or "castQueueLead","number")
+ local mode=not channel and S.Field(options,group and "groupQueueWindowMode" or "queueWindowMode","string")
+ if mode=="client" then lead=math.min(client,.5) end
+ if not lead or lead<=0 or lead>.5 then return end
+ local compensate=S.Field(options,group and "groupLatencyCompensation" or "latencyCompensation","boolean")
+ local cap=S.Field(options,group and "groupLatencyAllowanceMax" or "latencyAllowanceMax","number") or .15
+ local extra=not channel and mode~="client" and compensate==true and net.worldMS and math.min(.15,math.max(0,cap),net.worldMS/2000) or 0
+ local effective=math.min(client,.5,lead+extra)
+ self.timingWindow={engine=e,generation=e.generation,sampledAt=now,kind=kind,clientWindow=client,effectiveLead=effective,remaining=nil,worldLatency=net.worldMS,homeLatency=net.homeMS,latencyAllowance=extra}
+ return effective,self.timingWindow
+end
+-- 心跳内只读预热；不发布Token、不改变推荐、不提前推进任何计数。
+function D:PrepareHandoff()
+ local e,r=TEF.engine,TEF.Runtime
+ if not e or r.e~=e or not r.intent or TEF.UI.settingsOpen or e.maintenanceActive then self.handoff=nil; return end
+ local channel=self.channelReceipt
+ local isChannel=not self:HasCurrentInitiation() and channel and channel.engine==e and channel.generation==e.generation
+  and channel.serial==(e.receiptSerial or 0) and channel.group==e.groupRun and channel.startMS~=nil
+ if not isChannel and not self:HasCurrentInitiation() then self.handoff=nil; return end
+ local enabled=e.groupRun and e.db.dispatch.groupQueue or not e.groupRun and e.db.dispatch.castQueue
+ if not enabled or (isChannel and not e.db.dispatch.channelTail) then self.handoff=nil; return end
+ local now=TEF.APL.State.Time(); if not now then self.handoff=nil; return end
+ local old=self.handoff
+ if old and old.engine==e and old.generation==e.generation and old.index==e.index
+  and old.serial==(e.receiptSerial or 0) and old.targetSerial==(e.usageTargetSerial or 0)
+  and now>=old.preparedAt and now-old.preparedAt<.2 then return end
+ local fn=S.Resolve(isChannel and "UnitChannelInfo" or "UnitCastingInfo"); if not fn then self.handoff=nil; return end
+ local got,name,_,__,startRaw,endRaw,___,____,channelID,castID=pcall(fn,"player")
+ local startMS,endMS=S.Public(startRaw,"number"),S.Public(endRaw,"number")
+ local id
+ if isChannel then id=S.ID(channelID) else id=S.ID(castID) end
+ local origin=isChannel and channel.guid or self.initiation.guid
+ if not got or not S.Public(name,"string") or not startMS or not endMS or endMS<=startMS
+  or now<startMS/1000 or now>=endMS/1000 or id~=(isChannel and channel.spellID or self.initiation.spellID)
+  or (isChannel and startMS~=channel.startMS) then self.handoff=nil; return end
+ local lead=self:TimingWindow(isChannel); if not lead then self.handoff=nil; return end
+ local index=e.index; local step=e.steps and e.steps[index]
+ if not step then self.handoff=nil; return end
+ local prepared
+ if not e.groupRun and TEF.APL:IsActive(e) then
+  local target=TEF.APL:QueueTargetIdentity(e)
+  local preview=e.aplPreviewSnapshot
+  if not preview or preview.generation~=e.generation or preview.receiptSerial~=(e.receiptSerial or 0)
+   or preview.revision~=(TEF.APL.State.revision or 0) or not preview.sampledAt
+   or now<preview.sampledAt or now-preview.sampledAt>.2 then preview=nil end
+  local candidate,snapshot,row=TEF.APL:PrepareQueueCandidate(e,preview)
+  if candidate and target and target==TEF.APL:QueueTargetIdentity(e) then
+   e.aplPreviewSnapshot=snapshot
+   prepared={engine=e,generation=e.generation,receiptSerial=e.receiptSerial or 0,originGUID=origin,targetIdentity=target,
+    candidate=candidate,snapshot=snapshot,policyRow=row,
+    step={spellID=candidate.spellID,name=candidate.name,matchIDs={candidate.spellID},repeatCount=1}}
+   if not isChannel then self.aplQueuePreparation=prepared end
+   step=prepared.step
+  else step=nil end
+ elseif not isChannel then
+  if (e.stepCasts or 0)+1>=step.repeatCount then index=index+1 end
+  if e.groupRun and index>#e.steps and e.groupRun.round<e.groupRun.group.rounds then index=1 end
+  step=e.steps[index]
+ elseif e.completed then
+  step=e.groupRun and e.groupRun.round<e.groupRun.group.rounds and e.groupRun.group.steps[1] or nil
+ end
+ if step and not step.group and not step.unverified and self:QueueStepAllowed(step) then self:ResolveCached(step.spellID) end
+ local same=old and old.engine==e and old.generation==e.generation and old.serial==(e.receiptSerial or 0)
+  and old.originGUID==origin and old.finish==endMS/1000 and old.wakeAt==endMS/1000-lead and old.targetSerial==(e.usageTargetSerial or 0)
+ self.handoff={engine=e,generation=e.generation,index=e.index,serial=e.receiptSerial or 0,targetSerial=e.usageTargetSerial or 0,
+  originGUID=origin,finish=endMS/1000,wakeAt=endMS/1000-lead,preparedAt=now,woken=same and old.woken or false,
+  spellID=step and step.spellID,apl=prepared,channel=isChannel==true}
+ if not same or old.spellID~=self.handoff.spellID then self:TraceQueue("HANDOFF_PREPARED",nil,self.handoff.spellID) end
+end
+-- 复用已有逐帧回调，仅比较公开时钟和截止点；不逐帧扫描候选或法术书。
+function D:HandoffWakeDue()
+ local h,e=self.handoff,TEF.engine
+ if not h or h.woken or h.engine~=e or not TEF.Runtime.intent or TEF.Runtime.e~=e or TEF.UI.settingsOpen
+  or h.generation~=e.generation or h.index~=e.index or h.serial~=(e.receiptSerial or 0)
+  or h.targetSerial~=(e.usageTargetSerial or 0) then return false end
+ local now=TEF.APL.State.Time()
+ if not now or now<h.preparedAt or now>h.finish then return false end
+ if now<h.wakeAt then return false end
+ h.woken=true; self:TraceQueue("HANDOFF_TAIL_WAKE",nil,h.spellID)
+ return true
+end
+function D:PreparedAPLState(e)
+ local h=self.handoff; local p=h and h.apl; local now=TEF.APL.State.Time()
+ if not h or not h.channel or not p or h.engine~=e or h.generation~=e.generation or h.index~=e.index
+  or h.serial~=(e.receiptSerial or 0) or h.targetSerial~=(e.usageTargetSerial or 0)
+  or not now or now<h.preparedAt or now-h.preparedAt>.2 or p.snapshot.revision~=(TEF.APL.State.revision or 0)
+  or not p.snapshot.sampledAt or now<p.snapshot.sampledAt or now-p.snapshot.sampledAt>.2
+  or p.targetIdentity~=TEF.APL:QueueTargetIdentity(e) then return end
+ h.apl=nil; p.snapshot.readOnly=nil
+ return p.snapshot
+end
+function D:ObserveChannelSuccess(e,id,guid)
+ local start=self.channelStart
+ self.channelReceipt={engine=e,generation=e.generation,serial=e.receiptSerial or 0,spellID=id,guid=guid,at=TEF.APL.State.Time(),group=e.groupRun,
+  startMS=start and start.engine==e and start.guid==guid and start.spellID==id and start.startMS or nil}
+end
+function D:ChannelTailAllowed()
+ local e=TEF.engine; local r=self.channelReceipt
+ local run=e and e.groupRun
+ local roundTail=e and e.completed and run and run.round<run.group.rounds
+ if not e or not e.db.dispatch.channelTail or not (e.groupRun and e.db.dispatch.groupQueue or not e.groupRun and e.db.dispatch.castQueue) or not TEF.Runtime.intent
+  or TEF.Runtime.e~=e or TEF.UI.settingsOpen or e.maintenanceActive or (e.completed and not roundTail)
+  or publicBoolean("InCombatLockdown")~=true or self:HasCurrentInitiation() then return false end
+ if not r or not r.startMS or r.engine~=e or r.generation~=e.generation or r.serial~=(e.receiptSerial or 0) or r.group~=e.groupRun or not r.at then return false end
+ local fn=S.Resolve("UnitChannelInfo"); if not fn then return false end
+ local ok,name,_,__,startRaw,endRaw,___,____,idRaw=pcall(fn,"player")
+ local shown=S.Public(name,"string"); local startMS=S.Public(startRaw,"number"); local endMS=S.Public(endRaw,"number"); local id=S.ID(idRaw)
+ local now=TEF.APL.State.Time()
+ if not ok or not shown or id~=r.spellID or not startMS or not endMS or not now or endMS<=startMS
+  or startMS~=r.startMS or r.at<startMS/1000 or r.at>endMS/1000 then return false end
+ local castOK,castRaw=S.Call("UnitCastingInfo","player"); local _,why=S.Public(castRaw,"string")
+ if not castOK or why~="NO_DATA" then return false end
+ local lead,window=self:TimingWindow(true); local remaining=endMS/1000-now
+ if window then window.remaining=remaining end
+ if not lead or remaining<=0 or remaining>lead then return false end
+ if e.groupRun and (not e.db.dispatch.groupQueue or e.groupRun.targetSerial~=(e.usageTargetSerial or 0)
+  or (e.groupRun.group.maintain and TEF.SkillGroups:KeepAllowed(e,e.groupRun)~=true)) then return false end
+ local nextStep
+ if roundTail then nextStep=run.group.steps and run.group.steps[1]
+ else nextStep=e.steps and e.steps[e.index] end
+ if not self:QueueStepAllowed(nextStep) then return false end
+ window.remaining=remaining; self.queueWindowSnapshot=window; self.queueWindowReason="CHANNEL_TAIL_OPEN"
+ return true
 end
 function D:CastQueueWindow()
+    self.queueWindowSnapshot=nil; self.queueAPLPreparation=nil
     self.queueWindowReason="LIFECYCLE_OR_CURRENT_INITIATION"
     local e=TEF.engine
-    if not e or not e.db.dispatch.castQueue or not self.continuous or not self:HasCurrentInitiation()
-        or TEF.APL:IsActive(e) or e.groupRun or not e.running or e.completed or TEF.UI.settingsOpen
+    if not e or not (e.groupRun and e.db.dispatch.groupQueue or not e.groupRun and e.db.dispatch.castQueue) or not self.continuous or not self:HasCurrentInitiation()
+        or e.maintenanceActive or not e.running or e.completed or TEF.UI.settingsOpen
         or publicBoolean("InCombatLockdown")~=true then return nil end
     local generation,index,serial=e.generation,e.index,e.receiptSerial or 0
     local initiation=self.initiation
@@ -354,30 +544,55 @@ function D:CastQueueWindow()
     self.queueWindowReason="CHANNEL_PRESENT_OR_UNKNOWN"
     if not channelOK or channelReason~="NO_DATA" then return nil end
     local timeOK,timeRaw=S.Call("GetTime"); local now=timeOK and S.Public(timeRaw,"number")
-    local path=S.Resolve("C_CVar.GetCVar") and "C_CVar.GetCVar" or "GetCVar"
-    local queueOK,queueRaw=S.Call(path,"SpellQueueWindow")
-    local queueText=queueOK and S.Public(queueRaw,"string")
-    local queueMS=queueText and S.Public(tonumber(queueText),"number")
     self.queueWindowReason="CLOCK_OR_CLIENT_WINDOW_UNKNOWN"
-    if not now or not queueMS or queueMS<=0 or queueMS>1000 then return nil end
+    local lead,window=self:TimingWindow(false)
+    if not now or not lead then return nil end
     local remaining=endMS/1000-now
-    local lead=S.Field(e.db.dispatch,"castQueueLead","number")
-    self.queueWindowReason="LEAD_DISABLED_OR_INVALID"
-    if not lead or lead<=0 or lead>.5 then return nil end
+    window.remaining=remaining
     self.queueWindowReason=remaining<=0 and "CAST_ENDED" or "OUTSIDE_TAIL"
-    if now<startMS/1000 or remaining<=0 or remaining>math.min(lead,queueMS/1000) then return nil end
+    if now<startMS/1000 or remaining<=0 or remaining>lead then return nil end
+    if e.groupRun and (e.groupRun.targetSerial~=(e.usageTargetSerial or 0)
+      or (e.groupRun.group.maintain and TEF.SkillGroups:KeepAllowed(e,e.groupRun)~=true)) then return nil end
+    local apl=TEF.APL:IsActive(e)
+    local preparation
+    if apl then
+        if self.castQueue and self.castQueue.source=="apl" then preparation=self.castQueue
+        elseif self.aplQueuePreparation and self.aplQueuePreparation.engine==e
+            and self.aplQueuePreparation.generation==generation and self.aplQueuePreparation.receiptSerial==serial
+            and self.aplQueuePreparation.originGUID==initiation.guid
+            and self.aplQueuePreparation.snapshot.sampledAt and now>=self.aplQueuePreparation.snapshot.sampledAt
+            and now-self.aplQueuePreparation.snapshot.sampledAt<=.2
+            and self.aplQueuePreparation.snapshot.revision==(TEF.APL.State.revision or 0) then preparation=self.aplQueuePreparation
+        else
+            self.queueWindowReason="APL_QUEUE_TARGET_OR_CANDIDATE_UNKNOWN"
+            local targetIdentity=TEF.APL:QueueTargetIdentity(e)
+            local candidate,snapshot,row=TEF.APL:PrepareQueueCandidate(e)
+            if not candidate or not targetIdentity or targetIdentity~=TEF.APL:QueueTargetIdentity(e) then return nil end
+            preparation={engine=e,generation=generation,receiptSerial=serial,originGUID=initiation.guid,targetIdentity=targetIdentity,candidate=candidate,snapshot=snapshot,policyRow=row,
+                step={spellID=candidate.spellID,name=candidate.name,matchIDs={candidate.spellID},repeatCount=1}}
+        end
+        self.aplQueuePreparation=preparation
+    end
     local nextIndex=index
-    if (e.stepCasts or 0)+1>=step.repeatCount then nextIndex=index+1 end
-    -- Do not speculate across loop/completion, channel or Shoot boundaries.
-    local nextStep=e.steps[nextIndex]
-    if not nextStep or nextStep.group or nextStep.unverified or not self:QueueStepAllowed(nextStep) then return nil end
+    if not apl and (e.stepCasts or 0)+1>=step.repeatCount then nextIndex=index+1 end
+    -- 技能组可在同一组内接续下一轮，不能跨到父列表。
+    local run=e.groupRun
+    if run and nextIndex>#e.steps and run.round<run.group.rounds then nextIndex=1 end
+    local nextStep=preparation and preparation.step or e.steps[nextIndex]
+    self.queueWindowReason="NEXT_STEP_OR_GROUP_BOUNDARY"
+    if not nextStep or nextStep.group or nextStep.unverified then return nil end
+    local eligible,typeReason=self:QueueStepAllowed(nextStep)
+    if not eligible then self.queueWindowReason=typeReason; return nil end
+    self.queueWindowReason="NEXT_BEHAVIOR_NOT_CONTINUOUS"
     if (step.behavior and step.behavior.trigger~="continuous") or (nextStep.behavior and nextStep.behavior.trigger~="continuous") then return nil end
+    self.queueWindowReason="NEXT_USAGE_BLOCKED_OR_UNKNOWN"
     if e:UsageEligibility(nextIndex)~=true then return nil end
     if generation~=e.generation or index~=e.index or serial~=(e.receiptSerial or 0)
         or self.initiation~=initiation or not self.continuous or not self.enabled
         or TEF.UI.settingsOpen or not self:HasCurrentInitiation() then return nil end
+    self.queueAPLPreparation=preparation
     self.queueWindowReason="WINDOW_OPEN"
-    self.queueWindowSnapshot={remaining=remaining,clientWindow=queueMS/1000,effectiveLead=math.min(lead,queueMS/1000)}
+    window.remaining=remaining; self.queueWindowSnapshot=window
     return nextIndex,nextStep
 end
 function D:TryCastQueue()
@@ -387,15 +602,22 @@ function D:TryCastQueue()
     if self.castQueue then return true end
     if self.castQueueAttempt==self.initiation.guid then return false end
     local generation,index,serial,initiation=e.generation,e.index,e.receiptSerial or 0,self.initiation
-    if step.skipUnavailable and TEF.Recommendation:Source(e)=="manual" and self:Unavailable(step.spellID)~=false then return false end
+    if step.skipUnavailable and TEF.Recommendation:Source(e)=="manual" and self:Unavailable(step.spellID)~=false then self.queueWindowReason="NEXT_UNAVAILABLE_OR_UNKNOWN"; return false end
     local policyAllowed=self:ManualPolicy(e,step,true)
-    if policyAllowed~=true then return false end
-    local allowed=self:ContinuousEvidence(step.spellID,step)
+    if policyAllowed~=true then self.queueWindowReason="NEXT_POLICY_BLOCKED_OR_UNKNOWN"; return false end
+    local allowed,reason=self:ContinuousEvidence(step.spellID,step,self.queueAPLPreparation)
+    if not allowed then self.queueWindowReason=reason or "NEXT_EVIDENCE_BLOCKED_OR_UNKNOWN"; return false end
     if not allowed or generation~=e.generation or index~=e.index or serial~=(e.receiptSerial or 0)
         or self.initiation~=initiation or not self.continuous then return false end
     local q={generation=generation,index=index,receiptSerial=serial,
         nextIndex=nextIndex,spellID=step.spellID,originGUID=initiation.guid}
+    if e.groupRun and nextIndex==1 and index==#e.steps and (e.stepCasts or 0)+1>=step.repeatCount then
+        q.groupRun=e.groupRun; q.nextRound=e.groupRun.round+1
+    end
+    local prepared=self.queueAPLPreparation
+    if prepared then q.source="apl"; q.targetIdentity=prepared.targetIdentity; q.candidate=prepared.candidate; q.snapshot=prepared.snapshot; q.step=prepared.step; q.policyRow=prepared.policyRow end
     local snapshot=self.queueWindowSnapshot
+    q.windowSnapshot=snapshot
     q.remaining=snapshot and snapshot.remaining; q.clientWindow=snapshot and snapshot.clientWindow
     q.effectiveLead=snapshot and snapshot.effectiveLead
     self.castQueue=q
@@ -414,11 +636,17 @@ function D:SequenceSucceeded(guid)
         self.waitReceipt=nil; self.initiation=nil
         return
     end
+    if q.nextRound then e:PromoteQueuedRound(q,guid) end
     if guid~=q.originGUID or e.generation~=q.generation or e.index~=q.nextIndex
         or (e.receiptSerial or 0)~=q.receiptSerial+1 or e.completed then
         self:DropCastQueue(); self:Cancel("CAST_QUEUE_INVALIDATED"); return
     end
     self:TraceQueue(q.guid and "QUEUE_CURRENT_SUCCESS_WITH_IDENTITY" or "QUEUE_CURRENT_SUCCESS_NO_NEXT_IDENTITY",nil,q.spellID,guid,q)
+    if q.source=="apl" then
+        e.steps=TEF.Engine.Validate({q.step}); e.index=1
+        e.aplCandidate=q.candidate; e.aplSnapshot=q.snapshot; e.aplPreviewSnapshot=q.snapshot
+        q.snapshot.generation=e.generation; q.snapshot.receiptSerial=e.receiptSerial or 0; q.snapshot.revision=TEF.APL.State.revision or 0
+    end
     self.castQueue=nil
     self:Cancel("CAST_QUEUE_CURRENT_SUCCESS")
     local a=q.guid and e.associations[q.guid]
@@ -594,6 +822,7 @@ function D:OrdinaryContinuous()
         and step and step.spellID~=5019 and step.spellID~=6603 and step.spellID~=75 or false
 end
 function D:TransportCastAllowed(continuous)
+    if self:ChannelTailAllowed() then return true end
     if TEF.engine.db.dispatch.ordinaryContinuous and self.channelInputLock then return false end
     return self:CastIdle()
 end
@@ -604,7 +833,7 @@ function D:Request(fromContinuous,queue)
         return false,"TEK_AUTOMATIC_OWNS_REQUEST"
     end
     self:Cancel()
-    local e=TEF.engine; local step=e.steps and e.steps[queue and queue.nextIndex or e.index]
+    local e=TEF.engine; local step=queue and queue.step or (e.steps and e.steps[queue and queue.nextIndex or e.index])
     local generation,index,serial=e.generation,e.index,e.receiptSerial or 0
     local blocked
     if not self.enabled then blocked="TEK_PERMISSION_DISABLED"
@@ -618,12 +847,12 @@ function D:Request(fromContinuous,queue)
     elseif not queue and not self:TransportCastAllowed(fromContinuous==true) then blocked="TEK_CAST_PRESENT_OR_UNKNOWN"
     elseif not queue and self:HasCurrentInitiation() then blocked="CONTINUOUS_WAIT_CURRENT_RECEIPT" end
     if blocked then e:Log("transport",blocked); return false,blocked end
-    local policyAllowed,policyReason=self:ManualPolicy(e,queue and e.steps[queue.nextIndex] or step,true)
+    local policyAllowed,policyReason=self:ManualPolicy(e,step,true)
     if policyAllowed~=true then return false,policyReason end
     local eligible,usageReason,usageContext=e:UsageEligibility(queue and queue.nextIndex or e.index)
     if eligible~=true then return false,usageReason end
     if TEF.APL and TEF.APL:IsActive(e) then
-        local allowed,reason=TEF.APL:Allowed(e,step.spellID)
+        local allowed,reason=TEF.APL:Allowed(e,step.spellID,queue)
         if not allowed then return false,reason end
     end
     local binding,reason
@@ -641,7 +870,7 @@ function D:Request(fromContinuous,queue)
         or generation~=e.generation or index~=e.index or serial~=(e.receiptSerial or 0) or not e.running or not self.enabled or TEF.UI.settingsOpen then
         return false,"SEQUENCE_USAGE_SCOPE_CHANGED"
     end
-    self.pending={generation=e.generation,index=e.index,binding=binding,receiptSerial=serial,castQueue=queue,usageContext=usageContext}
+    self.pending={generation=e.generation,index=e.index,binding=binding,receiptSerial=serial,castQueue=queue,usageContext=usageContext,requestedAt=TEF.APL.State.Time()}
     if TEF.Runtime and TEF.Runtime.e==e then TEF.Runtime.requestSerial=TEF.Runtime.requestSerial+1 end
     self.pending.request=TEF.Runtime.requestSerial
     if queue then queue.request=self.pending.request end
@@ -683,7 +912,7 @@ function D:Packet()
     local p,e=self.pending,TEF.engine
     if not p then return nil end
     if not p.castQueue and self:HasCurrentInitiation() then self:Cancel("CONTINUOUS_WAIT_CURRENT_RECEIPT"); return nil end
-    local policyStep=e.steps and e.steps[p.castQueue and p.castQueue.nextIndex or e.index]
+    local policyStep=p.castQueue and p.castQueue.step or (e.steps and e.steps[p.castQueue and p.castQueue.nextIndex or e.index])
     local policyAllowed,policyReason=self:ManualPolicy(e,policyStep,true)
     if policyAllowed~=true then self:Cancel(policyReason or "SEQUENCE_POLICY_UNKNOWN"); return nil end
     if not self.enabled or not e.running or e.completed or e.generation~=p.generation or e.index~=p.index
@@ -702,7 +931,7 @@ function D:Packet()
     elseif not self:TransportCastAllowed(self.continuous) then self:Cancel("TEK_CAST_PRESENT_OR_UNKNOWN"); return nil end
     if self:ShootActive(p.binding)~=false then self:Cancel("SHOOT_ACTIVE_OR_UNKNOWN"); return nil end
     if self.continuous then
-        local allowed,reason=self:ContinuousEvidence(p.binding.spellID)
+        local allowed,reason=self:ContinuousEvidence(p.binding.spellID,policyStep,p.castQueue)
         if not allowed then self:Block(reason); return nil end
         if self.pending~=p or not self.continuous or e.generation~=p.generation or e.index~=p.index then return nil end
     elseif TEF.APL and TEF.APL:IsActive(e) then
@@ -749,6 +978,18 @@ function D:Event(event,unit,id,guidRaw)
     end
     if unitValue=="player" and event=="UNIT_SPELLCAST_CHANNEL_START" then
         self.channelInputLock=true
+        local channelGUID=guid
+        if not channelGUID and self:HasCurrentInitiation() and self.initiation.spellID==spellValue then channelGUID=self.initiation.guid end
+        local fn=S.Resolve("UnitChannelInfo")
+        if fn and channelGUID then
+            local ok,_,__,___,startRaw,____,_____,______,channelID=pcall(fn,"player")
+            local startMS=S.Public(startRaw,"number")
+            if ok and startMS and S.ID(channelID)==spellValue then
+                self.channelStart={engine=e,generation=e.generation,guid=channelGUID,spellID=spellValue,startMS=startMS}
+                local receipt=self.channelReceipt
+                if receipt and receipt.engine==e and receipt.guid==channelGUID and receipt.serial==(e.receiptSerial or 0) then receipt.startMS=startMS end
+            end
+        end
         self:Cancel("CHANNEL_ACTIVE_INPUT_LOCK")
     elseif unitValue=="player" and event=="UNIT_SPELLCAST_CHANNEL_STOP" then
         self.channelInputLock=nil -- 只撤销事件锁，派发仍复核实时引导接口。
@@ -787,12 +1028,19 @@ function D:Event(event,unit,id,guidRaw)
                 if e.associationCount>=256 then runtime:Fault("CAST_QUEUE_IDENTITY_CAPACITY"); return true end
                 q.guid=guid; e.associationCount=e.associationCount+1
                 e.attemptSerial=(e.attemptSerial or 0)+1
-                e.associations[guid]={generation=e.generation,index=q.nextIndex,spellID=q.spellID,receiptSerial=q.receiptSerial+1,usageContext=q.usageContext,attempt=e.attemptSerial,request=q.request,policyRow=e.steps[q.nextIndex],policyStamp=TEF.APL.Custom:PolicyStamp(e,e.steps[q.nextIndex])}
+                e.associations[guid]={generation=e.generation,index=q.nextIndex,spellID=q.spellID,receiptSerial=q.receiptSerial+1,usageContext=q.usageContext,attempt=e.attemptSerial,request=q.request,policyRow=q.policyRow or e.steps[q.nextIndex],policyStamp=TEF.APL.Custom:PolicyStamp(e,q.policyRow or e.steps[q.nextIndex])}
             end
+            self:ObserveDeliveryInitiation(spellValue,guid)
             self:Cancel("CAST_QUEUE_INITIATED"); return true
         elseif failure or event=="UNIT_SPELLCAST_SUCCEEDED" then
-            if not q.guid then q.guid=guid end
-            if guid==q.guid then
+            if not q.guid or guid~=q.guid then
+                -- 终态只封存它自己的身份，不借同ID终态撤销另一项预载。
+                if not e.seen[guid] then
+                    if e.seenCount>=4096 then e.identitySaturated=true; runtime:Fault("CAST_QUEUE_IDENTITY_CAPACITY"); return true end
+                    e.seen[guid]="retired"; e.seenCount=e.seenCount+1
+                end
+                self:TraceQueue("QUEUE_UNASSOCIATED_EVENT_IGNORED",event,spellValue,guid,q)
+            elseif guid==q.guid then
                 self:TraceQueue(failure and "QUEUE_FAILURE_EVENT" or "QUEUE_SUCCESS_BEFORE_CURRENT_SUCCESS",event,spellValue,guid,q)
                 self:DropCastQueue(); self:Cancel("CAST_QUEUE_REJECTED"); e:Log("ignored","CAST_QUEUE_REJECTED",spellValue)
             end
@@ -873,6 +1121,7 @@ function D:Event(event,unit,id,guidRaw)
     if u=="player" and guid and (event=="UNIT_SPELLCAST_SENT" or event=="UNIT_SPELLCAST_START")
         and spell==self.pending.binding.spellID
         and (not self.pending.castQueue or guid==self.pending.castQueue.guid) then
+        self:ObserveDeliveryInitiation(spell,guid)
         self:TraceQueue("DISPATCH_INITIATION_CONFIRMED",event,spell,guid)
         self:Cancel("TEK_GAME_EVENT_RECEIVED")
     end

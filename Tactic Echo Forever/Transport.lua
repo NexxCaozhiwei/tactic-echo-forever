@@ -48,7 +48,26 @@ function T:Paint()
             return self:Fail("TRANSPORT_PAINT_FAILED")
         end
     end
+    if token and TEF.Dispatch then TEF.Dispatch:ObservePublishedFrame(self.sequence,self.freshness,token) end
     return true
+end
+-- 所有调度仍走同一心跳处理函数；事件仅要求提前执行一次相同的实时复核。
+function T:Pulse(reason)
+    if not self.enabled or self.pulsing then return false end
+    self.pulsing=true
+    local ok,result=pcall(function()
+        if TEF.Runtime.e==self.engine then
+            TEF.Dispatch:PrepareHandoff()
+            TEF.Runtime:Reconcile()
+            TEF.Dispatch:PrepareHandoff()
+        end
+        TEF.Dispatch:TickContinuous()
+        if reason then TEF.Dispatch:TraceQueue(reason) end
+        return self:Paint()
+    end)
+    self.pulsing=false
+    if not ok then return self:Fail("RUNTIME_SAMPLE_FAILED") end
+    return result
 end
 function T:Initialize(engine)
     self.engine=engine; self.enabled=false
@@ -79,17 +98,9 @@ function T:SetEnabled(value)
             local elapsed=S.Public(rawElapsed,"number")
             if not elapsed or elapsed<0 then self:SetEnabled(false); return end
             self.elapsed=(self.elapsed or 0)+elapsed
-            if self.elapsed>=0.05 then
+            if self.elapsed>=0.05 or (TEF.Dispatch and TEF.Dispatch:HandoffWakeDue()) then
                 self.elapsed=self.elapsed%0.05
-                if TEF.Runtime and TEF.Runtime.e==self.engine then
-                    local reconciled=pcall(TEF.Runtime.Reconcile,TEF.Runtime)
-                    if not reconciled then self:Fail("RUNTIME_SAMPLE_FAILED"); return end
-                end
-                if TEF.Dispatch then
-                    local sampled=pcall(TEF.Dispatch.TickContinuous,TEF.Dispatch)
-                    if not sampled then self:Fail("CONTINUOUS_SAMPLE_FAILED"); return end
-                end
-                if not self:Paint() then return end
+                if not self:Pulse() then return end
             end
         end)
         if not scriptOK then return self:Fail("TRANSPORT_SCRIPT_FAILED") end

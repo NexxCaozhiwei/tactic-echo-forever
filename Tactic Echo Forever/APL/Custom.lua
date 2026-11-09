@@ -615,7 +615,7 @@ function C:ReconcilePolicyProgress(e)
  local prior=T.Runtime.internal; T.Runtime.internal=true; e:Invalidate("POLICY_PROGRESS_SCOPE_CHANGED"); T.Runtime.internal=prior
  e.stepCasts=0; e.policyProgress=nil
 end
-function C:PolicySucceeded(e,row)
+function C:PolicySucceeded(e,row,receiptStamp)
  if not row or not row.behavior or row.behavior.trigger=="continuous" then return end
  local r=self:PolicyRecord(e,row,true); if not r then return end
  local mode=row.behavior.trigger
@@ -624,7 +624,7 @@ function C:PolicySucceeded(e,row)
   local p=e.policyContext; if not p or p.combat~=true then r.blocked=true; return end
   r.epochs={[p.epoch]=true}
  else
-  local key=e:UsageTargetIdentity(); if not key then r.blocked=true; return end
+  local key=receiptStamp or e:UsageTargetIdentity(); if not key then r.blocked=true; return end
   r.targets=r.targets or {}
   if not r.targets[key] then
    if (r.targetCount or 0)>=256 then r.blocked=true; return end

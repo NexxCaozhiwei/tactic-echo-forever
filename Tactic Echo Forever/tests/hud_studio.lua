@@ -323,7 +323,7 @@ test("hud_three_modes_cycle_and_minimal_stays_icon_only",function()
  local intent,pending=T.Runtime.intent,T.Dispatch.pending
  local click=H.modeButton:GetScript("OnClick")
  for cycle=1,3 do
-  click(nil,"LeftButton"); eq(e.db.hud.mode,"mini")
+  click(nil,"LeftButton"); eq(e.db.hud.mode,"mini"); eq(H.miniCountChip.shown,true)
   click(nil,"LeftButton"); eq(e.db.hud.mode,"minimal")
   eq(H.layoutWidth,44); eq(H.layoutHeight,44)
   eq(H.cards[1].frame.point[4],0); eq(H.cards[1].frame.point[5],0)
@@ -335,7 +335,7 @@ test("hud_three_modes_cycle_and_minimal_stays_icon_only",function()
    eq(field.shown,false)
   end
   eq(H.modeButton.point[4],34)
-  eq(H.statusDot.shown,true); eq(H.countText.shown,true); eq(H.miniCountChip.shown,true)
+  eq(H.statusDot.shown,true); eq(H.countText.shown,true); eq(H.miniCountChip.shown,false)
   InCombatLockdown=function() return true end
   click(nil,"LeftButton"); eq(e.db.hud.mode,"minimal")
   InCombatLockdown=function() return false end

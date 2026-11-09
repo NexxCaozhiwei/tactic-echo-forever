@@ -7,6 +7,7 @@ A.Abilities={}; A.AbilityNames={}
 -- public spellbook. Never use catalogue IDs as success-event aliases.
 local rows={
  {"arcane_blast","奥术冲击","Arcane Blast","ARCANE","filler","enemy"},
+ {"arcane_wrath","奥术愤怒","Arcane Wrath","ARCANE","cast","enemy"},
  {"icy_veins","冰冷血脉","Icy Veins","FROST","cooldown","self"},
  {"mirror_image","镜像","Mirror Image","ARCANE","cooldown","self"},
  {"arcane_explosion","魔爆术","Arcane Explosion","ARCANE","aoe","self"},

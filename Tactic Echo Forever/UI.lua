@@ -206,13 +206,14 @@ function UI:RefreshPageContent()
         -- 这些信息已有对应控件，旧摘要会覆盖标签设置卡片。
         self:Paint(self.readouts.hud,"SetText",""); self:Paint(self.readouts.hud,"Hide")
     elseif self.page=="tek" then
+        local client=TEF.Dispatch:ClientQueueWindow()
         self:Paint(self.readouts.tek,"SetText","TEAP v3 · 输出：" .. (TEF.Transport.enabled and "开启" or "关闭")
-            .. "\nTEK许可：" .. (TEF.Dispatch.enabled and "开启" or "关闭")
-            .. "\n连续执行（只读）：" .. (TEF.Dispatch.continuous and "ACTIVE" or "OFF")
-            .. "\n" .. (TEF.Dispatch.continuousReason or "CONTINUOUS_OFF"))
+            .. " · TEK许可：" .. (TEF.Dispatch.enabled and "开启" or "关闭")
+            .. "\n客户端排队窗口（只读）：" .. (client and math.floor(client*1000+.5) .. "毫秒" or "未知，禁止提前排队")
+            .. "\n设置期间不派发；修改接续参数后需关闭设置、重新开启。")
     elseif self.page=="diagnostics" then
         local pending=TEF.Dispatch.pending
-        local lines={"会话 " .. e.session .. " / 代次 " .. e.generation .. " / 淘汰 " .. e.db.evicted,
+        local lines={TEF.Runtime:TimingView(),"会话 " .. e.session .. " / 代次 " .. e.generation .. " / 淘汰 " .. e.db.evicted,
             "Pending " .. (pending and "有" or "无") .. " · Continuous " .. (TEF.Dispatch.continuous and "ACTIVE" or "OFF"),
             "Binding " .. (pending and pending.binding.key or "—") .. " · " .. (TEF.Runtime.reason or "—")}
         for i=math.max(1,#e.db.diagnostics-4),#e.db.diagnostics do
@@ -409,15 +410,53 @@ function UI:CreateSettings()
     end
     self:CreateHintText(self.pages.hud,"0%不透明，100%完全透明；全部HUD模式共用。仅改变底纹和外框，技能图标与文字保持原样。",16,-1448,548)
     self:Paint(self.pages.hud,"SetHeight",1532)
-    self:CreateSectionCard(self.pages.tek,"派发与接续参数",0,-138,580,332)
+    self:CreateSectionCard(self.pages.tek,"输入链许可",0,-138,580,144)
     self.signalToggle=self:CreateToggleRow(self.pages.tek,"TEAP输出",12,-176,556,function() return e.db.dispatch.signal end,function(v) TEF.Runtime:SetSignal(v) end)
     self.permissionToggle=self:CreateToggleRow(self.pages.tek,"TEK请求许可",12,-220,556,function() return e.db.dispatch.permission end,function(v) TEF.Runtime:SetPermission(v) end)
-    self.castQueueToggle=self:CreateToggleRow(self.pages.tek,"读条末尾提前排队（实验）",12,-264,556,function() return e.db.dispatch.castQueue end,function(v) TEF.Runtime:SetCastQueue(v) end)
-    self.castQueueLeadSlider,self.castQueueLeadInput=self:CreateSliderRow(self.pages.tek,"提前时间（秒）",14,-310,550,0,.5,.05,
-        function() return e.db.dispatch.castQueueLead end,function(v) TEF.Runtime:SetCastQueueLead(v) end,true)
-    self.retryDelaySlider,self.retryDelayInput=self:CreateSliderRow(self.pages.tek,"失败重试间隔（秒）",14,-384,550,0,.5,.05,
-        function() return e.db.dispatch.retryDelay end,function(v) TEF.Runtime:SetRetryDelay(v) end,true)
-    self:CreateHintText(self.pages.tek,"确认起手后停止重发，精确成功才推进。\n普通读条末尾只请求下一步；不能排队时等待结束。\n提前时间0～0.5秒，0关闭；实际受客户端排队窗口限制。\n排队仅用于列表循环普通读条，不跨技能组，不预测APL或引导。\n失败重试默认0.15秒，0表示下一次心跳重试。\n修改参数会停止派发，关闭设置后需重新开启；仅保留一个信号源。",12,-492,550)
+    self.timingInputs={}; self.timingSliders={}
+    local function timingToggle(label,y,key)
+        return self:CreateToggleRow(self.pages.tek,label,16,y,548,
+            function() return e.db.dispatch[key] end,function(v) TEF.Runtime:SetTimingOption(key,v) end)
+    end
+    local function milliseconds(label,y,key,max,mode)
+        local slider,input=self:CreateSliderRow(self.pages.tek,label,16,y,548,0,max or 500,10,
+            function() return math.floor(e.db.dispatch[key]*1000+.5) end,
+            function(v) TEF.Runtime:SetTimingOption(key,v/1000) end,true)
+        self.timingInputs[key]=input; self.timingSliders[key]=slider
+        if mode then self:AddControlSync(function()
+            local enabled=e.db.dispatch[mode]~="client"
+            self:Paint(slider,enabled and "Enable" or "Disable")
+            self:Paint(input,"EnableMouse",enabled); self:Paint(input,"EnableKeyboard",enabled)
+            if not enabled then self:Paint(input,"ClearFocus") end
+            slider.tefDisabledReason=not enabled and "跟随客户端窗口时，此自定义数值不参与计算。" or nil
+        end,slider) end
+        return slider,input
+    end
+    local function windowMode(y,key)
+        self:CreateSelectRow(self.pages.tek,"提前量来源",{{"custom","自定义提前量"},{"client","跟随客户端窗口"}},16,y,548,
+            function() return e.db.dispatch[key] end,function(v) TEF.Runtime:SetTimingOption(key,v) end)
+    end
+    self:CreateSectionCard(self.pages.tek,"普通读条接续 · 固定列表／自定义APL",0,-306,580,408)
+    self.castQueueToggle=timingToggle("启用普通读条末尾排队",-350,"castQueue")
+    windowMode(-398,"queueWindowMode")
+    self.castQueueLeadSlider,self.castQueueLeadInput=milliseconds("自定义提前量（毫秒）",-462,"castQueueLead",500,"queueWindowMode")
+    timingToggle("普通读条网络补偿（仅自定义）",-534,"latencyCompensation")
+    milliseconds("额外补偿上限（毫秒）",-582,"latencyAllowanceMax",150,"queueWindowMode")
+    self:CreateHintText(self.pages.tek,"自定义模式：提前量＋有界世界延迟补偿；0等待结束。跟随模式直接使用客户端窗口，不再叠加补偿。两种模式均不超过客户端窗口及500毫秒。",16,-654,548)
+    self:CreateSectionCard(self.pages.tek,"技能组读条接续 · 组内换步／跨轮",0,-738,580,408)
+    self.groupQueueToggle=timingToggle("启用技能组读条末尾排队",-782,"groupQueue")
+    windowMode(-830,"groupQueueWindowMode")
+    milliseconds("自定义提前量（毫秒）",-894,"groupQueueLead",500,"groupQueueWindowMode")
+    timingToggle("技能组网络补偿（仅自定义）",-966,"groupLatencyCompensation")
+    milliseconds("额外补偿上限（毫秒）",-1014,"groupLatencyAllowanceMax",150,"groupQueueWindowMode")
+    self:CreateHintText(self.pages.tek,"技能组使用本组参数，独立于上方普通读条开关；不跨到父列表。补偿参考世界往返延迟的一半，且不超过所设上限。精确成功后才推进次数及轮数。",16,-1086,548)
+    self:CreateSectionCard(self.pages.tek,"引导末尾介入 · 可能截断最后一跳",0,-1170,580,252)
+    timingToggle("允许引导末尾提前介入",-1214,"channelTail")
+    milliseconds("引导提前量（毫秒）",-1262,"channelTailLead")
+    self:CreateHintText(self.pages.tek,"默认关闭，初测20～50毫秒；0等待自然结束。只在已确认精确成功且引导身份、时间公开时介入；不叠加网络补偿。组内还需开启技能组接续，其他来源需开启普通接续。",16,-1334,548)
+    self:CreateSectionCard(self.pages.tek,"失败重试与人工接管",0,-1446,580,332)
+    self.retryDelaySlider,self.retryDelayInput=milliseconds("失败重试间隔（毫秒）",-1490,"retryDelay")
+    self:CreateHintText(self.pages.tek,"仅用于已确认失败后的等待，不是正常技能之间的间隔。默认150毫秒；0表示下一次心跳重试。确认起手即撤掉旧请求，不随机增加等待。",16,-1562,548)
     self:Paint(self.readouts.diagnostics,"ClearAllPoints"); self:Paint(self.readouts.diagnostics,"SetPoint","TOPLEFT",self.pages.diagnostics,"TOPLEFT",4,-104)
     for i,option in ipairs({{"explain","策略解释"},{"audit","配置体检"},{"timeline","事件时间线"}}) do
         local mode=option[1]
@@ -425,9 +464,12 @@ function UI:CreateSettings()
     end
     self.testSingle=button("diagnostics","单步派发测试",4,-44,184,function() TEF_RequestCurrent() end)
     self:SetControlEnabled(self.testSingle,false,"设置期间禁止派发；关闭设置后使用 /tef dispatch。")
-    self:CreateSelectRow(self.pages.tek,"施放非当前步骤技能后",{{"continue","保留原进度"},{"pause","暂停等待手动继续"}},12,-676,550,
+    self:CreateSelectRow(self.pages.tek,"施放非当前步骤技能后",{{"continue","保留原进度"},{"pause","暂停等待手动继续"}},16,-1634,548,
         function() return e.db.dispatch.takeover end,function(v) TEF.Runtime:Stop("TAKEOVER_SETTING_CHANGED"); e.db.dispatch.takeover=v end)
-    self:Paint(self.pages.tek,"SetHeight",780)
+    self:CreateToggleRow(self.pages.tek,"移动变化重新判断APL",16,-1706,548,
+        function() return e.db.dispatch.movementReevaluate end,
+        function(v) e.db.dispatch.movementReevaluate=v; TEF.Runtime.movementSample=nil; TEF.APL:Invalidate() end)
+    self:Paint(self.pages.tek,"SetHeight",1802)
     for _,panel in pairs(self.pageFrames or self.pages) do self:Paint(panel,"Hide") end
     self:CreateStudio()
     self.settingsLayoutSignature=nil

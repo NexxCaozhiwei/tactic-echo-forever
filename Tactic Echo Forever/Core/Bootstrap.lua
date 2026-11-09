@@ -84,8 +84,7 @@ local function onEvent(_,event,...)
     end
     if event == "PLAYER_TARGET_CHANGED" then
         engine:UsageTargetChanged()
-        if engine.db.loopMode=="target" then TEF.Runtime:ResetCycle("LOOP_TARGET_RESET")
-        else TEF.Runtime:Suspend("RUNTIME_TARGET_CHANGED") end
+        TEF.Runtime:TargetChanged()
         TEF.Presentation.bindings={}; TEF.Research:Invalidate(); refresh(); return
     end
     if event == "UI_SCALE_CHANGED" then
@@ -104,6 +103,7 @@ local function onEvent(_,event,...)
         -- Events invalidate research evidence, never manufacture cast=false.
         local publicUnit=S.Public(unit,"string")
         if publicUnit=="player" then TEF.Research:Invalidate(); TEF.APL:Invalidate() end
+        if publicUnit=="player" and event=="UNIT_SPELLCAST_CHANNEL_STOP" then TEF.Transport:Pulse("CHANNEL_STOP_RECONCILE") end
         refresh()
     end
 end

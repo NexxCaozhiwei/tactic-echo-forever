@@ -7,6 +7,7 @@ local function setup()
  e.steps=T.Engine.Validate({{name="普通读条",spellID=116,matchIDs={116},repeatCount=1},
   {name="奥术飞弹",spellID=5144,matchIDs={5144},repeatCount=1}})
  e.db.dispatch.ordinaryContinuous=true; e.db.dispatch.castQueue=true; e.db.dispatch.castQueueLead=.25
+ C_SpellBook={IsSpellKnown=function() return true end}
  InCombatLockdown=function() return true end
  clock=12; GetTime=function() return clock end; C_CVar=nil; GetCVar=function() return "400" end
  UnitCastingInfo=function() return nil end; UnitChannelInfo=function() return nil end
@@ -36,16 +37,19 @@ test("paced_started_spell_keeps_receipt_when_resources_are_already_spent",functi
  receipt("UNIT_SPELLCAST_SUCCEEDED",116,"paced-resource"); eq(e.index,2)
 end)
 
-test("paced_cast_to_channel_tail_never_republishes_old_cast",function()
+test("paced_cast_to_channel_reserves_next_without_republishing_old_cast",function()
  local e=setup(); receipt("UNIT_SPELLCAST_SENT",116,"paced-tail")
  UnitCastingInfo=function() return "普通读条",nil,nil,10000,12500,nil,nil,false,116 end
- for _,at in ipairs({12,12.26,12.31,12.49}) do
-  clock=at; tick(); eq(T.Dispatch.castQueue,nil); eq(T.Dispatch:Packet(),nil); eq(e.index,1)
- end
+ clock=12; tick(); eq(T.Dispatch.castQueue,nil); eq(T.Dispatch:Packet(),nil)
+ clock=12.26; tick(); assert(T.Dispatch.castQueue); assert(T.Dispatch:Packet())
+ eq(T.Dispatch.pending.binding.spellID,5144); eq(e.index,1)
+ receipt("UNIT_SPELLCAST_SENT",5144,"paced-next-channel")
+ clock=12.31; tick(); eq(T.Dispatch:Packet(),nil); eq(e.index,1)
  receipt("UNIT_SPELLCAST_SUCCEEDED",116,"paced-tail"); eq(e.index,2)
  tick(); eq(T.Dispatch:Packet(),nil) -- 成功回执早于公开读条消失时仍等待。
- UnitCastingInfo=function() return nil end; tick(); assert(T.Dispatch:Packet())
- eq(T.Dispatch.pending.binding.spellID,5144)
+ UnitCastingInfo=function() return nil end; tick(); eq(T.Dispatch:Packet(),nil)
+ receipt("UNIT_SPELLCAST_SUCCEEDED",5144,"paced-next-channel")
+ eq(e.receiptSerial,2); eq(e.completed,true)
 end)
 
 test("paced_next_cast_reserves_once_and_stops_after_exact_acceptance",function()
@@ -108,16 +112,40 @@ test("paced_settings_numeric_fields_keep_errors_and_commit_only_once",function()
  F.deliveryFixture("manual"); local U,e=T.UI,T.engine
  local input=U.retryDelayInput; assert(input); assert(U.castQueueLeadInput)
  local old=e.db.dispatch.retryDelay
- input.text="0.8"; input.scripts.OnEnterPressed(); U:RefreshControls()
- eq(e.db.dispatch.retryDelay,old); eq(input.text,"0.8")
- local setter=T.Runtime.SetRetryDelay; local calls=0
- T.Runtime.SetRetryDelay=function(self,value) calls=calls+1; return setter(self,value) end
- input.text="0.25"; input.scripts.OnEnterPressed(); input.scripts.OnEditFocusLost()
+ input.text="800"; input.scripts.OnEnterPressed(); U:RefreshControls()
+ eq(e.db.dispatch.retryDelay,old); eq(input.text,"800")
+ local setter=T.Runtime.SetTimingOption; local calls=0
+ T.Runtime.SetTimingOption=function(self,key,value) calls=calls+1; return setter(self,key,value) end
+ input.text="250"; input.scripts.OnEnterPressed(); input.scripts.OnEditFocusLost()
  eq(e.db.dispatch.retryDelay,.25); eq(calls,1)
- T.Runtime.SetRetryDelay=setter
+ T.Runtime.SetTimingOption=setter
  local lead=U.castQueueLeadInput
- lead.text="0.35"; lead.scripts.OnEnterPressed(); eq(e.db.dispatch.castQueueLead,.35)
- lead.text="0.7"; lead.scripts.OnEnterPressed(); eq(e.db.dispatch.castQueueLead,.35)
- U:RefreshControls(); eq(lead.text,"0.7")
+ lead.text="350"; lead.scripts.OnEnterPressed(); eq(e.db.dispatch.castQueueLead,.35)
+ lead.text="700"; lead.scripts.OnEnterPressed(); eq(e.db.dispatch.castQueueLead,.35)
+ U:RefreshControls(); eq(lead.text,"700")
  eq(e.db.dispatch.retryDelay,.25)
+end)
+
+test("timing_settings_milliseconds_independent_and_client_disables_custom",function()
+ F.deliveryFixture("manual"); local U,e=T.UI,T.engine
+ U:OpenSettings(); U:ShowPage("tek")
+ local group=U.timingInputs.groupQueueLead
+ local normal=e.db.dispatch.castQueueLead
+ group.text="320"; group.scripts.OnEnterPressed(); eq(e.db.dispatch.groupQueueLead,.32)
+ eq(e.db.dispatch.castQueueLead,normal)
+ local channel=U.timingInputs.channelTailLead
+ channel.text="20"; channel.scripts.OnEnterPressed(); eq(e.db.dispatch.channelTailLead,.02)
+ local cap=U.timingInputs.groupLatencyAllowanceMax
+ cap.text="50"; cap.scripts.OnEnterPressed(); eq(e.db.dispatch.groupLatencyAllowanceMax,.05)
+ cap.text="160"; cap.scripts.OnEnterPressed(); U:RefreshControls()
+ eq(e.db.dispatch.groupLatencyAllowanceMax,.05); eq(cap.text,"160")
+ local enabled,keyboard
+ U.timingSliders.groupQueueLead.Enable=function() enabled=true end
+ U.timingSliders.groupQueueLead.Disable=function() enabled=false end
+ group.EnableKeyboard=function(_,v) keyboard=v end
+ T.Runtime:SetTimingOption("groupQueueWindowMode","client"); U:RefreshControls()
+ eq(enabled,false); eq(keyboard,false); eq(e.db.dispatch.groupQueueLead,.32)
+ T.Runtime:SetTimingOption("groupQueueWindowMode","custom"); U:RefreshControls()
+ eq(enabled,true); eq(keyboard,true)
+ U:CloseSettings()
 end)

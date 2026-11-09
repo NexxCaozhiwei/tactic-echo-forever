@@ -1,4 +1,6 @@
 from dataclasses import dataclass
+from datetime import datetime, timezone
+import time
 
 from tek.src.action_catalog import ActionCatalog, ActionCatalogError
 from tek.src.input_planner import DispatchResult, DryRunInputDispatcher, InputPlan, InputPlanError, plan_binding
@@ -201,6 +203,7 @@ class TEKEngine:
         return "mapping_blocked"
 
     def process_frame(self, frame: TEAPFrame, context: SafetyContext) -> TraceRecord:
+        self._delivery_timing = {}
         hook_reason = self._hook_block_reason()
         if hook_reason:
             context.state = "Blocked"
@@ -302,7 +305,11 @@ class TEKEngine:
             # the foreground process.
             self._commit_rate_slot(reservation)
             dispatch_started = True
+            dispatch_clock = time.perf_counter()
+            self._delivery_timing["dispatchStartedAt"] = datetime.now(timezone.utc).isoformat()
             dispatch_result = self.input_dispatcher.dispatch(input_plan)
+            self._delivery_timing["dispatchCompletedAt"] = datetime.now(timezone.utc).isoformat()
+            self._delivery_timing["dispatchMS"] = (time.perf_counter()-dispatch_clock)*1000
         except InputPlanError as error:
             # Input-plan errors are deterministic mapping failures; no native
             # SendInput attempt has a meaningful payload to preserve, so their
@@ -461,7 +468,7 @@ class TEKEngine:
             binding_token=kwargs.get("binding_token", frame.binding_token),
             input_plan=kwargs.get("input_plan"),
             dispatch_result=kwargs.get("dispatch_result"),
-            diagnostics=kwargs.get("diagnostics"),
+            diagnostics={**(kwargs.get("diagnostics") or {}), "delivery_timing": dict(getattr(self,"_delivery_timing",{}))},
         )
 
     def _release_modifiers(self, input_plan: InputPlan | None) -> None:

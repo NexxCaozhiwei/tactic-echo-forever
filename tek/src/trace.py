@@ -25,6 +25,7 @@ _NORMAL_DIAGNOSTIC_KEYS = {
     "wow_foreground",
     "foreground_reason",
     "input_sent_summary",
+    "delivery_timing",
 }
 
 
@@ -53,7 +54,9 @@ def trace_to_dict(record: TraceRecord, *, include_diagnostics: bool = True) -> d
         data["eventType"] = "input_dispatch"
     else:
         data["eventType"] = "input_blocked"
-    data["observedAt"] = datetime.now(timezone.utc).isoformat()
+    timing = (record.diagnostics or {}).get("delivery_timing") or {}
+    data["observedAt"] = timing.get("readCompletedAt") or datetime.now(timezone.utc).isoformat()
+    data["writtenAt"] = datetime.now(timezone.utc).isoformat()
     return data
 
 
@@ -111,6 +114,7 @@ class TraceSampler:
         self._pending_input_count = 0
         self._pending_input_first_at: float | None = None
         self._pending_input_record: TraceRecord | None = None
+        self._pending_input_first_record: TraceRecord | None = None
 
     def should_write(self, record: TraceRecord) -> bool:
         """Compatibility predicate used by legacy tests/callers.
@@ -166,6 +170,7 @@ class TraceSampler:
         now = self._clock()
         if self._pending_input_count == 0:
             self._pending_input_first_at = now
+            self._pending_input_first_record = record
         self._pending_input_count += 1
         self._pending_input_record = record
         # Persist the first successful dispatch immediately so a fresh trace
@@ -191,10 +196,20 @@ class TraceSampler:
             "last_action_id": record.action_id,
             "last_binding": record.binding,
         }
+        first_record = self._pending_input_first_record
+        if first_record is not None:
+            diagnostics["input_sent_summary"].update(
+                first_sequence=first_record.sequence,
+                first_freshness_counter=first_record.frame_freshness_counter,
+                first_session=first_record.session_epoch,
+                first_binding_token=first_record.binding_token,
+                first_delivery_timing=(first_record.diagnostics or {}).get("delivery_timing"),
+            )
         summary = replace(record, diagnostics=diagnostics)
         self._pending_input_count = 0
         self._pending_input_first_at = None
         self._pending_input_record = None
+        self._pending_input_first_record = None
         self._last_signature = trace_signature(summary, full_debug=False)
         self._last_written_at = observed
         return summary

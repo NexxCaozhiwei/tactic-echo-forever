@@ -123,7 +123,9 @@ function A:Refresh(e)
  local now=self.State.Time(); local last=self.State.last
  if now and last and now>=last and now-last<(self.State.dirty and .05 or .20) and e.aplSnapshot
   and e.aplSnapshot.generation==e.generation and e.aplSnapshot.receiptSerial==(e.receiptSerial or 0) then return end
- local state,reason=self.State:Sample(e)
+ local state=TEF.Dispatch:PreparedAPLState(e)
+ local reason
+ if not state then state,reason=self.State:Sample(e) end
  if not self:IsActive(e) then return end
  if not state then
   if TEF.Runtime.e==e then TEF.Runtime:ReplaceRecommendation(nil) else e:ReplaceRecommendation(nil) end
@@ -151,9 +153,29 @@ function A:Refresh(e)
  self.Trace:Record(e,trace,why,candidate,state)
  if TEF.HUD and TEF.HUD.engine==e then TEF.HUD:Refresh() end
 end
-function A:Allowed(e,id)
+function A:QueueTargetIdentity(e)
+ local exists=self.State.Boolean("UnitExists","target")
+ if exists==false then return "NONE:" .. (e.usageTargetSerial or 0) end
+ if exists~=true then return end
+ local ok,value=TEF.Safety.Call("UnitGUID","target")
+ local guid=ok and TEF.Safety.Identity(value)
+ return guid and (guid .. ":" .. (e.usageTargetSerial or 0))
+end
+function A:PrepareQueueCandidate(e,state)
+ if e.maintenanceActive or e.groupRun or e.db.apl.template~="custom" then return end
+ state=state or self.State:Sample(e); if not state then return end
+ state.readOnly=true
+ local candidate=self:Evaluate(state,e.db.apl,e.classToken)
+ local row=candidate and self.Custom:Rows(e)[candidate.customIndex]
+ if not row or row.group or (row.behavior and row.behavior.trigger~="continuous") then return end
+ return candidate,state,row
+end
+function A:Allowed(e,id,queue)
  if not self:IsActive(e) then return true end
- local s,c=e.aplSnapshot,e.aplCandidate; local now=self.State.Time()
+ local s,c=queue and queue.snapshot or e.aplSnapshot,queue and queue.candidate or e.aplCandidate; local now=self.State.Time()
+ if queue then
+  if not queue.targetIdentity or queue.targetIdentity~=self:QueueTargetIdentity(e) then return false,"APL_QUEUE_TARGET_CHANGED" end
+ end
  if not s or not c or c.spellID~=id or s.generation~=e.generation or s.receiptSerial~=(e.receiptSerial or 0)
   or s.revision~=(self.State.revision or 0) or not now or not s.sampledAt or now<s.sampledAt or now-s.sampledAt>1 then
   return false,"APL_STALE_OR_UNKNOWN"
@@ -170,7 +192,7 @@ function A:Allowed(e,id)
   if row.activity~="any" then local ok,record=TEF.Safety.Call("C_Spell.GetSpellCooldown",id); if ok then action.active=TEF.Safety.Field(record,"isActive","boolean") end end
   local live={combat={in_combat=self.State.Boolean("InCombatLockdown")},actions={[c.action]=action},moving=self.State.Boolean("IsPlayerMoving")}
   if not TEF.Runtime:CombatAllowed(e,live.combat.in_combat) then return false,"APL_DISPATCH_COMBAT_REQUIRED" end
-  TEF.Maintenance:Context(e,live)
+  live.readOnly=queue~=nil; TEF.Maintenance:Context(e,live)
   if e.maintenanceActive and not TEF.Maintenance:BuffSpell(id) then return false,"MAINTENANCE_BUFF_REQUIRED" end
   local isolated={}
   for i=1,c.customIndex do isolated[i]=i==c.customIndex and row or {enabled=false,cdmKind="none"} end
