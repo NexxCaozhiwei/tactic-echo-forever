@@ -76,6 +76,7 @@ function U:CreateStudioPlan()
   local _,source,scene=self:StudioRows(); if not source or scene=="maintenance" then return end
   local ok,raw=self:Invoke(self.studioPlanName,"GetText")
   local saved=ok and T.Profiles:SetPlanName(self.engine,source,scene,raw)
+  if saved then self:ShareNames()[source..":"..scene]=nil end
   self:StudioMessage(saved and "方案名称已保存。" or "名称无效：最多64字节，不允许控制符或竖线。")
  end)
  self.studioPlanToggle,self.studioPlanToggleLabel=self:CreateToggleRow(panel,"启用本方案",16,-184,390,function()
@@ -92,13 +93,19 @@ function U:CreateStudioPlan()
   local ok,reason=T.Profiles:UsePlan(self.engine,source,scene)
   self:StudioMessage(ok and "已切换运行方案并停止派发；关闭设置后开启。" or ("未切换：" .. (reason or "UNKNOWN")))
  end)
- self.studioLoopPanel=self:Frame("Frame",panel); self:StudioAnchor(self.studioLoopPanel,panel,16,-296,390,250)
+ self.studioShareImport=self:CreateActionButton(panel,"导入方案",16,-272,188,function() self:OpenPlanShare("import") end)
+ self.studioShareExport=self:CreateActionButton(panel,"导出方案",216,-272,188,function() self:OpenPlanShare("export") end)
+ self.studioBundleImport=self:CreateActionButton(panel,"导入全部",16,-312,124,function() self:OpenBundleShare("import") end)
+ self.studioBundleExport=self:CreateActionButton(panel,"导出全部",148,-312,124,function() self:OpenBundleShare("export") end)
+ self.studioBundleSave=self:CreateActionButton(panel,"保存全部导入",280,-312,124,function() self:SaveBundleDraft() end)
+ self.studioLoopPanel=self:Frame("Frame",panel); self:StudioAnchor(self.studioLoopPanel,panel,16,-360,390,192)
  self:CreateSelectRow(self.studioLoopPanel,"循环方式",{{"none","不循环"},{"normal","普通循环"},{"target","切目标重置"},{"combat","脱战重置"}},0,0,390,
   function() return self.engine.db.loopMode end,function(v) T.Runtime:SetLoopMode(v) end)
  self:CreateHintText(self.studioLoopPanel,"切换循环方式会停止并重置；手动停止保留原进度。",0,-88,390)
  self:CreateActionButton(self.studioLoopPanel,"重置并停止",0,-144,188,function() T.Runtime:Reset() end)
- self.studioPlanMessage=self:Text(panel,16,-576,390)
- self:Paint(self:Text(panel,16,-640,390,"GameFontHighlightSmall"),"SetText","编辑方案与正在使用的方案分别显示。保存内容会停止旧派发；切换编辑标签不会自行运行。")
+ self.studioAlignRanks=self:CreateActionButton(panel,"检测并全部替换为技能条上技能等级",16,-576,390,function() self:DetectPlanBarRanks() end)
+ self.studioPlanMessage=self:Text(panel,16,-624,390)
+ self:Paint(self:Text(panel,16,-688,390,"GameFontHighlightSmall"),"SetText","编辑方案与正在使用的方案分别显示。保存内容会停止旧派发；切换编辑标签不会自行运行。")
 end
 function U:CreateStudioToolbar(parent,source)
  local toolbar=self:Frame("Frame",parent); self:StudioAnchor(toolbar,parent,12,-44,580,76)
@@ -195,6 +202,7 @@ function U:CreateStudio()
  self:Paint(self.groupPanel,"SetParent",self.studioInspector); self:Paint(self.groupPanel,"SetFrameStrata","MEDIUM")
  self:Paint(self.groupListBox,"Hide"); self:Paint(self.groupIDLabel,"Hide")
  self:CreateHintText(self.groupPanel,"在左侧编辑组内步骤；选择技能行后在此编辑策略。\n返回父列表会先暂存，保存方案才持久化。",16,-176,390)
+ self.groupAlignRanks=self:CreateActionButton(self.groupPanel,"检测并全部替换为技能条上技能等级",16,-224,390,function() self:DetectPlanBarRanks() end)
  self:Paint(self.groupScroll,"SetParent",self.studioEditor)
  for _,control in ipairs({self.groupDrop,self.groupID,self.groupAddButton}) do self:Paint(control,"Hide") end
  self.studioGroupFooter=self:Frame("Frame",self.settings); self:Paint(self.studioGroupFooter,"SetSize",580,88)
@@ -265,10 +273,11 @@ function U:RefreshStudioContent()
   self:Paint(self.studioPlanToggleLabel,"SetText",planScene=="maintenance" and "启用增益维护" or "启用本方案")
   self:Paint(self.studioPlanTitle,"SetText",planScene=="maintenance" and "增益维护设置 · 启用维护" or "方案设置 · 改名／启用／使用")
   local loaded=planSource .. ":" .. planScene
-  if self.studioPlanLoaded~=loaded or self.studioPlanEngine~=e then self.studioPlanEngine=e; self.studioPlanLoaded=loaded; self:SetInputValue(self.studioPlanName,T.Profiles:PlanName(planScene,e,planSource)) end
+  if self.studioPlanLoaded~=loaded or self.studioPlanEngine~=e then self.studioPlanEngine=e; self.studioPlanLoaded=loaded; self:SetInputValue(self.studioPlanName,self:SharePlanName(planSource,planScene)) end
   self:SetControlEnabled(self.studioUsePlan,planScene~="maintenance" and e.db.enabledPlans[planSource][planScene]==true,"请先启用方案；维护列表不切换战斗来源。")
+  self:SetControlEnabled(self.studioBundleSave,self.shareBundleEngine==e and self.shareBundleClass==e.classToken,"先将整包导入草稿，才能保存全部导入。")
   self:Paint(self.studioLoopPanel,planSource=="manual" and "Show" or "Hide")
-  for _,control in ipairs({self.studioPlanNameLabel,self.studioPlanName,self.studioPlanRename,self.studioUsePlan}) do self:Paint(control,planScene=="maintenance" and "Hide" or "Show") end
+  for _,control in ipairs({self.studioPlanNameLabel,self.studioPlanName,self.studioPlanRename,self.studioUsePlan,self.studioShareImport,self.studioShareExport,self.studioBundleImport,self.studioBundleExport,self.studioBundleSave,self.studioAlignRanks}) do self:Paint(control,planScene=="maintenance" and "Hide" or "Show") end
  end
  local dragging=self.studioDragging
  if dragging or self.studioLibraryDragging then local _,frame=self:StudioDropTarget(dragging and dragging.source or source); if frame then self:ShowStudioInsertion(frame) else self:HideStudioInsertion() end end
@@ -361,7 +370,7 @@ function U:LayoutStudioSettingsContent(width,height)
  for _,panel in ipairs({self.strategyPanel,self.groupPanel}) do self:StudioAnchor(panel,self.studioInspector,0,0,448,bodyHeight-(dock and 0 or 48)) end
  self:StudioAnchor(self.studioPlanScroll,self.studioInspector,0,0,410,bodyHeight-(dock and 0 or 48))
  self:StudioAnchor(self.studioPlanPanel,self.studioPlanScroll,0,0,410,744)
- self:Paint(self.strategyScroll,"SetHeight",math.max(80,bodyHeight-(dock and 232 or 280)))
+ self:Paint(self.strategyScroll,"SetHeight",math.max(80,bodyHeight-(dock and 280 or 328)))
  self:StudioAnchor(self.studioStatus,self.settings,12,-h+20,w-24)
  self:StudioAnchor(self.studioRun,self.settings,w-340,-16,112,32); self:StudioAnchor(self.studioSave,self.settings,w-220,-16,112,32)
  self:Paint(self.studioClose,"ClearAllPoints"); self:Paint(self.studioClose,"SetPoint","TOPRIGHT",self.settings,"TOPRIGHT",-16,-16)

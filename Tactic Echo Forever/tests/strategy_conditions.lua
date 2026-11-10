@@ -330,10 +330,15 @@ test("highest_rank_text_identity_and_unknown_learning",function()
  C_SpellBook.GetSpellBookSkillLineInfo=function() return {itemIndexOffset=0,numSpellBookItems=257} end; eq(A.State.HighestLearnedRank(143),nil)
  C_SpellBook,C_Spell.GetSpellInfo=book,info
 end)
-test("highest_rank_button_preserves_strategy_and_waits_for_save",function()
+test("actionbar_rank_button_preserves_strategy_and_waits_for_save",function()
  local e=F.runtime(); local r=row(143,{{kind="distance",min=20}}); assert(C:Save(e,{r},"single","MAGE"))
  T.UI:ShowPage("customapl"); T.UI.customSelected=1; T.UI.customFormIndex=nil; T.UI:RefreshCustomAPL()
  local book,info=C_SpellBook,C_Spell.GetSpellInfo
+ local action,resolve,passive,bar=GetActionInfo,T.Dispatch.Resolve,C_Spell.IsSpellPassive,C_ActionBar
+ GetActionInfo=function(slot) if slot==1 then return "spell",133 end end
+ C_ActionBar={GetActionInfo=GetActionInfo}
+ T.Dispatch.Resolve=function(_,id) return id==133 and {spellID=id,key="1"} end
+ C_Spell.IsSpellPassive=function() return false end
  C_Spell.GetSpellInfo=function() return {name="火球术"} end
  C_SpellBook={GetNumSpellBookSkillLines=function() return 1 end,GetSpellBookSkillLineInfo=function() return {itemIndexOffset=0,numSpellBookItems=1} end,
   GetSpellBookItemInfo=function() return {spellID=133,name="火球术",rank=3,itemType=1,isPassive=false} end,IsSpellKnown=function() return true end}
@@ -341,6 +346,7 @@ test("highest_rank_button_preserves_strategy_and_waits_for_save",function()
  eq(T.UI.customDraft[1].strategies[1].conditions[1].min,20)
  eq(T.UI:UpgradeStrategySpell(),true)
  T.UI.strategySaveButton.scripts.OnClick(); eq(C:Rows(e)[1].spellID,133)
+ GetActionInfo,T.Dispatch.Resolve,C_Spell.IsSpellPassive,C_ActionBar=action,resolve,passive,bar
  C_SpellBook,C_Spell.GetSpellInfo=book,info
 end)
 test("resource_probe_public_and_secret_independent_values",function()

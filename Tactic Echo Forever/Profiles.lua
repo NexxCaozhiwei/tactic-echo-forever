@@ -248,6 +248,30 @@ function P:Save(e, key, rows)
     e:Log("lifecycle","CONFIG_SAVED")
     return true
 end
+function P:SaveBundle(e,raw)
+    if not e.profileKey or not TEF.PlanShare then return false,"职业身份未确认。" end
+    local ok,bundle=pcall(TEF.PlanShare.CleanBundle,TEF.PlanShare,raw)
+    if not ok then return false,tostring(bundle) end
+    if bundle.class~=e.classToken then return false,"整包职业不符。" end
+    local manual,apl,names={},{},{manual={},apl={}}
+    for _,source in ipairs({"manual","apl"}) do for _,slot in ipairs({"single","multi","third"}) do
+        local plan=bundle.plans[source][slot]
+        local valid,errors=TEF.APL.Custom:Audit(plan.rows)
+        if not valid then return false,plan.name.."："..errors end
+        if source=="manual" then manual[slot]=plan.rows else apl[slot]=plan.rows end
+        names[source][slot]=plan.name
+    end end
+    -- 六槽全部校验通过才一次保存；仅复用原重置与推荐刷新路径。
+    e:Reset()
+    e.db.classProfiles[e.profileKey]=manual; e.db.profiles=manual
+    e.db.apl.custom[e.classToken]=apl; e.db.planNames[e.classToken]=names
+    e.db.profileMigrationConflicts[e.classToken]=nil
+    TEF.APL:Invalidate(true)
+    if TEF.APL:IsActive(e) then e.steps=nil
+    else e.steps=TEF.Engine.Validate(TEF.Recommendation:Rows(e,e.scene)) end
+    e:Log("lifecycle","PLAN_BUNDLE_SAVED")
+    return true
+end
 function P:RefreshIdentity(e)
     local key,class=self:Identity()
     if key==e.profileKey then return false end

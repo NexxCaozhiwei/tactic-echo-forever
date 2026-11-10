@@ -2,7 +2,7 @@
 ## Title: Tactic Echo Forever
 ## Notes: TEF 固定序列与经典法师职业APL v0
 ## Author: TEF
-## Version: 2.0.1
+## Version: 2.1.0
 ## SavedVariables: TEF_DB
 
 Config.lua
@@ -30,6 +30,7 @@ Profiles.lua
 Recommendation.lua
 Maintenance.lua
 Research.lua
+PlanShare.lua
 UI.lua
 UIComponents.lua
 Studio.lua
@@ -38,6 +39,8 @@ StudioTools.lua
 SequenceEditor.lua
 CustomAPLEditor.lua
 SkillGroupEditor.lua
+PlanShareUI.lua
+RankAlignment.lua
 HUD.lua
 Dispatch.lua
 Presentation.lua

@@ -15,6 +15,7 @@ function U:StudioRows()
  if self.page=="customapl" or self.page=="maintenance" then return self.customDraft,"apl",self.customLoadedScene end
 end
 function U:StudioDirty(source,scene,rows)
+ if self.ShareNames and self:ShareNames()[source..":"..scene] then return true end
  if not rows then return false end
  local saved=source=="manual" and T.Profiles:Clean(self.engine.db.profiles[scene],32)
   or T.APL.Custom.CleanRows(scene=="maintenance" and T.Maintenance:Rows(self.engine) or T.APL.Custom:Rows(self.engine,scene))

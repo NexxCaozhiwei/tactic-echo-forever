@@ -184,7 +184,7 @@ function U:LayoutSettings()
   self:Call(panel,"SetClampedToScreen",true)
  end end
  for key,scroll in pairs(self.pageScrolls or {}) do self:Call(scroll,"SetHeight",math.max(80,panelHeight-((key=="profiles" or key=="customapl") and 232 or 144))) end
- self:Call(self.strategyScroll,"SetHeight",math.max(80,panelHeight-232))
+ self:Call(self.strategyScroll,"SetHeight",math.max(80,panelHeight-280))
  self:Call(self.groupScroll,"SetHeight",math.max(80,panelHeight-440))
  self:Call(self.groupListBox,"SetHeight",math.max(124,panelHeight-392))
  local available=math.max(352,panelHeight-232)

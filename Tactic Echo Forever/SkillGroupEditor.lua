@@ -113,6 +113,7 @@ function U:SaveSkillGroup(draftOnly)
  if edit.source=="manual" then ok,reason=T.Profiles:Save(self.engine,edit.scene,rows)
  else ok,reason=T.APL.Custom:Save(self.engine,rows,edit.scene,self.customClass) end
  if ok then self.groupDirty=false end
+ if ok and not draftOnly then self:CommitShareName(edit.source,edit.scene) end
  self:Paint(self.groupMessage,"SetText",ok and "技能组和父列表已保存，派发已停止。" or (reason or "保存失败"))
  return ok
 end

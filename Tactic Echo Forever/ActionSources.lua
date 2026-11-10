@@ -102,6 +102,57 @@ function M:Action(slot)
     if kind=="macro" then return self:ActionMacro(slot,id) end
     return nil,"ACTION_KIND_UNVERIFIED"
 end
+-- 仅在用户检测等级时扫描；法术名只用于寻找同族候选，授权仍需精确已学ID。
+function M:BarSpellCatalog()
+    local fn=S.Resolve("C_ActionBar.GetActionInfo") or S.Resolve("GetActionInfo")
+    if not fn then return nil end
+    local catalog={rows={},complete=true,bindings={}}
+    local seen={}
+    for slot=1,180 do
+        local ok,rawKind,rawID=pcall(fn,slot)
+        local kind,why=S.Public(rawKind,"string")
+        if not ok or (not kind and why~="NO_DATA") then catalog.complete=false end
+        if kind=="spell" or kind=="macro" then
+            local source
+            if kind=="spell" then
+                local id=S.ID(rawID); if id then source={spellID=id} else catalog.complete=false end
+            else source=self:Action(slot) end
+            local id=source and source.spellID
+            if id and not seen[id] then
+                seen[id]=true
+                local got,info=S.Call("C_Spell.GetSpellInfo",id)
+                local name=got and S.Field(info,"name","string")
+                if not name then catalog.complete=false
+                else
+                    catalog.rows[#catalog.rows+1]={id=id,name=name,family=T.APL.AbilityNames[name],
+                        known=T.APL.State.Boolean("C_SpellBook.IsSpellKnown",id),passive=T.APL.State.Boolean("C_Spell.IsSpellPassive",id)}
+                end
+            end
+        end
+    end
+    return catalog
+end
+function M:FindBarRank(rawID,catalog)
+    local current=S.ID(rawID); if not current then return nil,"当前技能ID未知" end
+    catalog=catalog or self:BarSpellCatalog()
+    if not catalog or not catalog.complete then return nil,"动作条信息不完整或受限，请脱战后重试" end
+    local got,info=S.Call("C_Spell.GetSpellInfo",current)
+    local name=got and S.Field(info,"name","string")
+    if not name then return nil,"当前技能名称未知" end
+    local family=T.APL.AbilityNames[name]; local selected
+    for _,candidate in ipairs(catalog.rows) do
+        if candidate.name==name or (family and candidate.family==family) then
+            if candidate.known~=true or candidate.passive~=false then return nil,"动作条候选未确认精确已学或主动状态" end
+            if selected and selected~=candidate.id then return nil,"动作条存在同技能的多个等级，请人工选择" end
+            selected=candidate.id
+        end
+    end
+    if not selected then return nil,"动作条未找到可核对的同族技能" end
+    local binding=catalog.bindings[selected]
+    if binding==nil then binding=T.Dispatch:Resolve(selected); catalog.bindings[selected]=binding or false end
+    if not binding then return nil,"动作条技能没有经核对的派发按键" end
+    return selected,"已匹配动作条精确技能ID"
+end
 function M:Cursor()
     local fn=S.Resolve("GetCursorInfo")
     if not fn then return nil,"CURSOR_API_MISSING" end

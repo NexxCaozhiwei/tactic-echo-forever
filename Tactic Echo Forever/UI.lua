@@ -127,6 +127,7 @@ function UI:CloseSettings()
     if self.groupEditing and not self:CloseSkillGroup(false,function() self:CloseSettings() end) then return end
     if not self:CommitCustomNumbers() then return end
     self:CancelConfirmation()
+    if self.ClosePlanShare then self:ClosePlanShare() end
     self:HideStudioInsertion(); self.studioDragging=nil
     self.captureHotkey=false; self.settingsOpen=false
     self:Paint(self.settings,"Hide")
@@ -134,6 +135,7 @@ function UI:CloseSettings()
     self:Refresh()
 end
 function UI:ShowPage(key)
+    if self.ClosePlanShare then self:ClosePlanShare() end
     if self.sequenceEngine==self.engine and not self:CommitSequenceCounts() then return end
     if self.groupEditing and not self:CloseSkillGroup(false,function() self:ShowPage(key) end) then return end
     if self.sequenceEngine~=self.engine then
@@ -326,7 +328,7 @@ function UI:CreateSettings()
         local rows=ok and self:DraftRows()
         local saved,reason=false,"CONFIG_INVALID"
         if rows then saved,reason=TEF.Profiles:Save(e,self.editScene,rows) end
-        if saved then self.drafts[(e.profileKey or "unknown") .. ":" .. self.editScene]=nil end
+        if saved then self:CommitShareName("manual",self.editScene); self.drafts[(e.profileKey or "unknown") .. ":" .. self.editScene]=nil end
         self:Paint(self.editorMessage,"SetText",saved and "方案已保存；旧派发已停止并重置。" or ("未保存：" .. reason))
         self:Paint(editor,"ClearFocus")
     end)

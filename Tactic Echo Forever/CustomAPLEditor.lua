@@ -137,6 +137,7 @@ function U:CreateCustomAPLEditor(parent)
   if not self:CommitCustomNumbers() then return end
   if self.page=="maintenance" then local ok,reason=T.Maintenance:Save(self.engine,self.customDraft); self:CustomMessage(ok and "增益维护已保存并停止派发；关闭设置后手动开启。" or reason); return end
   local ok,reason=C:Save(self.engine,self.customDraft,self.customLoadedScene,self.customClass)
+  if ok then self:CommitShareName("apl",self.customLoadedScene) end
   if ok and self.engine.db.enabledPlans.apl[self.customLoadedScene] then ok,reason=T.Profiles:UsePlan(self.engine,"apl",self.customLoadedScene) end
   self:CustomMessage(ok and "已保存并停止派发；关闭设置后主动开启。" or (reason or "保存失败"))
  end)
@@ -246,11 +247,11 @@ end
 function U:UpgradeStrategySpell()
  if not self:CommitCustomNumbers() then return false end
  local row=self:CustomRow(); if not row then return false end
- local id,reason,rank=T.APL.State.HighestLearnedRank(row.spellID)
- if not id then self:CustomMessage("未更换：无法唯一确认已学最高等级（" .. (reason or "UNKNOWN") .. "）。"); return false end
- if id==row.spellID then self:CustomMessage("当前已是法术书确认的最高已学等级。" ); return true end
+ local id,reason=T.ActionSources:FindBarRank(row.spellID)
+ if not id then self:CustomMessage("未更换："..(reason or "动作条等级未确认").."。"); return false end
+ if id==row.spellID then self:CustomMessage("当前技能已与动作条上的精确等级一致。"); return true end
  if not self:ReplaceStrategySpell(id) then return false end
- self:CustomMessage("已替换为法术书确认的等级" .. rank .. "，策略保留；点击保存生效。"); return true
+ self:CustomMessage("已替换为动作条技能ID "..id.."，策略及显式观察ID保留；点击保存生效。"); return true
 end
 function U:ReceiveStrategySpell()
  local id,why=T.ActionSources:Cursor()
@@ -306,7 +307,7 @@ function U:RefreshStrategyForm()
    self.strategyReplaceDrop=self:CreateActionButton(form,"拖入替换",184,y,88,function() self:ReceiveStrategySpell() end)
    self:Paint(self.strategyReplaceDrop,"SetScript","OnReceiveDrag",function() self:Guard(function() self:ReceiveStrategySpell() end) end)
    audit(280,110); y=y-36
-   self.strategyUpgrade=self:CreateActionButton(form,"替换为已学最高等级",0,y,204,function() self:UpgradeStrategySpell() end)
+   self.strategyUpgrade=self:CreateActionButton(form,"替换为技能条上技能等级",0,y,204,function() self:UpgradeStrategySpell() end)
    self:CreateToggleRow(form,"启用",212,y,178,function() return row.enabled end,function(v) row.enabled=v end); y=y-36
   else
    audit(0,180)
@@ -482,10 +483,12 @@ function U:CreateStrategyPanel()
   if self.strategySource=="groupStep" then self:SaveSkillGroup(); return end
   if self.strategySource=="manual" then
    local rows=self:DraftRows(); local ok,reason=T.Profiles:Save(self.engine,self.editScene,rows)
+   if ok then self:CommitShareName("manual",self.editScene) end
    self:SequenceMessage(ok and "已保存列表循环策略并停止派发。" or (reason or "保存失败")); return
   end
   if self.page=="maintenance" then local ok,reason=T.Maintenance:Save(self.engine,self.customDraft); self:CustomMessage(ok and "增益维护策略已保存并停止派发。" or reason); return end
   local ok,reason=C:Save(self.engine,self.customDraft,self.customLoadedScene,self.customClass)
+  if ok then self:CommitShareName("apl",self.customLoadedScene) end
   if ok and self.engine.db.enabledPlans.apl[self.customLoadedScene] then ok,reason=T.Profiles:UsePlan(self.engine,"apl",self.customLoadedScene) end
   self:CustomMessage(ok and "已保存并停止派发；关闭设置后主动开启。" or (reason or "保存失败"))
  end)
@@ -495,7 +498,11 @@ function U:CreateStrategyPanel()
  end); self:CustomMessage("已清空当前技能条件草稿；保存后生效。") end,"清空条件") end)
  self:Paint(self.strategySaveButton,"ClearAllPoints"); self:Paint(self.strategySaveButton,"SetPoint","BOTTOMRIGHT",panel,"BOTTOMRIGHT",-16,16)
  self:Paint(self.strategyClearButton,"ClearAllPoints"); self:Paint(self.strategyClearButton,"SetPoint","BOTTOMLEFT",panel,"BOTTOMLEFT",16,16)
- self.strategyMessage=self:Text(panel,16,-611,398); self:Paint(self.strategyMessage,"ClearAllPoints"); self:Paint(self.strategyMessage,"SetPoint","BOTTOMLEFT",panel,"BOTTOMLEFT",16,64)
+ self.strategyImportButton=self:CreateActionButton(panel,"导入策略",16,-635,184,function() self:OpenPolicyShare("import") end)
+ self.strategyExportButton=self:CreateActionButton(panel,"导出策略",224,-635,190,function() self:OpenPolicyShare("export") end)
+ self:Paint(self.strategyImportButton,"ClearAllPoints"); self:Paint(self.strategyImportButton,"SetPoint","BOTTOMLEFT",panel,"BOTTOMLEFT",16,56)
+ self:Paint(self.strategyExportButton,"ClearAllPoints"); self:Paint(self.strategyExportButton,"SetPoint","BOTTOMRIGHT",panel,"BOTTOMRIGHT",-16,56)
+ self.strategyMessage=self:Text(panel,16,-611,398); self:Paint(self.strategyMessage,"ClearAllPoints"); self:Paint(self.strategyMessage,"SetPoint","BOTTOMLEFT",panel,"BOTTOMLEFT",16,104)
  local menu=self:Frame("Frame",panel,"BackdropTemplate"); self.strategyKindMenu=menu
  self:Paint(menu,"SetSize",220,248); self:Paint(menu,"SetFrameStrata","DIALOG"); self:Paint(menu,"SetClampedToScreen",true)
  local scroll=self:Frame("ScrollFrame",menu,"UIPanelScrollFrameTemplate")
