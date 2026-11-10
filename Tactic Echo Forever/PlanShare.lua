@@ -231,10 +231,11 @@ function X:PolicyPreview(policy)
  return table.concat(lines,"\n")
 end
 function X:CleanBundle(raw)
- fields(raw,{schema=true,class=true,plans=true},"方案整包")
- if raw.schema~=1 or not C:ClassSupported(raw.class) then fail("整包版本或职业无效。") end
+ fields(raw,{schema=true,class=true,plans=true,maintenance=true},"方案整包")
+ if (raw.schema~=1 and raw.schema~=2) or not C:ClassSupported(raw.class) then fail("整包版本或职业无效。") end
+ if raw.schema==1 and raw.maintenance~=nil then fail("旧版整包不支持增益与紧急字段。") end
  fields(raw.plans,{manual=true,apl=true},"整包来源")
- local result={schema=1,class=raw.class,plans={manual={},apl={}}}
+ local result={schema=raw.schema,class=raw.class,plans={manual={},apl={}}}
  for _,source in ipairs({"manual","apl"}) do
   fields(raw.plans[source],{single=true,multi=true,third=true},"整包槽位")
   for _,slot in ipairs({"single","multi","third"}) do
@@ -243,12 +244,22 @@ function X:CleanBundle(raw)
    result.plans[source][slot]=plan
   end
  end
+ if raw.schema==2 then
+  fields(raw.maintenance,{rows=true},"增益与紧急")
+  local plan=self:Clean({schema=1,class=raw.class,source="apl",name="增益与紧急",rows=raw.maintenance.rows})
+  local seen={}
+  for _,row in ipairs(plan.rows) do
+   if row.group or seen[row.spellID] then fail("增益与紧急不支持技能组或重复技能ID。") end
+   seen[row.spellID]=true
+  end
+  result.maintenance={rows=plan.rows}
+ end
  return result
 end
 function X:ExportBundle(raw)
  local ok,result=pcall(function()
   local payload=self:Serialize(self:CleanBundle(raw))
-  return "TEFBUNDLE:1:"..checksum(payload)..":"..pack64(payload)
+  return "TEFBUNDLE:"..raw.schema..":"..checksum(payload)..":"..pack64(payload)
  end)
  return ok and result or nil,not ok and tostring(result) or nil
 end
@@ -257,10 +268,11 @@ function X:ImportBundle(code,class)
   code=S.Public(code,"string"); if not code or #code>self.MaxCode then fail("分享码为空或过长。") end
   code=code:gsub("%s","")
   local version,hash,body=code:match("^TEFBUNDLE:(%d+):(%x+):([A-Za-z0-9+/=]+)$")
-  if version~="1" then fail("请粘贴支持版本的全部方案整包码。") end
+  if version~="1" and version~="2" then fail("请粘贴支持版本的全部方案整包码。") end
   local payload=unpack64(body)
   if #hash~=8 or checksum(payload)~=hash:lower() then fail("整包校验失败，请重新复制完整内容。") end
   local bundle=self:CleanBundle(self:Deserialize(payload))
+  if tostring(bundle.schema)~=version then fail("整包内外格式版本不一致。") end
   if bundle.class~=class then fail("职业不符：方案整包属于"..bundle.class.."。") end
   return bundle
  end)
@@ -273,7 +285,8 @@ function X:BundlePreview(bundle)
   for _,row in ipairs(plan.rows) do if row.group then groups=groups+1 end end
   lines[#lines+1]=(source=="manual" and "列表循环" or "优先级推荐").."／方案"..i.."："..plan.name.."，"..#plan.rows.."项，技能组"..groups.."个"
  end end
- lines[#lines+1]="确认后替换六套草稿与待保存名称，再点击保存全部导入。当前运行来源、方案启用状态、按键、HUD、增益维护及派发设置不随整包导入。各技能与CDM仍需在本机核对。"
+ lines[#lines+1]=bundle.maintenance and ("增益与紧急："..#bundle.maintenance.rows.."项，将一起导入；本机启用状态保留。") or "旧版整包未包含增益与紧急，本机维护列表保持原样。"
+ lines[#lines+1]="确认后替换包含的草稿和名称，再点击保存全部导入。运行来源、方案及维护启用状态、按键、HUD及派发设置保留。各技能与CDM仍需在本机核对。"
  return table.concat(lines,"\n")
 end
 function X:Preview(plan)

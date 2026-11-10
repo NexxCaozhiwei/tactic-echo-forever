@@ -277,7 +277,7 @@ function U:RefreshStudioContent()
   self:SetControlEnabled(self.studioUsePlan,planScene~="maintenance" and e.db.enabledPlans[planSource][planScene]==true,"请先启用方案；维护列表不切换战斗来源。")
   self:SetControlEnabled(self.studioBundleSave,self.shareBundleEngine==e and self.shareBundleClass==e.classToken,"先将整包导入草稿，才能保存全部导入。")
   self:Paint(self.studioLoopPanel,planSource=="manual" and "Show" or "Hide")
-  for _,control in ipairs({self.studioPlanNameLabel,self.studioPlanName,self.studioPlanRename,self.studioUsePlan,self.studioShareImport,self.studioShareExport,self.studioBundleImport,self.studioBundleExport,self.studioBundleSave,self.studioAlignRanks}) do self:Paint(control,planScene=="maintenance" and "Hide" or "Show") end
+  for _,control in ipairs({self.studioPlanNameLabel,self.studioPlanName,self.studioPlanRename,self.studioUsePlan,self.studioShareImport,self.studioShareExport,self.studioAlignRanks}) do self:Paint(control,planScene=="maintenance" and "Hide" or "Show") end
  end
  local dragging=self.studioDragging
  if dragging or self.studioLibraryDragging then local _,frame=self:StudioDropTarget(dragging and dragging.source or source); if frame then self:ShowStudioInsertion(frame) else self:HideStudioInsertion() end end

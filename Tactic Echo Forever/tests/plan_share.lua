@@ -205,4 +205,44 @@ test("确认期间动作条变更不应用旧替换计划",function()
  U:StudioAction(U.confirmAccept); eq(U:DraftRows()[1].spellID,143)
  restore(); U:CloseSettings()
 end)
+
+test("新版整包含维护策略与紧急行为且保留维护总开关",function()
+ for _,enabled in ipairs({false,true}) do
+  local e=F.runtime(); InCombatLockdown=function() return false end; U:OpenSettings(); U:ShowPage("maintenance")
+  e.db.maintenance.MAGE={enabled=enabled,rows={}}
+  local bundle=U:BundleDraft()
+  bundle.maintenance.rows={{spellID=1259718,enabled=true,targetMode="self",strategies={{mode="use",conditions={{kind="lossOfControl",control="stun",value=true}}}},behavior={trigger="edge",scope="entry",emergency=true,after="exit"}}}
+  local code=assert(X:ExportBundle(bundle)); assert(code:find("TEFBUNDLE:2:",1,true))
+  local decoded=assert(X:ImportBundle(code,"MAGE")); eq(decoded.maintenance.rows[1].behavior.emergency,true)
+  assert(U:OpenBundleShare("import")); U:Paint(U.shareBox,"SetText",code); assert(U:ParsePlanShare())
+  assert(U:ApplyBundleImport(assert(U:PrepareBundleImport())))
+  eq(#T.Maintenance:Rows(e),0); eq(T.Maintenance:Enabled(e),enabled)
+  eq(U.customDraft[1].spellID,1259718); assert(U:SaveBundleDraft())
+  eq(T.Maintenance:Rows(e)[1].spellID,1259718); eq(T.Maintenance:Enabled(e),enabled)
+  local copy=T.Engine.New(T.Config,e.db); eq(T.Maintenance:Rows(copy)[1].behavior.after,"exit"); eq(T.Maintenance:Enabled(copy),enabled)
+  U:CloseSettings()
+ end
+end)
+test("旧版整包导入保存不会清空已有维护列表",function()
+ local e=F.runtime(); InCombatLockdown=function() return false end; U:OpenSettings(); U:ShowPage("maintenance")
+ e.db.maintenance.MAGE={enabled=true,rows=T.APL.Custom.CleanRows({{spellID=1259718,enabled=true,targetMode="self",strategies={}}})}
+ U.customDraft=T.APL.Custom.CleanRows(T.Maintenance:Rows(e)); U:RefreshCustomAPL()
+ local before=X:Serialize(e.db.maintenance.MAGE)
+ local bundle=U:BundleDraft(); bundle.schema=1; bundle.maintenance=nil
+ local code=assert(X:ExportBundle(bundle)); assert(code:find("TEFBUNDLE:1:",1,true))
+ assert(U:OpenBundleShare("import")); U:Paint(U.shareBox,"SetText",code); assert(U:ParsePlanShare())
+ assert(U:ApplyBundleImport(assert(U:PrepareBundleImport()))); assert(U:SaveBundleDraft())
+ eq(X:Serialize(e.db.maintenance.MAGE),before); U:CloseSettings()
+end)
+test("维护无效时整包保存不部分写入且拒绝携带总开关",function()
+ local e=F.runtime(); InCombatLockdown=function() return false end; U:OpenSettings(); U:ShowPage("profiles")
+ local bundle=U:BundleDraft(); bundle.maintenance={rows={{spellID=143,enabled=true,targetMode="enemy",strategies={}}}}
+ local buff=T.Maintenance.BuffSpell; T.Maintenance.BuffSpell=function() return false end
+ local before=X:Serialize({profiles=e.db.profiles,apl=e.db.apl.custom.MAGE,maintenance=e.db.maintenance.MAGE})
+ eq(T.Profiles:SaveBundle(e,bundle),false)
+ eq(X:Serialize({profiles=e.db.profiles,apl=e.db.apl.custom.MAGE,maintenance=e.db.maintenance.MAGE}),before)
+ T.Maintenance.BuffSpell=buff
+ bundle.maintenance.enabled=true; eq(X:ExportBundle(bundle),nil)
+ U:CloseSettings()
+end)
 return n

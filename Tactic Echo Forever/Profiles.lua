@@ -261,11 +261,21 @@ function P:SaveBundle(e,raw)
         if source=="manual" then manual[slot]=plan.rows else apl[slot]=plan.rows end
         names[source][slot]=plan.name
     end end
-    -- 六槽全部校验通过才一次保存；仅复用原重置与推荐刷新路径。
+    local maintenance,why
+    if bundle.maintenance then
+        maintenance,why=TEF.Maintenance:ValidateRows(bundle.maintenance.rows)
+        if not maintenance then return false,"增益与紧急："..tostring(why) end
+    end
+    -- 六槽及维护列表全部校验通过才一次保存；仅复用原重置与推荐刷新路径。
     e:Reset()
     e.db.classProfiles[e.profileKey]=manual; e.db.profiles=manual
     e.db.apl.custom[e.classToken]=apl; e.db.planNames[e.classToken]=names
     e.db.profileMigrationConflicts[e.classToken]=nil
+    if maintenance then
+        e.db.maintenance[e.classToken]=e.db.maintenance[e.classToken] or {enabled=false}
+        e.db.maintenance[e.classToken].rows=maintenance
+        e.maintenanceDone={}; e.maintenanceSnapshot=nil
+    end
     TEF.APL:Invalidate(true)
     if TEF.APL:IsActive(e) then e.steps=nil
     else e.steps=TEF.Engine.Validate(TEF.Recommendation:Rows(e,e.scene)) end

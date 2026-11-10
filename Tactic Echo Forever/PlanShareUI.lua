@@ -28,7 +28,7 @@ function U:ShareContextValid()
  end
  local _,source,slot=self:StudioRows()
  return c and self.settingsOpen and c.engine==self.engine and c.class==self.engine.classToken
-  and source==c.source and slot~="maintenance" and not self.groupEditing and self:Combat()==false
+  and source==c.source and (slot~="maintenance" or c.kind=="bundle") and not self.groupEditing and self:Combat()==false
 end
 function U:PreparePlanImport(slot)
  if not self:ShareContextValid() or not slots[slot] or not self.shareParsed then return nil,"请重新打开导入并解析分享码。" end
@@ -151,7 +151,7 @@ function U:ApplyPolicyImport(tx)
  return true
 end
 function U:BundleDraft()
- local bundle={schema=1,class=self.engine.classToken,plans={manual={},apl={}}}
+ local bundle={schema=2,class=self.engine.classToken,plans={manual={},apl={}},maintenance={rows=self:StudioPlanDraft("apl","maintenance") or T.Maintenance:Rows(self.engine)}}
  for _,source in ipairs({"manual","apl"}) do for _,slot in ipairs({"single","multi","third"}) do
   bundle.plans[source][slot]={schema=1,class=bundle.class,source=source,name=self:SharePlanName(source,slot),rows=self:PlanShareRows(source,slot) or {}}
  end end
@@ -159,7 +159,7 @@ function U:BundleDraft()
 end
 function U:OpenBundleShare(mode)
  local _,source,slot=self:StudioRows()
- if (mode~="import" and mode~="export") or not slots[slot] or self.groupEditing or not self.settingsOpen or self:Combat()~=false then return false end
+ if (mode~="import" and mode~="export") or (not slots[slot] and slot~="maintenance") or self.groupEditing or not self.settingsOpen or self:Combat()~=false then return false end
  if not self:CommitSequenceCounts() or not self:CommitCustomNumbers() then return false end
  local code,reason
  if mode=="export" then
@@ -169,9 +169,9 @@ function U:OpenBundleShare(mode)
  self:CreatePlanShare()
  self.shareContext={kind="bundle",mode=mode,engine=self.engine,class=self.engine.classToken,source=source}
  self.shareParsed=nil; self.shareParsedText=nil
- self:Paint(self.shareTitle,"SetText",mode=="export" and "导出全部方案 · 当前职业六套草稿" or "导入全部方案 · 当前职业六套草稿")
+ self:Paint(self.shareTitle,"SetText",mode=="export" and "导出全部方案 · 当前职业六套方案及增益与紧急草稿" or "导入全部方案 · 当前职业六套方案及增益与紧急草稿")
  self:Paint(self.shareBox,"SetText",code or "")
- self:Paint(self.sharePreview,"SetText",mode=="export" and "整包包含列表循环三套、优先级推荐三套，以及名称、技能组、策略和未保存修改。其他职业、增益维护、本机按键及派发设置不在整包中。" or "粘贴TEFBUNDLE整包码并解析预览。确认后替换六套草稿；随后点击方案设置中的保存全部导入，一次保存六套。")
+ self:Paint(self.sharePreview,"SetText",mode=="export" and "整包包含列表循环三套、优先级推荐三套，以及名称、技能组、策略和未保存修改。同时包含增益与紧急技能列表及策略；本机维护启用状态保留，其他职业、本机按键及派发设置不在整包中。" or "粘贴TEFBUNDLE整包码并解析预览。确认后替换六套草稿；随后点击方案设置中的保存全部导入，一次保存六套。")
  self:Paint(self.shareTargets,"Hide")
  for _,control in ipairs({self.shareParse,self.shareApply}) do self:Paint(control,mode=="import" and "Show" or "Hide") end
  self:SetControlEnabled(self.shareApply,false,"请先解析有效整包码。")
@@ -199,25 +199,32 @@ function U:ApplyBundleImport(tx)
  end
  if self.sequenceEngine==e and slots[self.loadedScene] then self:WriteDraft(bundle.plans.manual[self.loadedScene].rows) end
  if self.customEngine==e and slots[self.customLoadedScene] then self.customDraft=bundle.plans.apl[self.customLoadedScene].rows end
+ if bundle.maintenance then
+  self.customDraftCache[e.classToken..":maintenance"]=bundle.maintenance.rows
+  if self.customEngine==e and self.customLoadedScene=="maintenance" then self.customDraft=bundle.maintenance.rows end
+ end
+ self.shareBundleMaintenance=bundle.maintenance~=nil
  for _,source in ipairs({"manual","apl"}) do for _,slot in ipairs({"single","multi","third"}) do
   self:ShareNames()[source..":"..slot]=bundle.plans[source][slot].name
  end end
  self.shareBundleEngine=e; self.shareBundleClass=e.classToken
  self.undoDelete=nil; self.studioProbe=nil; self.studioPlanLoaded=nil; self.sequencePolicyRow=nil; self.strategyInputs={}; self.customFormIndex=nil
  self:Paint(self.strategyPanel,"Hide"); self:ClosePlanShare()
- self:RefreshPage(); self:StudioMessage("六套方案已导入草稿。点击方案设置中的保存全部导入后落盘；未修改派发开关。")
+ self:RefreshPage(); self:StudioMessage(bundle.maintenance and "六套方案及增益与紧急已导入草稿；保存全部导入后落盘，本机启用状态保留。" or "旧版六套方案已导入草稿；本机增益与紧急保留。")
  return true
 end
 function U:SaveBundleDraft()
  if self.shareBundleEngine~=self.engine or self.shareBundleClass~=self.engine.classToken or not self.settingsOpen or self.groupEditing or self:Combat()~=false then return false end
  if not self:CommitSequenceCounts() or not self:CommitCustomNumbers() then return false end
- local ok,reason=T.Profiles:SaveBundle(self.engine,self:BundleDraft())
+ local bundle=self:BundleDraft()
+ if not self.shareBundleMaintenance then bundle.schema=1; bundle.maintenance=nil end
+ local ok,reason=T.Profiles:SaveBundle(self.engine,bundle)
  if ok then
-  self.shareBundleEngine=nil; self.shareBundleClass=nil
+  self.shareBundleEngine=nil; self.shareBundleClass=nil; self.shareBundleMaintenance=nil
   for _,source in ipairs({"manual","apl"}) do for _,slot in ipairs({"single","multi","third"}) do self:ShareNames()[source..":"..slot]=nil end end
   self.studioPlanLoaded=nil; self:RefreshStudio()
  end
- self:StudioMessage(ok and "六套方案及名称已全部保存，旧派发已停止；当前运行来源和启用状态保留。" or ("整包未保存："..tostring(reason)))
+ self:StudioMessage(ok and "整包所含方案及增益与紧急已保存，旧派发已停止；本机启用状态保留。" or ("整包未保存："..tostring(reason)))
  return ok,reason
 end
 function U:CreatePlanShare()
@@ -259,7 +266,7 @@ function U:CreatePlanShare()
   local tx,reason
   if policy then tx,reason=self:PreparePolicyImport() elseif bundle then tx,reason=self:PrepareBundleImport() else tx,reason=self:PreparePlanImport(self.shareTarget) end
   if not tx then self:Paint(self.sharePreview,"SetText",reason); return end
-  local prompt=policy and "确认替换当前条目的全部使用／跳过策略？技能及其他设置保留，保存方案后生效。" or bundle and "确认替换当前职业全部六套方案草稿及名称？已有未保存修改将被替换；保存全部导入后才落盘。" or ("确认替换“"..tx.name.."”的草稿及待保存名称？已有内容和未保存修改将被替换；保存前不写入配置。")
+  local prompt=policy and "确认替换当前条目的全部使用／跳过策略？技能及其他设置保留，保存方案后生效。" or bundle and "确认替换整包所含六套方案及增益与紧急草稿？旧版整包不改维护列表。本机启用状态保留，保存全部导入后才落盘。" or ("确认替换“"..tx.name.."”的草稿及待保存名称？已有内容和未保存修改将被替换；保存前不写入配置。")
   self:ConfirmAction(prompt,function()
    local ok,message
    if policy then ok,message=self:ApplyPolicyImport(tx) elseif bundle then ok,message=self:ApplyBundleImport(tx) else ok,message=self:ApplyPlanImport(tx) end; if not ok then self:Paint(self.sharePreview,"SetText",message) end

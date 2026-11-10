@@ -84,13 +84,17 @@ function M:Restore(e,reason)
   if e.groupRun then T.SkillGroups:Restore(e,"GROUP_EMERGENCY_EXIT",true) end
  end
 end
-function M:Save(e,rows)
+function M:ValidateRows(rows)
  local clean=A.Custom.CleanRows(rows); local seen={}
- local valid,errors=A.Custom:Audit(clean); if not valid then return false,errors end
+ local valid,errors=A.Custom:Audit(clean); if not valid then return nil,errors end
  for _,row in ipairs(clean) do
-  if row.invalid or not self:BuffSpell(row.spellID) or seen[row.spellID] then return false,"仅接受可确认的增益或已支持的解控法术，且精确技能ID不得重复。" end
+  if row.group or row.invalid or not self:BuffSpell(row.spellID) or seen[row.spellID] then return nil,"仅接受可确认的增益或已支持的解控法术，且精确技能ID不得重复。" end
   seen[row.spellID]=true
  end
+ return clean
+end
+function M:Save(e,rows)
+ local clean,reason=self:ValidateRows(rows); if not clean then return false,reason end
  T.Runtime:Stop("MAINTENANCE_EDITED"); e.db.maintenance[e.classToken]=e.db.maintenance[e.classToken] or {enabled=false,rows={}}
  e.db.maintenance[e.classToken].rows=clean; e.maintenanceDone={}; e.maintenanceSnapshot=nil; A:Invalidate()
  return true
