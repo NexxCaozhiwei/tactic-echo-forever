@@ -10,6 +10,22 @@ local function setup()
  return e
 end
 local function spell(id) return {spellID=id,name="技能 " .. id,matchIDs={id},repeatCount=1,enabled=true,strategies={}} end
+test("列表策略在方案设置及重复布局后保持可见",function()
+ setup(); U:ShowPage("profiles"); U:WriteDraft({spell(143),spell(205)})
+ for _,width in ipairs({1920,1000}) do
+  UIParent.GetWidth=function() return width end
+  U:ShowStudioPlan(); U:StudioAction(U.sequenceRows[1].policy)
+  eq(U.strategyPanel.shown,true); eq(U.studioInspector.shown,true)
+  U:Paint(U.strategyPanel,"Hide")
+  U:LayoutSettings()
+  eq(U.strategyPanel.shown,true)
+  U:RefreshPage(); eq(U.strategyPanel.shown,true)
+  U:ShowStudioPlan(); eq(U.strategyPanel.shown,false)
+  U:StudioAction(U.sequenceRows[2].policy)
+  eq(U.strategyPanel.shown,true); eq(U:CustomRow().spellID,205)
+ end
+ UIParent.GetWidth=function() return 1920 end
+end)
 test("CDM默认列表选用只修改当前观察草稿且不受动作条筛选限制",function()
  local e=setup(); assert(U:SelectStudioRule("apl",1))
  U:ChangeCustomStrategy(function(row) row.strategies={{mode="use",conditions={{kind="cdmBuff",value=false,spellID=1459}}}} end)

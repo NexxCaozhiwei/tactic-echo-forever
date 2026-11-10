@@ -1192,11 +1192,17 @@ test("combatstop_mode_clears_intent_on_leave_combat",function()
 end)
 test("hud_visual_states_hover_pressed_and_right_click",function()
     deliveryFixture(); local c=T.HUD.cards[1]; local colors={}
-    for _,state in ipairs({"paused","standby","running","blocked","completed","error"}) do
-        T.Runtime:Changed(state,"TEST_VISUAL_STATE"); T.HUD:RefreshState()
-        colors[table.concat(T.HUD.statusDot.color,",")]=true
+    for _,intent in ipairs({false,true}) do
+        T.Runtime.intent=intent
+        for _,state in ipairs({"paused","standby","running","blocked","completed","error"}) do
+            T.Runtime:Changed(state,"TEST_VISUAL_STATE"); T.HUD:RefreshState()
+            local expected=intent and T.HUD.colors.running or T.HUD.colors.error
+            for i=1,3 do eq(T.HUD.statusDot.color[i],expected[i]) end
+            colors[table.concat(T.HUD.statusDot.color,",")]=true
+        end
     end
-    local n=0; for _ in pairs(colors) do n=n+1 end; eq(n,6)
+    T.Runtime.intent=false
+    local n=0; for _ in pairs(colors) do n=n+1 end; eq(n,2)
     c.frame.scripts.OnEnter(); eq(c.overlay.color[4],.12)
     c.frame.scripts.OnMouseDown(); eq(c.overlay.color[4],.22)
     c.frame.scripts.OnMouseUp(); eq(c.overlay.color[4],.12)

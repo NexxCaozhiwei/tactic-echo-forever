@@ -292,7 +292,12 @@ function U:SyncStudioVisibility(listPage,source,inspect,dock,workspace,selected,
  show(self.studioInspectorShield,inspect and not dock); show(self.studioInspectorClose,not dock)
  local plan=listPage and self.studioPlanOpen and not self.groupEditing
  show(self.studioPlanScroll,plan); show(self.studioPlanPanel,plan)
- if not listPage or self.studioPlanOpen then show(self.strategyPanel,false) end
+ if not listPage or self.studioPlanOpen then show(self.strategyPanel,false)
+ elseif selected then
+  -- 布局刷新也恢复当前策略，不能只在点击时Show后依赖旧可见性。
+  local policySource=source=="manual" and "manual" or source=="group" and "groupStep" or self.page=="maintenance" and "maintenance" or "apl"
+  show(self.strategyPanel,self.strategySource==policySource and self:CustomRow()~=nil)
+ end
  if not self.groupEditing then show(self.groupPanel,false) end
  local empty=not (selected or self.studioPlanOpen or self.groupEditing)
  show(self.studioInspectTitle,empty); show(self.studioInspectBody,empty); show(self.studioInspectOpen,empty)

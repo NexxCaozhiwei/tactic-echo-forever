@@ -372,6 +372,7 @@ function H:Card(x,size,primary)
             U:Call(GameTooltip,"AddLine",self.primaryFullName or "TACTIC ECHO FOREVER")
             U:Call(GameTooltip,"AddLine","左键：派发启/停；右键：设置",1,1,1)
             local state=TEF.Runtime:GetViewState()
+            U:Call(GameTooltip,"AddLine",state.intent==true and "派发开关：已开启（绿点）" or "派发开关：已关闭（红点）",.7,.8,.9)
             U:Call(GameTooltip,"AddLine","当前：" .. state.label,.7,.8,.9)
             if state.state=="blocked" then
                 local category,description=self:StatusText(state)
@@ -578,7 +579,7 @@ function H:RefreshState()
     if not self.frame or not self.cards then return end
     local e=self.engine; local v=TEF.Runtime:GetViewState()
     local step=e.steps and e.steps[e.index]
-    if TEF.Runtime.e~=e then v={state=e.running and "running" or "paused",label=e.running and "推荐" or "暂停"} end
+    if TEF.Runtime.e~=e then v={intent=e.running,state=e.running and "running" or "paused",label=e.running and "推荐" or "暂停"} end
     if e.completed and not e.groupRun then v.state="completed"; v.label="完成" end
     local c=self.colors[v.state] or self.colors.paused
     local primary=self.cards[1]
@@ -595,7 +596,8 @@ function H:RefreshState()
         ["暂无可用技能"]="暂无可用",["无符合技能"]="暂无推荐",["方案未配置"]="方案缺失"})[badge] or U:ShortLabel(badge,4)
     U:Paint(self.badgeText,"SetText",shortBadge)
     U:Paint(self.badgeText,"SetTextColor",tint[1],tint[2],tint[3],1)
-    U:Paint(self.statusDot,"SetVertexColor",tint[1],tint[2],tint[3],1)
+    local dot=v.intent==true and self.colors.running or self.colors.error
+    U:Paint(self.statusDot,"SetVertexColor",dot[1],dot[2],dot[3],1)
     U:Paint(self.role,"SetText",U:ShortLabel(description,20))
     U:Paint(self.role,"SetTextColor",v.state=="blocked" and tint[1] or .45,v.state=="blocked" and tint[2] or .8,v.state=="blocked" and tint[3] or 1,1)
     self.idleCastText=badge
