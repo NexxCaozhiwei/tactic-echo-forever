@@ -149,3 +149,41 @@ test("timing_settings_milliseconds_independent_and_client_disables_custom",funct
  eq(enabled,true); eq(keyboard,true)
  U:CloseSettings()
 end)
+
+test("uninitiated_published_request_expires_and_retries_without_advancing",function()
+ local e=setup(); e.db.dispatch.retryDelay=.05
+ local request=T.Runtime.requestSerial
+ clock=12.74; tick(); assert(T.Dispatch:Packet()); eq(T.Runtime.requestSerial,request)
+ clock=12.75; tick(); eq(T.Dispatch:Packet(),nil); eq(T.Runtime.reason,"CONTINUOUS_INITIATION_TIMEOUT")
+ eq(e.index,1); eq(e.receiptSerial or 0,0); eq(T.Runtime.intent,true)
+ clock=12.81; tick(); assert(T.Dispatch:Packet()); assert(T.Runtime.requestSerial>request)
+ receipt("UNIT_SPELLCAST_SUCCEEDED",116,"no-start"); eq(e.index,1)
+ receipt("UNIT_SPELLCAST_SENT",116,"new-start")
+ clock=14; tick(); eq(T.Dispatch:Packet(),nil); assert(T.Dispatch:HasCurrentInitiation())
+ receipt("UNIT_SPELLCAST_SUCCEEDED",116,"new-start"); eq(e.index,2)
+end)
+
+test("unassociated_failure_while_moving_preserves_published_attempt",function()
+ local e=setup(); local pending=T.Dispatch.pending
+ IsPlayerMoving=function() return true end
+ receipt("UNIT_SPELLCAST_FAILED",116,"unassociated")
+ eq(T.Dispatch.pending,pending); eq(T.Runtime.retryWait,nil); eq(e.index,1)
+ IsPlayerMoving=function() return false end
+end)
+
+test("old_target_failure_releases_wait_and_does_not_advance_new_target",function()
+ local e=setup()
+ e.db.loopMode="target"; e.db.dispatch.retryDelay=.05
+ receipt("UNIT_SPELLCAST_SENT",116,"old-target-start")
+ e:UsageTargetChanged(); T.Runtime:TargetChanged()
+ eq(T.Runtime.targetChangePending,true); eq(T.Dispatch:Packet(),nil)
+ receipt("UNIT_SPELLCAST_FAILED",116,"old-target-start")
+ clock=12.1; tick()
+ eq(T.Runtime.targetChangePending,nil); eq(e.index,1); eq(e.receiptSerial or 0,0)
+ assert(T.Dispatch:Packet())
+ receipt("UNIT_SPELLCAST_SUCCEEDED",116,"old-target-start")
+ eq(e.index,1)
+ receipt("UNIT_SPELLCAST_SENT",116,"new-target-start")
+ receipt("UNIT_SPELLCAST_SUCCEEDED",116,"new-target-start")
+ eq(e.index,2)
+end)

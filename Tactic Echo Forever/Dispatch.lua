@@ -695,6 +695,19 @@ function D:TickContinuous()
         if not self:TransportCastAllowed(true) then return end
     end
     if self.castQueue then return end
+    local pending=self.pending
+    if pending and pending.diagnosticPublished and pending.requestedAt and not self:HasCurrentInitiation()
+        and current and current.spellID~=5019 and current.spellID~=6603 and current.spellID~=75
+        and TEF.Runtime.e==e and TEF.Runtime.intent and self:CastIdle() then
+        local now=TEF.APL.State.Time()
+        -- 只释放一直没有起手的普通请求，成功等待及预载身份继续受原门禁保护。
+        if now and now-pending.requestedAt>=.75 and self.pending==pending then
+            e:Log("transport","CONTINUOUS_INITIATION_TIMEOUT",current.spellID)
+            TEF.Runtime:Suspend("CONTINUOUS_INITIATION_TIMEOUT")
+            TEF.Runtime:DeferRetry()
+            return
+        end
+    end
     if TEF.Runtime and TEF.Runtime.e==e and TEF.Runtime.intent
         and not self.pending and self.waitReceipt==(e.receiptSerial or 0) and not self:HasCurrentInitiation() then
         self.waitReceipt=nil; self.initiation=nil
@@ -1071,7 +1084,9 @@ function D:Event(event,unit,id,guidRaw)
             end
         end
     end
-    if self.continuous or (owned and runtime.intent and runtime.reason=="CONTINUOUS_MOVING_OR_UNKNOWN" and failure) then
+    local adoptedFailure=owned and runtime.intent and e.groupRun and failure and unitValue=="player"
+        and self:HasCurrentInitiation() and self.initiation.guid==guid and self.initiation.spellID==spellValue
+    if self.continuous or adoptedFailure or (owned and runtime.intent and runtime.reason=="CONTINUOUS_MOVING_OR_UNKNOWN" and failure) then
         local u=S.Public(unit,"string"); local spell=S.ID(id)
         local step=TEF.engine.steps and TEF.engine.steps[TEF.engine.index]
         if not u or (u=="player" and not spell) then self:Block("CONTINUOUS_EVENT_UNKNOWN")
@@ -1083,7 +1098,8 @@ function D:Event(event,unit,id,guidRaw)
                 local a=guid and e.associations[guid]
                 if not guid then
                     self:Block("CONTINUOUS_FAILURE_IDENTITY_UNKNOWN"); return true
-                elseif moving==true or (a and a.generation==generation and a.index==index and a.spellID==spell) then
+                elseif a and a.generation==generation and a.index==index and a.spellID==spell
+                    and a.receiptSerial==(e.receiptSerial or 0) and not a.failed then
                     -- Failed and invalidated initiations share Engine's existing
                     -- lifetime tombstones. Never evict: delayed events must stay
                     -- retired, but there is no redundant 128-attempt budget.
@@ -1094,7 +1110,7 @@ function D:Event(event,unit,id,guidRaw)
                     local reason=moving==true and "CONTINUOUS_MOVEMENT_FAILURE_RETRY" or (moving==false and "CONTINUOUS_FAILURE_RETRY" or "CONTINUOUS_FAILURE_MOVEMENT_UNKNOWN")
                     e:Log("observed",reason,spell,nil,nil,event)
                     runtime:Suspend(reason); runtime:DeferRetry(); return true
-                elseif not a or a.generation~=generation or a.index~=index or a.spellID~=spell then
+                else
                     -- A same-ID failure without this attempt's initiation is not
                     -- proof of current failure, especially adjacent rank repeats.
                     e:Log("ignored","CONTINUOUS_FAILURE_NO_CURRENT_INITIATION",spell,nil,nil,event)

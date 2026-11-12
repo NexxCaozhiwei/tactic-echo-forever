@@ -1415,6 +1415,7 @@ test("movement_failure_api_reentry_cannot_revive_manual_stop",function()
 end)
 test("movement_identity_capacity_fails_closed_and_reload_clears",function()
     deliveryFixture(); T.Runtime:SetIntent(true); T.Dispatch:TickContinuous()
+    receipt("UNIT_SPELLCAST_SENT",116,"capacity-m")
     T.engine.seenCount=4096; IsPlayerMoving=function() return true end
     receipt("UNIT_SPELLCAST_INTERRUPTED",116,"capacity-m")
     eq(T.Runtime.intent,false); eq(T.Runtime.state,"error"); eq(T.Dispatch.pending,nil)
