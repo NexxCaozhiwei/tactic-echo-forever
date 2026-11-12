@@ -79,6 +79,8 @@ function A:BuildUI(U,parent)
  for _,spec in ipairs({{"key",10,false},{"name",14,false},{"status",12,false},{"status",10,true}}) do
   local key,cap,mini=spec[1],spec[2],spec[3]
   local panel=U:Frame("Frame",parent); U:Paint(panel,"SetPoint","TOPLEFT",parent,"TOPLEFT",0,-152); U:Paint(panel,"SetSize",548,56)
+  panel.tefResponsivePage=parent.tefResponsivePage
+  U:RegisterPageWidth(panel,function(extra) U:Paint(panel,"SetWidth",548+extra) end)
   local item={frame=panel,key=key,mini=mini}; fontPanels[#fontPanels+1]=item
   item.slider,item.input=U:CreateSliderRow(panel,"实际字号",0,0,548,8,cap,1,function() return A.EffectiveSize(current(),cap) end,
    function(v) current().fontSize=v; current().scale=1; changed() end,true)

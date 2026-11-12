@@ -4,7 +4,7 @@
 
 **为魔兽世界无限版打造的列表循环、优先级推荐与输入联动工具。**
 
-![版本](https://img.shields.io/badge/版本-2.1.1-64d8cb?style=flat-square)
+![版本](https://img.shields.io/badge/版本-2.1.2-64d8cb?style=flat-square)
 ![客户端](https://img.shields.io/badge/客户端-Forever%20%2F%20Infinite-b9a5ff?style=flat-square)
 ![桌面端](https://img.shields.io/badge/桌面端-Windows-8ab4f8?style=flat-square)
 
@@ -16,7 +16,7 @@
 
 Tactic Echo Forever（TEF）在游戏内编排技能、检查条件并显示推荐，通过独立的 TEF TEK 桌面程序联动现有动作栏按键。插件、桌面工具和构建脚本均位于本仓库，可独立安装和构建。
 
-**当前基线：2.1.1。** 面向 Forever / Infinite 的职业、天赋与已学技能模型，目标客户端为公开版本 `1.60.1 / Interface 16001`，构建号用于诊断。全职业自定义主动技能可通过公开身份与施放类型接入；这不代表所有职业、技能等级和客户端接口已经逐项实测。
+**当前基线：2.1.2。** 面向 Forever / Infinite 的职业、天赋与已学技能模型，目标客户端为公开版本 `1.60.1 / Interface 16001`，构建号用于诊断。全职业自定义主动技能可通过公开身份与施放类型接入；这不代表所有职业、技能等级和客户端接口已经逐项实测。
 
 ## 主要功能
 
@@ -117,7 +117,7 @@ python -m pip install -r requirements-dev.txt
 
 | 文档 | 内容 |
 | :--- | :--- |
-| [2.1.1基线](docs/baselines/tef/BASELINE_2.1.1.md) | 当前行为、检查与未验证范围。 |
+| [2.1.2基线](docs/baselines/tef/BASELINE_2.1.2.md) | 当前行为、检查与未验证范围。 |
 | [技能组说明与验收](docs/SKILL_GROUPS_DRAFT.md) | 编辑、执行和起手修复。 |
 | [增益维护说明与验收](docs/BUFF_MAINTENANCE_DRAFT.md) | 增益来源、优先级及脱战维护。 |
 | [策略生命周期说明](Tactic%20Echo%20Forever/docs/STRATEGY_LIFECYCLE.md) | 新选项、命令、计数与验证边界。 |
@@ -156,11 +156,11 @@ CDM增益／冷却条件旁新增“选择CDM技能”：从游戏公开目录�
 
 ### Studio整合验收候选
 
-当前开发包已把主列表、策略Inspector和技能组编辑整合进同一工作区，补齐精确已学技能库、条件搜索、规则复制、只读Trace和问题／输出面板。标签星号表示会话草稿尚未保存；切页与关闭不自动保存，重载前须显式保存。版本号为2.1.1，游戏内视觉与拖放体验待验收。详见[整合结果与连续验收步骤](docs/STUDIO_ACCEPTANCE_CANDIDATE.md)。
+主窗口最大宽度为1120，技能列表在主窗，策略和技能组详情从右侧外边缘打开，补齐精确已学技能库、条件搜索、规则复制、只读Trace和问题／输出面板。界面会提示会话草稿尚未保存；切页与关闭不自动保存，重载前须显式保存。版本号为2.1.2，游戏内视觉与拖放体验待验收。详见[整合结果与连续验收步骤](docs/STUDIO_ACCEPTANCE_CANDIDATE.md)。
 
 ## HUD外观开发候选
 
-当前HUD开发候选采用深蓝圆角底板、当前技能与预览分区、状态徽标、只读施法信息和固定序列步骤段。APL明确标为候选预览；布局不改变输入资格或精确回执，原启停、设置、锁定、拖动与文字配置保留。版本为2.1.1，游戏内视觉与交互尚待验收。
+当前HUD开发候选采用深蓝圆角底板、当前技能与预览分区、状态徽标、只读施法信息和固定序列步骤段。APL明确标为候选预览；布局不改变输入资格或精确回执，原启停、设置、锁定、拖动与文字配置保留。版本为2.1.2，游戏内视觉与交互尚待验收。
 
 实现范围与验收步骤见[HUD改造说明](docs/HUD_STUDIO_REDESIGN.md)。
 

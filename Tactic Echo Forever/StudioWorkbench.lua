@@ -1,5 +1,8 @@
 local _,T=...
 local U,S=T.UI,T.Safety
+local mainWindowMaxWidth=1120
+local workspaceDockWidth=1100
+
 function U:StudioAnchor(object,parent,x,y,width,height)
  self:Paint(object,"ClearAllPoints"); self:Paint(object,"SetPoint","TOPLEFT",parent,"TOPLEFT",x,y)
  if width then self:Paint(object,"SetWidth",width) end
@@ -88,7 +91,7 @@ function U:CreateStudioPlan()
   if scene=="maintenance" then T.Maintenance:SetEnabled(self.engine,v)
   elseif source then T.Profiles:SetPlanEnabled(self.engine,source,scene,v) end
  end)
- self.studioUsePlan=self:CreateActionButton(panel,"使用本方案",16,-232,390,function()
+ self.studioUsePlan=self:CreateActionButton(panel,"使用本方案",16,-232,120,function()
   local _,source,scene=self:StudioRows(); if not source or scene=="maintenance" then return end
   local ok,reason=T.Profiles:UsePlan(self.engine,source,scene)
   self:StudioMessage(ok and "已切换运行方案并停止派发；关闭设置后开启。" or ("未切换：" .. (reason or "UNKNOWN")))
@@ -103,7 +106,7 @@ function U:CreateStudioPlan()
   function() return self.engine.db.loopMode end,function(v) T.Runtime:SetLoopMode(v) end)
  self:CreateHintText(self.studioLoopPanel,"切换循环方式会停止并重置；手动停止保留原进度。",0,-88,390)
  self:CreateActionButton(self.studioLoopPanel,"重置并停止",0,-144,188,function() T.Runtime:Reset() end)
- self.studioAlignRanks=self:CreateActionButton(panel,"检测并全部替换为技能条上技能等级",16,-576,390,function() self:DetectPlanBarRanks() end)
+ self.studioAlignRanks=self:CreateActionButton(panel,"按技能条校准等级",16,-576,144,function() self:DetectPlanBarRanks() end)
  self.studioPlanMessage=self:Text(panel,16,-624,390)
  self:Paint(self:Text(panel,16,-688,390,"GameFontHighlightSmall"),"SetText","编辑方案与正在使用的方案分别显示。保存内容会停止旧派发；切换编辑标签不会自行运行。")
 end
@@ -124,8 +127,6 @@ function U:CreateStudioToolbar(parent,source)
  end)
  if source~="group" then
   toolbar.group=self:CreateActionButton(toolbar,"新建技能组",380,-24,132,function() self:AddSkillGroup(source) end)
- else
-  self:CreateActionButton(toolbar,"组属性",380,-24,132,function() self:ShowStudioPlan() end)
  end
  return toolbar
 end
@@ -133,9 +134,13 @@ function U:CreateStudio()
  self.studio=true; self.studioIntegrated=true; self.studioRefreshing=false; self.studioLayoutBusy=false; self.studioSelected=nil; self.studioPlanOpen=false
  self.studioInspectorRequested=false; self.studioLibraryOpen=false; self.studioWorkspaceOpen=false
  self.studioTraceLive=false; self.studioProbe=nil; self.studioLastProbeTime=nil
- self.studioEditor=self:Frame("Frame",self.settings)
+ self.studioEditor=self:CreateStudioPanel(self.settings)
  self:Paint(self.pageHeading,"Hide")
  self.studioActivity=self:CreateStudioPanel(self.settings); self.studioWorkspace=self:CreateStudioPanel(self.settings)
+ self.studioPageSurface=self:CreateStudioPanel(self.settings)
+ for _,panel in pairs(self.pageFrames) do self:Paint(panel,"SetParent",self.studioPageSurface) end
+ self.studioPageTitle=self:Text(self.studioPageSurface,16,-12,560)
+ self:ApplyControlFont(self.studioPageTitle,false,self.theme.fontPage)
  self.studioInspector=self:CreateStudioPanel(self.settings); self:Paint(self.studioInspector,"EnableMouse",true)
  self.studioBottom=self:CreateStudioPanel(self.settings)
  self.studioStatus=self:Text(self.settings,12,-800,1200,"GameFontHighlightSmall"); self:Paint(self.studioStatus,"SetWordWrap",false)
@@ -143,12 +148,23 @@ function U:CreateStudio()
  self.studioRun=self:CreateActionButton(self.settings,"开启意图",900,-16,112,function() T.Runtime:ToggleIntent("USER_TOGGLE_DISPATCH") end)
  self:BindControlTooltip(self.studioRun,"派发意图","设置期间继续阻断输入；开启意图不表示正在派发。")
  self.studioSave=self:CreateActionButton(self.settings,"保存方案",1020,-16,112,function() self:SaveStudio() end)
- self.studioTab=self:CreateActionButton(self.settings,"优先级.apl",280,-68,180,function() if self.page~="maintenance" then self:ShowPage("customapl") end end)
- self.studioSequenceTab=self:CreateActionButton(self.settings,"列表循环.sequence",468,-68,180,function() self:ShowPage("profiles") end)
- self.studioGroupTab=self:CreateActionButton(self.settings,"技能组.group",656,-68,180,function() if self.groupEditing then self:ShowStudioPlan() end end)
+ self.studioSave.tefPrimary=true
+ self.studioTab=self:CreateActionButton(self.settings,"优先级推荐",280,-68,180,function() if self.page~="maintenance" then self:ShowPage("customapl") end end)
+ self.studioSequenceTab=self:CreateActionButton(self.settings,"列表循环",468,-68,180,function() self:ShowPage("profiles") end)
+ self.studioGroupTab=self:CreateActionButton(self.settings,"技能组",656,-68,180,function() if self.groupEditing then self:ShowStudioPlan() end end)
  self.studioPlanButton=self:CreateActionButton(self.studioEditor,"方案设置",460,0,120,function() self:ShowStudioPlan() end)
  self.studioDuplicateButton=self:CreateActionButton(self.studioEditor,"复制条目",336,0,112,function() self:DuplicateStudioRow() end)
  self.studioListHeading=self:Text(self.studioEditor,12,-8,440)
+ self:ApplyControlFont(self.studioListHeading,false,self.theme.fontPage)
+ self.studioPlanState=self:Text(self.studioEditor,12,-32,440,"GameFontHighlightSmall")
+ self:Paint(self.studioListHeading,"SetWordWrap",false)
+ self:Paint(self.studioPlanState,"SetWordWrap",false)
+ self.studioColumns=self:CreateStudioPanel(self.studioEditor)
+ self:Paint(self.studioColumns,"SetBackdropColor",.10,.15,.22,1)
+ self:Paint(self:Text(self.studioColumns,12,-5,64,"GameFontHighlightSmall"),"SetText","拖动")
+ self:Paint(self:Text(self.studioColumns,68,-5,180,"GameFontHighlightSmall"),"SetText","技能与精确 ID")
+ self.studioColumnActions=self:Text(self.studioColumns,0,-5,100,"GameFontHighlightSmall")
+ self:Paint(self.studioColumnActions,"SetText","条目操作")
  self.studioEmpty=self:Text(self.studioEditor,24,-144,480)
  self:Paint(self.studioEmpty,"SetText","尚未添加技能。\n从技能库拖入，或输入精确技能ID新增。")
  self.studioToolbars={manual=self:CreateStudioToolbar(self.studioEditor,"manual"),apl=self:CreateStudioToolbar(self.studioEditor,"apl"),group=self:CreateStudioToolbar(self.studioEditor,"group")}
@@ -159,7 +175,7 @@ function U:CreateStudio()
   self.studioActivities[key]=self:CreateActionButton(self.studioActivity,entry[1],4,-12-(i-1)*56,56,function()
    if key=="workspace" then
     if not self:StudioRows() then self:ShowPage(self.studioLastEditorPage or "customapl") end
-    self.studioWorkspaceOpen=(self.studioWidth or 0)<1400 and not self.studioWorkspaceOpen; self:LayoutSettings()
+    self.studioWorkspaceOpen=(self.studioWidth or 0)<workspaceDockWidth and not self.studioWorkspaceOpen; self:LayoutSettings()
    elseif key=="library" then
     local opening=not self.studioLibraryOpen
     if opening and not self:StudioRows() then self:ShowPage(self.studioLastEditorPage or "customapl") end
@@ -173,11 +189,11 @@ function U:CreateStudio()
  self.studioNodes={}; self.studioPlans={}
  self:Paint(self:Text(self.studioWorkspace,12,-16,176,"GameFontNormal"),"SetText","工作区")
  for i,entry in ipairs({{"优先级推荐","customapl"},{"列表循环","profiles"},{"增益与紧急","maintenance"}}) do
-  local key=entry[2]; self.studioNodes[key]=self:CreateActionButton(self.studioWorkspace,entry[1],8,-52-(i-1)*40,184,function() self:ShowPage(key) end)
+  local key=entry[2]; self.studioNodes[key]=self:CreateActionButton(self.studioWorkspace,entry[1],8,-52-(i-1)*36,168,function() self:ShowPage(key) end)
  end
- self.studioPlansHeading=self:Text(self.studioWorkspace,12,-232,176,"GameFontNormal"); self:Paint(self.studioPlansHeading,"SetText","方案 · 编辑对象")
+ self.studioPlansHeading=self:Text(self.studioWorkspace,12,-180,176,"GameFontNormal"); self:Paint(self.studioPlansHeading,"SetText","方案 · 编辑对象")
  for i,key in ipairs({"single","multi","third"}) do
-  self.studioPlans[key]=self:CreateActionButton(self.studioWorkspace,"方案",8,-268-(i-1)*44,184,function()
+  self.studioPlans[key]=self:CreateActionButton(self.studioWorkspace,"方案",8,-212-(i-1)*44,168,function()
    if not self:CommitSequenceCounts() or not self:CommitCustomNumbers() then return end
    if self.groupEditing and not self:CloseSkillGroup(false,function() self:StudioAction(self.studioPlans[key]) end) then return end
    if self.page=="profiles" then self.editScene=key; self:ShowPage("profiles")
@@ -185,15 +201,12 @@ function U:CreateStudio()
   end)
   self:Paint(self.studioPlans[key],"SetHeight",40); self:ApplyControlFont(self.studioPlans[key],true,12)
  end
- self.studioPlansHint=self:CreateHintText(self.studioWorkspace,"切换仅编辑草稿；使用本方案才切换运行来源。",12,-416,176)
- self.studioWorkspacePlanButton=self:CreateActionButton(self.studioWorkspace,"方案设置",8,-476,184,function() self:ShowStudioPlan() end)
+ self.studioPlansHint=self:CreateHintText(self.studioWorkspace,"切换仅编辑草稿；使用本方案才切换运行来源。",12,-352,160)
  self.studioInspectTitle=self:Text(self.studioInspector,16,-16,390,"GameFontNormal")
  self.studioInspectBody=self:Text(self.studioInspector,16,-60,390)
- self:Paint(self.studioInspectTitle,"SetText","INSPECTOR · 规则详情")
+ self:Paint(self.studioInspectTitle,"SetText","技能与策略详情")
  self:Paint(self.studioInspectBody,"SetText","点击技能行，在此编辑同一条草稿。\n条件未知不会被视为可用。")
- self.studioInspectOpen=self:CreateActionButton(self.studioInspector,"方案设置",16,-160,200,function() self:ShowStudioPlan() end)
  self:CreateStudioPlan()
- self.studioInspectorShield=self:Frame("Frame",self.settings); self:Paint(self.studioInspectorShield,"EnableMouse",true); self:Paint(self.studioInspectorShield,"Hide")
  self.studioInspectorClose=self:CreateActionButton(self.studioInspector,"收起详情",16,-700,120,function()
   if not self:CommitCustomNumbers() then return end
   self.studioSelected=nil; self.studioInspectorRequested=false; self.studioPlanOpen=false; self:Paint(self.strategyPanel,"Hide"); self:Paint(self.groupPanel,"Hide"); self:LayoutSettings()
@@ -202,7 +215,7 @@ function U:CreateStudio()
  self:Paint(self.groupPanel,"SetParent",self.studioInspector); self:Paint(self.groupPanel,"SetFrameStrata","MEDIUM")
  self:Paint(self.groupListBox,"Hide"); self:Paint(self.groupIDLabel,"Hide")
  self:CreateHintText(self.groupPanel,"在左侧编辑组内步骤；选择技能行后在此编辑策略。\n返回父列表会先暂存，保存方案才持久化。",16,-176,390)
- self.groupAlignRanks=self:CreateActionButton(self.groupPanel,"检测并全部替换为技能条上技能等级",16,-224,390,function() self:DetectPlanBarRanks() end)
+ self.groupAlignRanks=self:CreateActionButton(self.groupPanel,"按技能条校准等级",16,-224,144,function() self:DetectPlanBarRanks() end)
  self:Paint(self.groupScroll,"SetParent",self.studioEditor)
  for _,control in ipairs({self.groupDrop,self.groupID,self.groupAddButton}) do self:Paint(control,"Hide") end
  self.studioGroupFooter=self:Frame("Frame",self.settings); self:Paint(self.studioGroupFooter,"SetSize",580,88)
@@ -231,24 +244,24 @@ function U:RefreshStudioContent()
  local maintenance=self.page=="maintenance"
  local name=maintenance and "增益与紧急" or (scene and T.Profiles:PlanName(scene,e,parentSource) or (self.pageTitles[self.page] or "设置"))
  self:Paint(self.studioPlansHeading,maintenance and "Hide" or "Show"); self:Paint(self.studioPlansHint,maintenance and "Hide" or "Show")
- for _,button in ipairs({self.studioPlanButton,self.studioWorkspacePlanButton,self.studioInspectOpen}) do self:Paint(button,"SetText",maintenance and "维护设置" or "方案设置") end
+ self:Paint(self.studioPlanButton,"SetText",self.groupEditing and "组属性" or maintenance and "维护设置" or "方案设置")
  local aplScene=self.customScene or e.db.selectedPlans.apl; local manualScene=self.editScene or e.db.selectedPlans.manual
- for _,entry in ipairs({{self.studioTab,"apl",aplScene,".apl"},{self.studioSequenceTab,"manual",manualScene,".sequence"}}) do
+ for _,entry in ipairs({{self.studioTab,"apl",aplScene,""},{self.studioSequenceTab,"manual",manualScene,""}}) do
   local dirty=self:StudioDirty(entry[2],entry[3],self:StudioPlanDraft(entry[2],entry[3]))
   self:Paint(entry[1],"SetText",self:ShortLabel(T.Profiles:PlanName(entry[3],e,entry[2]),8) .. entry[4] .. (dirty and " *" or ""))
   entry[1].tefControlSelected=entry[2]==parentSource and source~=nil; self:SetControlEnabled(entry[1],true)
  end
- self:Paint(self.studioTab,source and "Show" or "Hide")
- self:Paint(self.studioSequenceTab,source and not maintenance and "Show" or "Hide")
- if maintenance then self:Paint(self.studioTab,"SetText","增益与紧急.apl" .. (self:StudioDirty("apl","maintenance",rows) and " *" or "")) end
- self:Paint(self.studioGroupTab,self.groupEditing and "Show" or "Hide")
- if self.groupDraft then self:Paint(self.studioGroupTab,"SetText",self:ShortLabel(self.groupDraft.name,6) .. ".group" .. (self.groupDirty and " *" or "")) end
+ self:Paint(self.studioTab,"Hide")
+ self:Paint(self.studioSequenceTab,"Hide")
+ if maintenance then self:Paint(self.studioTab,"SetText","增益与紧急" .. (self:StudioDirty("apl","maintenance",rows) and " *" or "")) end
+ self:Paint(self.studioGroupTab,"Hide")
+ if self.groupDraft then self:Paint(self.studioGroupTab,"SetText",self:ShortLabel(self.groupDraft.name,6) .. " · 技能组" .. (self.groupDirty and " *" or "")) end
  self:Paint(self.studioContext,"SetText",self:ClassLabel() .. " / " .. name)
  self:Paint(self.studioRun,"SetText",view.intent and "停止意图" or "开启意图")
  self:SetControlEnabled(self.studioSave,source~=nil,"当前页面没有可保存的列表。")
  self:SetControlEnabled(self.studioDuplicateButton,self.studioSelected~=nil and self.studioSelected.source==source and rows and rows[self.studioSelected.index]~=nil or false,"先选择当前列表中的条目；复制仍受列表容量限制。")
- self:Paint(self.studioStatus,"SetText","TEF " .. T.Version .. " · TEAP输出：" .. (T.Transport.enabled and "开启" or "关闭") .. " · TEK连接：未确认 · 派发：" .. view.label .. " · 意图：" .. (view.intent and "开启" or "关闭") .. " · 设置期间输入阻断")
- if self.studioWidth and self.studioWidth<1000 then self:Paint(self.studioStatus,"SetText","TEF " .. T.Version .. " · 派发：" .. view.label .. " · 意图：" .. (view.intent and "开启" or "关闭") .. " · 设置期间输入阻断") end
+ self:Paint(self.studioStatus,"SetText","TEF " .. T.Version .. " · TEAP输出：" .. (T.Transport.enabled and "开启" or "关闭") .. " · TEK连接：未确认 · |cffffcc66设置期间输入阻断|r")
+ if self.studioWidth and self.studioWidth<1000 then self:Paint(self.studioStatus,"SetText","TEF " .. T.Version .. " · |cffffcc66设置期间输入阻断|r") end
  for key,button in pairs(self.studioNodes) do button.tefControlSelected=key==self.page; self:SetControlEnabled(button,true) end
  for key,button in pairs(self.studioActivities) do if key~="customapl" then
   button.tefControlSelected=(key=="workspace" and source~=nil) or (key=="library" and self.studioLibraryOpen) or key==self.page
@@ -258,11 +271,19 @@ function U:RefreshStudioContent()
   self:Paint(button,self.page=="maintenance" and "Hide" or "Show")
   local planSource=self.page=="profiles" and "manual" or "apl"
   local dirty=self:StudioDirty(planSource,key,self:StudioPlanDraft(planSource,key)); local using=T.Recommendation:BaseSource(e)==planSource and e.scene==key
-  self:Paint(button,"SetText",self:ShortLabel(T.Profiles:PlanName(key,e,planSource),9) .. "\n" .. (key==scene and "编辑 · " or "") .. (using and "使用 · " or "") .. (e.db.enabledPlans[planSource][key] and "已启用" or "未启用") .. (dirty and " *" or ""))
+  self:Paint(button,"SetText",self:ShortLabel(T.Profiles:PlanName(key,e,planSource),9) .. "\n" .. (key==scene and  "编辑中 · " or "") .. (using and  "使用中 · " or "") .. (e.db.enabledPlans[planSource][key] and "已启用" or "未启用") .. (dirty and " *" or ""))
   button.tefControlSelected=key==scene; self:SetControlEnabled(button,true)
   button.tefTooltipTitle=T.Profiles:PlanName(key,e,planSource); button.tefTooltipBody=e.db.enabledPlans[planSource][key] and "已启用；切换编辑保留会话草稿。" or "未启用；切换编辑保留会话草稿。"
  end
- self:Paint(self.studioListHeading,"SetText",self.groupDraft and (self.groupDraft.name .. " · " .. #self.groupDraft.steps .. "/" .. T.SkillGroups.MaxSteps .. "步") or (name .. " · " .. (rows and #rows or 0) .. "/16项"))
+ self:Paint(self.studioListHeading,"SetText",self.groupDraft and (self.groupDraft.name .. " · " .. #self.groupDraft.steps .. "/" .. T.SkillGroups.MaxSteps .. "步") or ((maintenance and "增益与紧急" or parentSource=="manual" and "列表循环" or "优先级推荐") .. " / " .. name .. " · " .. (rows and #rows or 0) .. "项"))
+ local activeSource=T.Recommendation:BaseSource(e)
+ local activeName=T.Profiles:PlanName(e.scene,e,activeSource)
+ local dirty=source and source~="group" and scene and self:StudioDirty(source,scene,rows)
+ local planState=self.groupEditing and (self.groupDirty and "技能组草稿未保存" or "正在编辑技能组")
+  or maintenance and (dirty and "维护草稿未保存" or "正在编辑维护规则")
+  or ("使用中：" .. activeName .. (dirty and "  ·  |cffffcc66草稿未保存|r" or ""))
+ self:Paint(self.studioPlanState,"SetText",planState)
+ self:Paint(self.studioPageTitle,"SetText",self.pageTitles[self.page] or "设置")
  self.studioCurrentProbe=self:StudioProbeCurrent()
  local widgets=source=="group" and self.groupWidgets or source=="manual" and self.sequenceRows or self.customWidgets
  for i,w in ipairs(widgets or {}) do self:RefreshStudioRow(w,rows and rows[i],i,source) end
@@ -285,11 +306,11 @@ function U:RefreshStudioContent()
  self.studioRefreshing=false
  self:LayoutSettings()
 end
-function U:SyncStudioVisibility(listPage,source,inspect,dock,workspace,selected,bodyHeight,w)
+function U:SyncStudioVisibility(listPage,source,inspect,workspace,selected,w)
  local function show(object,value) self:Paint(object,value and "Show" or "Hide") end
  show(self.studioWorkspace,workspace>0 or self.studioWorkspaceOpen)
- show(self.studioWorkspacePlanButton,listPage and bodyHeight>=520)
  show(self.studioEditor,listPage)
+ show(self.studioPageSurface,not listPage)
  for _,panel in pairs(self.pageFrames) do show(panel,not listPage and self.pageFrames[self.page]==panel) end
  for key,scroll in pairs({manual=self.sequenceScroll,apl=self.customScroll,group=self.groupScroll}) do show(scroll,listPage and key==source) end
  for key,toolbar in pairs(self.studioToolbars) do show(toolbar,listPage and key==source) end
@@ -298,7 +319,8 @@ function U:SyncStudioVisibility(listPage,source,inspect,dock,workspace,selected,
  show(self.studioGroupFooter,listPage and source=="group")
  if listPage and footer then show(footer,true) end
  show(self.studioBottom,listPage); show(self.studioInspector,inspect)
- show(self.studioInspectorShield,inspect and not dock); show(self.studioInspectorClose,not dock)
+ for _,button in ipairs({self.strategySaveButton,self.manualSave,self.customSave,self.groupSaveButton}) do show(button,false) end
+ show(self.studioInspectorClose,inspect)
  local plan=listPage and self.studioPlanOpen and not self.groupEditing
  show(self.studioPlanScroll,plan); show(self.studioPlanPanel,plan)
  if not listPage or self.studioPlanOpen then show(self.strategyPanel,false)
@@ -309,70 +331,128 @@ function U:SyncStudioVisibility(listPage,source,inspect,dock,workspace,selected,
  end
  if not self.groupEditing then show(self.groupPanel,false) end
  local empty=not (selected or self.studioPlanOpen or self.groupEditing)
- show(self.studioInspectTitle,empty); show(self.studioInspectBody,empty); show(self.studioInspectOpen,empty)
+ show(self.studioInspectTitle,empty); show(self.studioInspectBody,empty)
  show(self.studioContext,w>=1200); show(self.studioLibrary,self.studioLibraryOpen)
+end
+function U:CenterStudioWindows(inspect,sideSpan)
+ self:Paint(self.settings,"ClearAllPoints")
+ self:Paint(self.settings,"SetPoint","CENTER",UIParent,"CENTER",inspect and -sideSpan/2 or 0,0)
+end
+function U:KeepStudioWindowsOnScreen()
+ local parentOK,parentScale=self:Invoke(UIParent,"GetEffectiveScale")
+ local frameOK,frameScale=self:Invoke(self.settings,"GetEffectiveScale")
+ local widthOK,width=self:Invoke(UIParent,"GetWidth")
+ local leftOK,left=self:Invoke(self.settings,"GetLeft")
+ local rightOK,right=self:Invoke(self.settings,"GetRight")
+ if not (parentOK and frameOK and widthOK and leftOK and rightOK) then return end
+ parentScale=S.Public(parentScale,"number"); frameScale=S.Public(frameScale,"number")
+ width=S.Public(width,"number"); left=S.Public(left,"number"); right=S.Public(right,"number")
+ if not (parentScale and frameScale and width and left and right) then return end
+ local ok,shown=self:Invoke(self.studioInspector,"IsShown")
+ local inspect=ok and S.Public(shown,"boolean")==true
+ local sideSpan=448+12
+ if left<0 or (right+(inspect and sideSpan or 0))*frameScale>width*parentScale then
+  self:CenterStudioWindows(inspect,sideSpan)
+ end
 end
 function U:LayoutStudioSettings(width,height)
  return self:WithUpdateFlag("studioLayoutBusy",self.LayoutStudioSettingsContent,width,height)
 end
 function U:LayoutStudioSettingsContent(width,height)
- local scale=math.min(1,(width-32)/680); local w=math.min(1560,(width-32)/scale); local h=math.min(920,(height-32)/scale)
- local workspace=w>=1400 and 200 or 0
- local dock=w>=64+workspace+620+448+48
- local left=80+workspace; local editorWidth=w-left-16-(dock and 460 or 0)
- local bottom=self.studioBottomExpanded and math.max(64,math.min(164,h-504)) or 64
- local bodyHeight=h-64-28; local editorHeight=bodyHeight-44
+ local scale=math.min(1,(width-32)/680); local w=math.min(mainWindowMaxWidth,(width-32)/scale); local h=math.min(920,(height-32)/scale)
+ local workspace=w>=workspaceDockWidth and 184 or 0
+ local left=80+workspace; local editorWidth=w-left-16
+ local bottom=self.studioBottomExpanded and math.max(64,math.min(164,h-504)) or 36
+ local bodyHeight=h-64-28; local editorHeight=bodyHeight-12
  local listPage=self.page=="profiles" or self.page=="customapl" or self.page=="maintenance"
  local rows,source=self:StudioActiveRows()
  local selected=self.studioSelected and rows and self.studioSelected.source==source and rows[self.studioSelected.index]
- local inspect=listPage and (dock or self.studioInspectorRequested)
- local signature=table.concat({w,h,scale,tostring(self.page),tostring(source),tostring(dock),tostring(inspect),tostring(self.studioPlanOpen),tostring(self.studioLibraryOpen),tostring(self.studioWorkspaceOpen),tostring(selected~=nil),tostring(bottom)},":")
- self.studioWidth=w; self.settingsHeight=h; self.settingsFitScale=scale; self.editorOverlay=not dock
- self.studioEditorWidth=editorWidth; self.studioListHeight=math.max(32,editorHeight-120-bottom-96)
+ local strategyOK,strategyShown=self:Invoke(self.strategyPanel,"IsShown")
+ local groupOK,groupShown=self:Invoke(self.groupPanel,"IsShown")
+ local inspect=listPage and (self.studioInspectorRequested
+  or (strategyOK and S.Public(strategyShown,"boolean")==true)
+  or (groupOK and S.Public(groupShown,"boolean")==true)) or false
+ local sideWidth=448
+ local sideGap=12
+ local combinedWidth=w+(inspect and sideWidth+sideGap or 0)
+ scale=math.min(scale,(width-32)/combinedWidth)
+ local signature=table.concat({w,h,scale,tostring(self.page),tostring(source),tostring(inspect),tostring(self.studioPlanOpen),tostring(self.studioLibraryOpen),tostring(self.studioWorkspaceOpen),tostring(selected~=nil),tostring(bottom)},":")
+ self.studioWidth=w; self.settingsHeight=h; self.settingsFitScale=scale; self.editorOverlay=false
+ self.studioEditorWidth=editorWidth; self.studioRowPitch=editorWidth-48>=760 and 52 or 76; self.studioListHeight=math.max(32,editorHeight-120-bottom-96)
  -- 可见性始终同步，只有几何签名变化才重排所有控件。
- self:SyncStudioVisibility(listPage,source,inspect,dock,workspace,selected,bodyHeight,w)
+ self:SyncStudioVisibility(listPage,source,inspect,workspace,selected,w)
  if self.settingsLayoutSignature==signature then self.studioLayoutBusy=false; return end
  self.settingsLayoutSignature=signature
  self:Paint(self.settings,"SetScale",scale); self:Paint(self.settings,"SetSize",w,h)
+ local placement=table.concat({width,height,scale,combinedWidth},":")
+ if self.studioPlacement~=placement then
+  self.studioPlacement=placement
+  self:CenterStudioWindows(inspect,sideWidth+sideGap)
+ end
  self:StudioAnchor(self.studioActivity,self.settings,0,-64,64,bodyHeight)
- self:StudioAnchor(self.studioWorkspace,self.settings,64,-64,200,bodyHeight)
+ self:StudioAnchor(self.studioWorkspace,self.settings,64,-64,184,bodyHeight)
  self:Paint(self.studioWorkspace,"SetFrameLevel",self.studioWorkspaceOpen and 30 or 2); self:Paint(self.studioWorkspace,"EnableMouse",true)
- self:StudioAnchor(self.studioEditor,self.settings,left,-108,editorWidth,editorHeight)
+ self:StudioAnchor(self.studioEditor,self.settings,left,-76,editorWidth,editorHeight)
  self:StudioAnchor(self.studioTab,self.settings,left,-68,180,32); self:StudioAnchor(self.studioSequenceTab,self.settings,left+188,-68,204,32)
  self:StudioAnchor(self.studioGroupTab,self.settings,left+400,-68,math.max(160,editorWidth-400),32)
- self:StudioAnchor(self.studioPlanButton,self.studioEditor,editorWidth-136,0,120,32)
- self:StudioAnchor(self.studioDuplicateButton,self.studioEditor,editorWidth-260,0,112,32)
+ self:StudioAnchor(self.studioPlanButton,self.studioEditor,editorWidth-136,-8,120,28)
+ self:StudioAnchor(self.studioDuplicateButton,self.studioEditor,editorWidth-260,-8,112,28)
  self:Paint(self.studioListHeading,"SetWidth",editorWidth-292)
+ self:Paint(self.studioPlanState,"SetWidth",editorWidth-48)
+ self:StudioAnchor(self.studioColumns,self.studioEditor,12,-96,editorWidth-48,22)
+ self:StudioAnchor(self.studioColumnActions,self.studioColumns,editorWidth-232,-5,100)
+ local pageLeft=left-12
+ local pageWidth=w-pageLeft-12
+ self:StudioAnchor(self.studioPageSurface,self.settings,pageLeft,-76,pageWidth,bodyHeight-12)
+ local pageInset=math.max(4,math.floor((pageWidth-604)/2))
+ local formWidth=pageWidth-32
  for key,panel in pairs(self.pageFrames) do
-  self:StudioAnchor(panel,self.settings,left,-116,editorWidth,h-160)
+  local responsive=self.pages[key].tefResponsivePage==true
+  local inset=responsive and 8 or pageInset
+  self:StudioAnchor(panel,self.studioPageSurface,inset,-48,pageWidth-inset,h-164)
+  local scroll=self.pageScrolls[key]
+  if scroll then
+   self:Paint(scroll,"SetSize",responsive and formWidth or 580,h-164)
+   if responsive then self:Paint(self.pages[key],"SetWidth",formWidth) end
+  end
  end
- for _,scroll in pairs(self.pageScrolls) do self:Paint(scroll,"SetHeight",h-160) end
+ for _,layout in ipairs(self.pageWidthLayouts) do layout(formWidth-580) end
  local scrolls={manual=self.sequenceScroll,apl=self.customScroll,group=self.groupScroll}
  for key,scroll in pairs(scrolls) do
   self:StudioAnchor(scroll,self.studioEditor,12,-120,editorWidth-44,self.studioListHeight)
  end
  for _,entry in ipairs({{self.sequenceRows,self.sequenceChild},{self.customWidgets,self.customChild},{self.groupWidgets,self.groupChild}}) do
   self:Paint(entry[2],"SetWidth",editorWidth-48)
-  for _,row in ipairs(entry[1]) do self:LayoutStudioRow(row,editorWidth-48) end
+  for index,row in ipairs(entry[1]) do
+   self:StudioAnchor(row.frame,entry[2],0,-(index-1)*self.studioRowPitch,editorWidth-48,self.studioRowPitch-4)
+   self:LayoutStudioRow(row,editorWidth-48)
+  end
  end
+ local child=source=="manual" and self.sequenceChild or source=="group" and self.groupChild or self.customChild
+ if listPage then self:Paint(child,"SetHeight",math.max(108,(rows and #rows or 0)*self.studioRowPitch)) end
  for _,footer in pairs(self.pageFooters) do self:StudioAnchor(footer,self.settings,left,-h+bottom+116,editorWidth-16,88) end
  self:StudioAnchor(self.manualSave,self.pageFooters[self.pages.profiles],editorWidth-160,-52,144,32)
  self:StudioAnchor(self.customSave,self.pageFooters[self.pages.customapl],editorWidth-160,-52,144,32)
  self:Paint(self.editorMessage,"SetWidth",editorWidth-16); self:Paint(self.customMessage,"SetWidth",editorWidth-16)
- self:StudioAnchor(self.studioGroupFooter,self.settings,left,-h+bottom+116,580,88)
+ self:StudioAnchor(self.studioGroupFooter,self.settings,left,-h+bottom+116,editorWidth-16,88)
+ self:Paint(self.groupMessage,"SetWidth",editorWidth-16)
+ local groupButtonWidth=math.min(120,math.floor((editorWidth-40)/4))
+ for i,control in ipairs({self.groupUndoButton,self.groupClearButton,self.groupExitButton,self.groupSaveButton}) do
+  self:StudioAnchor(control,self.studioGroupFooter,(i-1)*(groupButtonWidth+8),-52,groupButtonWidth,self.controlHeight)
+ end
  self:StudioAnchor(self.studioBottom,self.settings,left,-h+bottom+28,editorWidth,bottom)
  self:LayoutStudioBottom(editorWidth,bottom)
- self:StudioAnchor(self.studioInspector,self.settings,w-464,-64,448,bodyHeight)
- self:Paint(self.studioInspector,"SetFrameLevel",dock and 4 or 40)
- self:StudioAnchor(self.studioInspectorShield,self.settings,left,-64,w-left-16,bodyHeight)
- self:Paint(self.studioInspectorShield,"SetFrameLevel",39)
+ self:Paint(self.studioInspector,"ClearAllPoints")
+ self:Paint(self.studioInspector,"SetPoint","TOPLEFT",self.settings,"TOPRIGHT",sideGap,0)
+ self:Paint(self.studioInspector,"SetSize",sideWidth,h)
+ self:Paint(self.studioInspector,"SetFrameLevel",4)
  self:Paint(self.studioInspectorClose,"ClearAllPoints"); self:Paint(self.studioInspectorClose,"SetPoint","BOTTOMLEFT",self.studioInspector,"BOTTOMLEFT",16,12)
- for _,panel in ipairs({self.strategyPanel,self.groupPanel}) do self:StudioAnchor(panel,self.studioInspector,0,0,448,bodyHeight-(dock and 0 or 48)) end
- self:StudioAnchor(self.studioPlanScroll,self.studioInspector,0,0,410,bodyHeight-(dock and 0 or 48))
+ for _,panel in ipairs({self.strategyPanel,self.groupPanel}) do self:StudioAnchor(panel,self.studioInspector,0,0,448,h-48) end
+ self:StudioAnchor(self.studioPlanScroll,self.studioInspector,0,0,410,h-48)
  self:StudioAnchor(self.studioPlanPanel,self.studioPlanScroll,0,0,410,744)
- self:Paint(self.strategyScroll,"SetHeight",math.max(80,bodyHeight-(dock and 280 or 328)))
+ self:Paint(self.strategyScroll,"SetHeight",math.max(80,h-230))
  self:StudioAnchor(self.studioStatus,self.settings,12,-h+20,w-24)
- self:StudioAnchor(self.studioRun,self.settings,w-340,-16,112,32); self:StudioAnchor(self.studioSave,self.settings,w-220,-16,112,32)
+ self:StudioAnchor(self.studioRun,self.settings,w-340,-16,112,self.controlHeight); self:StudioAnchor(self.studioSave,self.settings,w-220,-16,112,self.controlHeight)
  self:Paint(self.studioClose,"ClearAllPoints"); self:Paint(self.studioClose,"SetPoint","TOPRIGHT",self.settings,"TOPRIGHT",-16,-16)
  self:Paint(self.studioContext,"SetWidth",w-720)
  self:LayoutStudioLibrary(left,h)
@@ -381,10 +461,39 @@ function U:LayoutStudioSettingsContent(width,height)
 end
 function U:LayoutStudioRow(w,width)
  self:Paint(w.frame,"SetWidth",width)
- self:StudioAnchor(w.policy,w.frame,width-272,-8,88,28)
- self:StudioAnchor(w.up,w.frame,width-176,-8,32,28); self:StudioAnchor(w.down,w.frame,width-136,-8,32,28)
- self:StudioAnchor(w.delete,w.frame,width-96,-8,88,28)
- if w.usage then self:StudioAnchor(w.usage,w.frame,width-212,-44,204,28) end
- self:Paint(w.name,"SetWidth",math.max(120,width-348))
- self:Paint(w.frame.studioSummary,"SetWidth",math.max(120,width-(w.studioAPLGroup and 276 or 148)))
+ self:StudioAnchor(w.policy,w.frame,width-184,-8,64,28)
+ self:Paint(w.policy,"SetText","策略")
+ self:StudioAnchor(w.up,w.frame,width-112,-8,28,28)
+ self:StudioAnchor(w.down,w.frame,width-80,-8,28,28)
+ self:StudioAnchor(w.delete,w.frame,width-48,-8,40,28)
+ if w.usage then self:StudioAnchor(w.usage,w.frame,width-176,-40,168,28) end
+ if w.skip then self:StudioAnchor(w.skip,w.frame,124,-40,math.min(180,width-308),28) end
+ if w.count then self:StudioAnchor(w.count,w.frame,48,-40,64,28) end
+ if w.countLabel then self:StudioAnchor(w.countLabel,w.frame,8,-48,32) end
+ local inline=width>=760
+ self:StudioAnchor(w.name,w.frame,68,-10,inline and 144 or width-264)
+ self:StudioAnchor(w.frame.studioID,w.frame,inline and 220 or 68,inline and -14 or -30,92)
+ if inline then
+  if w.count then self:StudioAnchor(w.count,w.frame,344,-8,44,28) end
+  if w.countLabel then self:StudioAnchor(w.countLabel,w.frame,312,-14,32) end
+  if w.skip then self:StudioAnchor(w.skip,w.frame,392,-8,76,28) end
+  if w.usage then self:StudioAnchor(w.usage,w.frame,472,-8,width-664,28) end
+ end
+ if w.groupEdit then
+  local apl=w.count==nil
+  self:StudioAnchor(w.groupEdit,w.frame,inline and 316 or apl and 136 or 8,inline and -8 or -44,120,28)
+ end
+ if w.groupInfo then
+  self:StudioAnchor(w.groupInfo,w.frame,inline and 444 or 136,inline and -14 or -52,inline and width-636 or width-148)
+  self:Paint(w.groupInfo,"SetWordWrap",false)
+ end
+ if w.count==nil then
+  self:StudioAnchor(w.frame.studioBadge,w.frame,inline and 316 or 8,inline and -14 or -58,inline and 76 or 104)
+  local summaryX=inline and (w.studioAPLGroup and 444 or 396) or (w.studioAPLGroup and 264 or 136)
+  self:StudioAnchor(w.frame.studioSummary,w.frame,summaryX,inline and -14 or -56,(inline and width-192 or width-12)-summaryX)
+  for n,chip in ipairs(w.frame.studioChips) do
+   self:StudioAnchor(chip,w.frame,inline and 396+(n-1)*60 or 136+(n-1)*104,inline and -12 or -48,inline and 56 or 96,24)
+   self:Paint(chip.label,"SetWidth",inline and 44 or 84)
+  end
+ end
 end

@@ -55,7 +55,7 @@ function U:RefreshCustomAPL()
  for i,w in ipairs(self.customWidgets) do
   local row=self.customDraft[i]; self:Paint(w.frame,row and "Show" or "Hide")
   if row then
-   local height=76
+   local height=(self.studioRowPitch or 76)-4
    self:Paint(w.frame,"ClearAllPoints"); self:Paint(w.frame,"SetPoint","TOPLEFT",self.customChild,"TOPLEFT",0,-listHeight); self:Paint(w.frame,"SetHeight",height); listHeight=listHeight+height+4
    self:Paint(w.groupEdit,row.group and "Show" or "Hide"); self:Paint(w.name,"SetWidth",232)
    if not self.studio then
@@ -149,7 +149,7 @@ function U:CreateCustomAPLEditor(parent)
  self.customWidgets={}
  for i=1,16 do
   local index=i; local frame=self:CreateRuleRow(child,i)
-  self:Paint(frame,"SetPoint","TOPLEFT",child,"TOPLEFT",0,-(i-1)*80); self:Paint(frame,"SetSize",530,72)
+  self:Paint(frame,"SetPoint","TOPLEFT",child,"TOPLEFT",0,-(i-1)*76); self:Paint(frame,"SetSize",530,72)
   self:Paint(frame,"EnableMouse",true)
   self:Paint(frame,"SetScript","OnReceiveDrag",function() self:Guard(function() self:ReceiveCustomSpell(index) end) end)
   self:Paint(frame,"SetBackdropColor",.05,.08,.12,1); self:Paint(frame,"SetBackdropBorderColor",.25,.42,.58,1)
@@ -440,7 +440,7 @@ function U:RefreshStrategyForm()
    end
    y=y-height-8
   end
-  if #(row.strategies or {})==0 then self:CreateHintText(form,"点击 [+] 添加策略；没有策略时按基础可用性判断。",0,y,390); y=y-55 end
+  if #(row.strategies or {})==0 then self:CreateHintText(form,"点击「添加策略」；没有策略时按基础可用性判断。",0,y,390); y=y-55 end
  end
  local height=math.max(120,-y); self:Paint(form,"SetHeight",height)
  local viewOK,rawHeight=self:Invoke(self.strategyScroll,"GetHeight"); local viewHeight=viewOK and S.Public(rawHeight,"number")
@@ -470,15 +470,15 @@ function U:CreateStrategyPanel()
  self.strategyTitle=self:Text(panel,15,-18,335,"GameFontNormal")
  self.strategyCloseButton=self:CreateActionButton(panel,"关闭",365,-12,52,function() if not self:CommitCustomNumbers() then return end; self.studioSelected=nil; self.studioInspectorRequested=self.groupEditing~=nil; if self.strategySource=="groupStep" then self.strategySource=nil; self.strategyInputs={}; self.customFormIndex=nil; self:RefreshSkillGroup(); self:Paint(self.groupPanel,"Show") end; self:Paint(panel,"Hide"); self:LayoutSettings() end)
  self:CreateHintText(panel,"使用条件全部满足；任一跳过策略全部满足则跳过。\n未知不授权使用。",15,-51,395)
- self:CreateActionButton(panel,"+",365,-84,50,function() self:ChangeCustomStrategy(function(r)
+ self:CreateActionButton(panel,"添加策略",319,-84,96,function() self:ChangeCustomStrategy(function(r)
   if #r.strategies>=8 then self:CustomMessage("每个技能最多8条策略。"); return end
   r.strategies[#r.strategies+1]={mode="use",conditions={{kind="usable",value=true}}}
  end) end)
- self:CreateHintText(panel,"每条策略内的条件共同满足（AND）",15,-91,335)
+ self:CreateHintText(panel,"每条策略内的条件共同满足",15,-91,292)
  self.strategyScroll=self:Frame("ScrollFrame",panel,"UIPanelScrollFrameTemplate")
  -- 表单390宽，视口额外留4单位；外框再为原生滚动条保留独立通道。
  self:Paint(self.strategyScroll,"SetPoint","TOPLEFT",panel,"TOPLEFT",16,-126); self:Paint(self.strategyScroll,"SetSize",394,530)
- self.strategySaveButton=self:CreateActionButton(panel,"保存方案",224,-675,190,function()
+ self.strategySaveButton=self:CreateActionButton(panel,"保存方案",294,-675,120,function()
   if not self:CommitCustomNumbers() then return end
   if self.strategySource=="groupStep" then self:SaveSkillGroup(); return end
   if self.strategySource=="manual" then
@@ -492,7 +492,7 @@ function U:CreateStrategyPanel()
   if ok and self.engine.db.enabledPlans.apl[self.customLoadedScene] then ok,reason=T.Profiles:UsePlan(self.engine,"apl",self.customLoadedScene) end
   self:CustomMessage(ok and "已保存并停止派发；关闭设置后主动开启。" or (reason or "保存失败"))
  end)
- self.strategyClearButton=self:CreateActionButton(panel,"清空条件",16,-675,184,function() self:ConfirmAction("确认清空当前技能的全部条件？保存后生效。",function() self.strategyInputs={}; local row=self:CustomRow(); if row then row.strategies={} end; self:ChangeCustomStrategy(function(r)
+ self.strategyClearButton=self:CreateActionButton(panel,"清空条件",16,-675,96,function() self:ConfirmAction("确认清空当前技能的全部条件？保存后生效。",function() self.strategyInputs={}; local row=self:CustomRow(); if row then row.strategies={} end; self:ChangeCustomStrategy(function(r)
   r.strategies={}; r.moving="any"; r.activity="any"; r.distanceOp="any"; r.distanceValue=nil
   r.cdmKind="none"; r.cdmSpellID=nil; r.enemyMin=nil; r.enemyMax=nil
  end); self:CustomMessage("已清空当前技能条件草稿；保存后生效。") end,"清空条件") end)

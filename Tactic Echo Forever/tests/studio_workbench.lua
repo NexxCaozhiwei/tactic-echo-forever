@@ -237,10 +237,14 @@ test("不同窗口下列表底部与固定保存区不重叠",function()
  end
  UIParent=parent
 end)
-test("窄屏Inspector覆盖拦截编辑区且关闭不丢草稿",function()
+test("窄屏副窗停靠主窗右侧且关闭不丢草稿",function()
  setup(); local parent=UIParent; UIParent={GetWidth=function() return 1000 end,GetHeight=function() return 720 end}
- U:SelectStudioRule("apl",1); U:LayoutSettings(); eq(U.editorOverlay,true); eq(U.studioInspectorShield.shown,true)
- U:StudioAction(U.studioInspectorClose); eq(U.studioInspectorShield.shown,false); eq(#U.customDraft,2)
+ U:SelectStudioRule("apl",1); U:LayoutSettings(); eq(U.editorOverlay,false); eq(U.studioInspector.shown,true)
+ eq(U.studioInspector.point[2],U.settings); eq(U.studioInspector.point[3],"TOPRIGHT")
+ assert(U.studioInspector.point[4]>0)
+ assert((U.studioWidth+U.studioInspector.point[4]+U.studioInspector.width)*U.settingsFitScale<=1000)
+ eq(U.customScroll.shown,true); eq(U.studioSave.parent,U.settings)
+ U:StudioAction(U.studioInspectorClose); eq(U.studioInspector.shown,false); eq(#U.customDraft,2)
  UIParent=parent
 end)
 test("预热后连续切换Inspector与诊断不增加Frame或同步注册",function()
@@ -301,11 +305,11 @@ test("只读求值期间身份变化再次拒绝发布Trace",function()
  C.Check=function(self,...) if not changed then changed=true; e.generation=e.generation+1 end; return check(self,...) end
  eq(U:StudioProbeRows(),false); eq(U.studioProbe,nil); C.Check=check
 end)
-test("低窗口方案属性可滚动且收起后不留下覆盖遮罩",function()
+test("低窗口方案属性可滚动且可独立收起",function()
  setup(); local parent=UIParent; UIParent={GetWidth=function() return 1000 end,GetHeight=function() return 600 end}
  U:ShowStudioPlan(); U:LayoutSettings(); eq(U.studioPlanScroll.shown,true)
- assert(U.studioPlanScroll.height<U.studioPlanPanel.height); eq(U.studioInspectorShield.shown,true)
- U:StudioAction(U.studioInspectorClose); eq(U.studioInspectorShield.shown,false)
+ assert(U.studioPlanScroll.height<U.studioPlanPanel.height); eq(U.studioInspector.shown,true)
+ U:StudioAction(U.studioInspectorClose); eq(U.studioInspector.shown,false)
  UIParent=parent
 end)
 test("条件摘要命中区域转交选择与精确拖入事件",function()
@@ -388,10 +392,10 @@ test("紧凑下拉不依赖缺失箭头字形",function()
 end)
 test("底部诊断默认收起且重复点击当前标签可恢复列表空间",function()
  setup(); U.studioBottomExpanded=false; U.settingsLayoutSignature=nil; U:LayoutSettings()
- local collapsed=U.studioListHeight; eq(U.studioBottomHeight,64)
+ local collapsed=U.studioListHeight; eq(U.studioBottomHeight,36)
  U.studioBottomTabs.trace.scripts.OnClick(); assert(U.studioBottomHeight>64)
  assert(U.studioListHeight<collapsed); U.studioBottomTabs.trace.scripts.OnClick()
- eq(U.studioBottomHeight,64); eq(U.studioListHeight,collapsed)
+ eq(U.studioBottomHeight,36); eq(U.studioListHeight,collapsed)
 end)
 test("策略条件按内容分配高度且重排保留草稿与原配置",function()
  local e=setup(); assert(U:SelectStudioRule("apl",1))
@@ -415,8 +419,11 @@ test("优先级技能组编辑按钮与状态和组摘要分列",function()
  setup(); U:AddSkillGroup("apl"); U:RefreshStudio()
  local found=false
  for _,w in ipairs(U.customWidgets) do if w.studioAPLGroup then
-  found=true; eq(w.groupEdit.point[4],136); eq(w.groupEdit.point[5],-44)
-  assert(w.frame.studioBadge.point[4]+w.frame.studioBadge.width<w.groupEdit.point[4])
+  found=true
+  local inline=U.studioRowPitch==52
+  eq(w.groupEdit.point[4],inline and 316 or 136); eq(w.groupEdit.point[5],inline and -8 or -44)
+  if inline then eq(w.frame.studioBadge.shown,false)
+  else assert(w.frame.studioBadge.point[4]+w.frame.studioBadge.width<w.groupEdit.point[4]) end
   assert(w.groupEdit.point[4]+w.groupEdit.width<w.frame.studioSummary.point[4])
   U:LayoutStudioRow(w,U.studioEditorWidth-48)
   assert(w.frame.studioSummary.point[4]+w.frame.studioSummary.width<=w.frame.width)
@@ -450,4 +457,23 @@ test("鼠标悬停为假时仍按缩放坐标识别可见拖动落点",function(
  scroll.GetRect=nil; scroll.GetEffectiveScale=nil; first.GetRect=nil; first.GetEffectiveScale=nil; second.GetRect=nil; second.GetEffectiveScale=nil
  GetCursorPosition,MouseIsOver=cursor,over
 end)
+test("设置外观和TEK表单随主窗宽度伸缩",function()
+ setup()
+ local parent=UIParent
+ UIParent={GetWidth=function() return 1920 end,GetHeight=function() return 1080 end}
+ local wide
+ for _,key in ipairs({"overview","hud","tek"}) do
+  U:ShowPage(key); U:LayoutSettings()
+  eq(U.studioWidth,1120)
+  eq(U.pages[key].width,U.pageScrolls[key].width)
+  assert(U.pages[key].width>700)
+  wide=U.pages[key].width
+ end
+ UIParent.GetWidth=function() return 720 end
+ U:LayoutSettings()
+ assert(U.pages.tek.width<wide)
+ assert(U.timingInputs.castQueueLead.point[4]+U.timingInputs.castQueueLead.width<U.pages.tek.width)
+ UIParent=parent
+end)
+
 return n

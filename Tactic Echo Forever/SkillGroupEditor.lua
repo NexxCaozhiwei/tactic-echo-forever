@@ -51,10 +51,10 @@ function U:RefreshSkillGroup()
    w.frame.tefTooltipTitle=S.Spell(row.spellID,row.name).name; w.frame.tefTooltipBody="精确ID " .. row.spellID .. "；次数1～99。"
    self:Paint(w.name,"SetText",i .. ". " .. self:ShortLabel(w.frame.tefTooltipTitle,6) .. " · ID " .. row.spellID)
    end
-   self:SetInputValue(w.count,tostring(row.repeatCount)); self:Paint(w.skip,"SetText",row.skipUnavailable and "不可用跳过：开" or "不可用跳过：关")
+   self:SetInputValue(w.count,tostring(row.repeatCount)); self:Paint(w.skip,"SetText",row.skipUnavailable and "跳过：开" or "跳过：关")
   end
  end
- self:Paint(self.groupChild,"SetHeight",math.max(120,#self.groupDraft.steps*80)); self:RefreshStudio(); self:LayoutSettings()
+ self:Paint(self.groupChild,"SetHeight",math.max(120,#self.groupDraft.steps*(self.studioRowPitch or 76))); self:RefreshStudio(); self:LayoutSettings()
 end
 function U:GroupAdd(id,index)
  if not self:CommitGroupFields() then return false end
@@ -159,7 +159,7 @@ function U:CreateSkillGroupEditor()
  self.groupWidgets={}
  for i=1,G.MaxSteps do
   local index=i; local frame=self:CreateRuleRow(self.groupChild,i)
-  self:Paint(frame,"SetPoint","TOPLEFT",self.groupChild,"TOPLEFT",0,-(i-1)*80); self:Paint(frame,"SetSize",530,76)
+  self:Paint(frame,"SetPoint","TOPLEFT",self.groupChild,"TOPLEFT",0,-(i-1)*76); self:Paint(frame,"SetSize",530,72)
   self:Paint(frame,"SetBackdropColor",.05,.08,.12,1); self:Paint(frame,"SetBackdropBorderColor",.25,.42,.58,1)
   self:BindGroupDrop(frame,index,true)
   self:BindControlTooltip(frame,"组内技能","精确成功回执推进组内步骤。")
@@ -173,12 +173,12 @@ function U:CreateSkillGroupEditor()
   local up=self:CreateActionButton(frame,"↑",256,-8,28,function() self:GroupMove(index,index-1) end)
   local down=self:CreateActionButton(frame,"↓",292,-8,28,function() self:GroupMove(index,index+1) end)
   local delete=self:CreateActionButton(frame,"删除",328,-8,44,function() self:DeleteDraft("group",index) end)
-  self:Paint(self:Text(frame,8,-52,32,"GameFontHighlightSmall"),"SetText","次数")
+  w.countLabel=self:Text(frame,8,-52,32,"GameFontHighlightSmall"); self:Paint(w.countLabel,"SetText","次数")
   local function count(box) local ok,raw=self:Invoke(box,"GetText"); local text=ok and S.Public(raw,"string"); local n=text and text:match("^%d+$") and tonumber(text)
    if n and n>=1 and n<=99 and self.groupDraft.steps[index] then if self.groupDraft.steps[index].repeatCount~=n then self.groupDirty=true end; self.groupDraft.steps[index].repeatCount=n else self:Paint(self.groupMessage,"SetText","使用次数须为1～99整数。"); return false end
   end
   self:BindInputCommit(w.count,count)
-  w.skip=self:CreateActionButton(frame,"不可用跳过：关",124,-44,248,function() if not self:CommitGroupFields() then return end; local row=self.groupDraft.steps[index]; row.skipUnavailable=not row.skipUnavailable; self.groupDirty=true; self:RefreshSkillGroup() end)
+  w.skip=self:CreateActionButton(frame,"跳过：关",124,-44,248,function() if not self:CommitGroupFields() then return end; local row=self.groupDraft.steps[index]; row.skipUnavailable=not row.skipUnavailable; self.groupDirty=true; self:RefreshSkillGroup() end)
   self:Paint(frame,"RegisterForDrag","LeftButton")
   self:Paint(frame,"SetScript","OnDragStart",function() self.groupDragging=index end)
   self:Paint(frame,"SetScript","OnDragStop",function() self:Guard(function()

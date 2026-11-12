@@ -52,7 +52,7 @@ end
 function U:RefreshStudioLibrary(force)
  local mode=self.studioCDMTarget and self.studioCDMTarget.kind or "learned"
  local cdm=mode~="learned"
- self:Paint(self.studioLibraryTitle,"SetText",cdm and (mode=="buff" and "CDM增益 · 默认技能ID" or "CDM冷却 · 默认技能ID") or "已学主动技能 · 精确ID")
+ self:Paint(self.studioLibraryTitle,"SetText",cdm and (mode=="buff" and "CDM增益 · 拖动此栏移动" or "CDM冷却 · 拖动此栏移动") or "技能库 · 拖动此栏移动")
  self:Paint(self.studioLibraryFilterLabel,"SetText",cdm and "选择条目填写观察ID；保存后生效" or "仅显示动作条上的技能")
  self:Paint(self.studioLibraryFilterLabel,"SetWidth",cdm and 336 or 240)
  self.studioLibrary.tefTooltipTitle=cdm and "CDM公开目录" or "已学技能库"
@@ -276,7 +276,7 @@ function U:LayoutStudioBottom(width,height)
  local trace=(self.studioBottomMode or "trace")=="trace"
  self:Paint(self.studioTextScroll,not trace and height>=100 and "Show" or "Hide")
  self:Paint(self.studioTraceScroll,trace and height>=100 and "Show" or "Hide")
- self:Paint(self.studioTraceHeader,trace and "Show" or "Hide")
+ self:Paint(self.studioTraceHeader,trace and height>=100 and "Show" or "Hide")
  local signature=width .. ":" .. height
  if self.studioBottomGeometry==signature then return end
  self.studioBottomGeometry=signature
@@ -284,6 +284,7 @@ function U:LayoutStudioBottom(width,height)
  self:Paint(self.studioBottomText,"SetWidth",width-48)
  self:Paint(self.studioTextScroll,"SetSize",width-44,math.max(24,height-48))
  self:Paint(self.studioTraceScroll,"SetSize",width-44,math.max(24,height-72))
+ self:Paint(self.studioTraceHeader,"SetWidth",width-24)
  self:Paint(self.studioTraceChild,"SetWidth",width-48)
  for _,w in ipairs(self.studioTraceWidgets) do self:Paint(w,"SetWidth",width-48) end
  self:StudioAnchor(self.studioSampleButton,self.studioBottom,width-136,-4,120,28)
@@ -318,11 +319,15 @@ function U:CreateStudioTools()
  for _,button in pairs(self.strategyKindButtons) do self:Paint(button,"SetWidth",340) end
  self:Paint(self.strategyKindChild,"SetWidth",340)
  self.studioLibrary=self:CreateStudioPanel(self.settings); self:Paint(self.studioLibrary,"EnableMouse",true)
- self:Paint(self.studioLibrary,"SetBackdropColor",.025,.055,.095,1)
+ self:Paint(self.studioLibrary,"SetBackdropColor",.095,.135,.185,1)
  self:Paint(self.studioLibrary,"SetBackdropBorderColor",.34,.58,.78,1)
  self:BindControlTooltip(self.studioLibrary,"已学技能库","只收录公开确认的精确已学主动技能；新学技能后点击刷新。")
- self.studioLibraryTitle=self:Text(self.studioLibrary,12,-12,224,"GameFontNormal")
- self:Paint(self.studioLibraryTitle,"SetText","已学主动技能 · 精确ID")
+ local drag=self:CreateStudioPanel(self.studioLibrary)
+ self:StudioAnchor(drag,self.studioLibrary,8,-6,260,34)
+ self:Paint(drag,"SetBackdropColor",.16,.23,.31,1)
+ self:Paint(drag,"SetBackdropBorderColor",.40,.58,.70,1)
+ self.studioLibraryTitle=self:Text(drag,10,-8,240,"GameFontNormal")
+ self:Paint(self.studioLibraryTitle,"SetText","技能库 · 拖动此栏移动")
  self:CreateActionButton(self.studioLibrary,"关闭",276,-8,72,function() self:CloseStudioLibrary(); self:LayoutSettings() end)
  self:CreateHintText(self.studioLibrary,"搜索技能名或SpellID",12,-52,280)
  self.studioLibrarySearch=self:SequenceInput(self.studioLibrary,12,-76,248); self:Paint(self.studioLibrarySearch,"SetMaxLetters",80)
@@ -346,7 +351,6 @@ function U:CreateStudioTools()
  self:BindControlTooltip(self.studioLibraryBarToggle,"仅显示动作条上的技能","按精确技能ID筛选，包含现有解析器能核对的宏技能；未知身份不收录。移动技能后点击刷新。")
  self.studioLibraryInfo=self:Text(self.studioLibrary,12,-152,336,"GameFontHighlightSmall")
  self:Paint(self.studioLibrary,"SetMovable",true); self:Paint(self.studioLibrary,"SetClampedToScreen",true)
- local drag=self:Frame("Frame",self.studioLibrary); self:StudioAnchor(drag,self.studioLibrary,0,0,264,40)
  self:Paint(drag,"EnableMouse",true); self:Paint(drag,"RegisterForDrag","LeftButton")
  self:Paint(drag,"SetScript","OnDragStart",function() self:Paint(self.studioLibrary,"StartMoving") end)
  self:Paint(drag,"SetScript","OnDragStop",function() self:Paint(self.studioLibrary,"StopMovingOrSizing"); self.studioLibraryMoved=true end)
@@ -367,7 +371,7 @@ function U:CreateStudioTools()
  self.studioLibraryWidgets={}
  for i=1,8 do
   local frame=self:CreateStudioPanel(self.studioLibraryChild); self:StudioAnchor(frame,self.studioLibraryChild,0,-(i-1)*56,312,52)
-  self:Paint(frame,"SetBackdropColor",.07,.11,.17,1)
+  self:Paint(frame,"SetBackdropColor",.12,.17,.23,1)
   self:Paint(frame,"SetBackdropBorderColor",.22,.35,.48,1)
   local ok,icon=self:Invoke(frame,"CreateTexture",nil,"ARTWORK"); if ok then self:StudioAnchor(icon,frame,8,-8,32,32) end
   local w={frame=frame,icon=icon,name=self:Text(frame,48,-6,216),id=self:Text(frame,48,-28,216,"GameFontHighlightSmall")}
@@ -386,7 +390,7 @@ function U:CreateStudioTools()
   self.studioLibraryWidgets[i]=w
  end
  self.studioBottomTabs={}
- for i,entry in ipairs({{"trace","APL TRACE"},{"problems","问题"},{"output","输出"}}) do
+ for i,entry in ipairs({{"trace","策略追踪"},{"problems","问题"},{"output","输出"}}) do
   local key=entry[1]; self.studioBottomTabs[key]=self:CreateActionButton(self.studioBottom,entry[2],8+(i-1)*116,-4,108,function() self.studioBottomExpanded=not (self.studioBottomMode==key and self.studioBottomExpanded); self.studioBottomMode=key; self:RefreshStudioBottom(); self.settingsLayoutSignature=nil; self:LayoutSettings() end)
   self:CompactControl(self.studioBottomTabs[key],108)
   self:BindControlTooltip(self.studioBottomTabs[key],entry[2],"点击展开；再次点击当前标签收起，为技能列表腾出空间。")

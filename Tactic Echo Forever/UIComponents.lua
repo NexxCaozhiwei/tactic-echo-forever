@@ -3,8 +3,8 @@ local U,S=TEF.UI,TEF.Safety
 -- Independent TEUI-style components. Presentation holds no input authority.
 U.controls={}
 U.theme={fontBody=14,fontHint=12,fontSection=16,fontPage=18,fontTitle=20,controlHeight=28,spaceInline=8,spaceSection=24,
- panel={.086,.102,.133,1},border={.204,.251,.322,1},
- colorText={.94,.96,1,1},colorHint={.70,.76,.84,1},colorBorder={.34,.44,.58,1},colorFocus={.35,.85,1,1}}
+ panel={.055,.075,.105,1},border={.24,.30,.39,1},
+ colorText={.94,.96,1,1},colorHint={.70,.76,.84,1},colorBorder={.34,.44,.58,1},colorFocus={.25,.90,.80,1}}
 U.controlHeight=U.theme.controlHeight
 U.theme.statusColors={READY={.35,.82,.55,1},UNKNOWN={.96,.76,.36,1},BLOCKED={.94,.40,.42,1},DISABLED={.70,.76,.84,1}}
 U.controlFontSize=U.theme.fontBody
@@ -319,6 +319,9 @@ function U:SetControlEnabled(button,enabled,reason)
     if enabled==true and button.tefControlSelected==true then
         self:Paint(button,"SetBackdropColor",.08,.23,.20,1)
         self:Paint(button,"SetBackdropBorderColor",.25,.85,.65,1)
+    elseif enabled==true and button.tefPrimary then
+        self:Paint(button,"SetBackdropColor",.10,.32,.64,1)
+        self:Paint(button,"SetBackdropBorderColor",.35,.64,.97,1)
     else
         self:Paint(button,"SetBackdropColor",enabled==true and .07 or .035,enabled==true and .10 or .045,enabled==true and .15 or .06,1)
         self:Paint(button,"SetBackdropBorderColor",enabled==true and .34 or .24,enabled==true and .44 or .30,enabled==true and .58 or .40,1)
@@ -334,7 +337,7 @@ function U:PaintListRow(frame,hover)
  local alternate=(frame.tefRowIndex or 1)%2==0
  local selected=frame.tefRowSelected==true
  local active=selected or frame.tefRowHovered
- self:Call(frame,"SetBackdropColor",active and .07 or alternate and .04 or .03,active and .12 or alternate and .065 or .05,active and .18 or alternate and .10 or .08,1)
+ self:Call(frame,"SetBackdropColor",active and .055 or alternate and .065 or .045,active and .20 or alternate and .085 or .065,active and .20 or alternate and .115 or .095,1)
  if selected then self:Call(frame,"SetBackdropBorderColor",unpack(self.theme.colorFocus))
  else self:Call(frame,"SetBackdropBorderColor",.13,.20,.28,1) end
 end
@@ -343,6 +346,9 @@ function U:StyleListRow(frame,index)
  self:Paint(frame,"SetScript","OnEnter",function() self:PaintListRow(frame,true); self:ShowControlTooltip(frame) end)
  self:Paint(frame,"SetScript","OnLeave",function() self:PaintListRow(frame,false); self:HideControlTooltip(frame) end)
  self:PaintListRow(frame,false)
+end
+function U:RegisterPageWidth(parent,layout)
+    if parent.tefResponsivePage==true then self.pageWidthLayouts[#self.pageWidthLayouts+1]=layout end
 end
 function U:CreateSectionCard(parent,title,x,y,width,height)
     -- Page text must be above its decoration. A child backdrop Frame has a
@@ -361,6 +367,14 @@ function U:CreateSectionCard(parent,title,x,y,width,height)
         else self:Error() end
     end
     self:Paint(self:Text(parent,x+12,y-10,width-24,"GameFontNormal"),"SetText",title)
+    self:RegisterPageWidth(parent,function(extra)
+        local card=bg.tefCard
+        local span=width+extra
+        card.width=span
+        self:Paint(bg,"SetWidth",span)
+        for i=1,2 do self:Paint(card.edges[i],"SetWidth",span) end
+        self:StudioAnchor(card.edges[4],parent,x+span-1,y,1)
+    end)
     return bg
 end
 function U:ResizeSectionCard(bg,height)
@@ -395,6 +409,13 @@ function U:CreateToggleRow(parent,label,x,y,width,getter,setter)
         self:Paint(b,"SetText",enabled and "开启" or "关闭")
         self:SetControlEnabled(b,b.tefControlEnabled)
     end
+    self:RegisterPageWidth(parent,function(extra)
+        local halfRow=width<=258
+        local shift=halfRow and x>=300 and math.floor(extra/2) or 0
+        local growth=halfRow and math.floor(extra/2) or extra
+        self:StudioAnchor(text,parent,x+shift,y-6,width-95+growth)
+        self:StudioAnchor(b,parent,x+shift+width+growth-85,y,85)
+    end)
     self:AddControlSync(sync,b); sync(); return b,text
 end
 function U:CreateSegmentedControl(parent,choices,x,y,width,getter,setter)
@@ -478,6 +499,10 @@ function U:CreateSliderRow(parent,label,x,y,width,min,max,step,getter,setter,edi
     self:Paint(slider,"SetScript","OnEnter",function() self:ShowControlTooltip(slider) end)
     self:Paint(slider,"SetScript","OnLeave",function() self:HideControlTooltip(slider) end)
     self:Paint(slider,"SetScript","OnHide",function() self:HideControlTooltip(slider) end)
+    self:RegisterPageWidth(parent,function(extra)
+        self:Paint(slider,"SetWidth",width+extra-labelWidth-12-(editable and 100 or 0))
+        if input then self:StudioAnchor(input,parent,x+width+extra-88,y,88) end
+    end)
     return slider,input
 end
 function U:CreateStatusBadge(parent,x,y,width)

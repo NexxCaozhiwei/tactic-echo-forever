@@ -163,16 +163,16 @@ function U:RefreshSequenceEditor(force)
             end
             self:Paint(widgets.groupEdit,row.group and "Show" or "Hide")
             self:SetInputValue(widgets.count,tostring(row.repeatCount or 1))
-            self:Paint(widgets.skip,"SetText",row.skipUnavailable and "不可用跳过：开" or "不可用跳过：关")
+            self:Paint(widgets.skip,"SetText",row.skipUnavailable and "跳过：开" or "跳过：关")
             self:Paint(widgets.skip,(row.group or row.spellID==6603) and "Hide" or "Show")
             self:Paint(widgets.usage,"SetText",({always="每轮使用",target="同一目标只用一次",combat="同一战斗只用一次"})[row.usagePolicy or "always"])
             for _,control in ipairs({widgets.count,widgets.countLabel,widgets.usage}) do self:Paint(control,row.group and "Hide" or "Show") end
             self:Paint(widgets.groupInfo,row.group and "Show" or "Hide")
-            if row.group then self:Paint(widgets.groupInfo,"SetText",#row.group.steps .. "步 · " .. row.group.rounds .. "轮 · 次数在组内设置") end
+            if row.group then self:Paint(widgets.groupInfo,"SetText",#row.group.steps .. "步 · " .. row.group.rounds .. "轮") end
             self:SetControlEnabled(widgets.up,i>1); self:SetControlEnabled(widgets.down,i<#rows)
         end
     end
-    self:Paint(self.sequenceChild,"SetHeight",math.max(355,rows and math.min(#rows,16)*80 or 355))
+    self:Paint(self.sequenceChild,"SetHeight",math.max(355,rows and math.min(#rows,16)*(self.studioRowPitch or 76) or 355))
     self:RefreshStudio()
 end
 function U:CreateSequenceEditor(parent)
@@ -204,7 +204,7 @@ function U:CreateSequenceEditor(parent)
     for i=1,16 do
         local index=i
         local row=self:CreateRuleRow(child,i)
-        self:Paint(row,"SetPoint","TOPLEFT",child,"TOPLEFT",0,-(i-1)*80); self:Paint(row,"SetSize",530,76)
+        self:Paint(row,"SetPoint","TOPLEFT",child,"TOPLEFT",0,-(i-1)*76); self:Paint(row,"SetSize",530,72)
         self:BindSequenceDrop(row,index,true)
         self:BindControlTooltip(row,"技能条目","可拖入插入，或使用上下箭头排序。")
         self:Paint(row,"SetBackdropColor",.05,.08,.12,1); self:Paint(row,"SetBackdropBorderColor",.25,.42,.58,1)
@@ -229,7 +229,7 @@ function U:CreateSequenceEditor(parent)
         widgets.up=self:CreateActionButton(row,"↑",344,-8,32,function() self:EditSequenceRow(index,"move",-1) end)
         widgets.down=self:CreateActionButton(row,"↓",384,-8,32,function() self:EditSequenceRow(index,"move",1) end)
         widgets.delete=self:CreateActionButton(row,"删除",424,-8,96,function() self:EditSequenceRow(index,"delete") end)
-        widgets.skip=self:CreateActionButton(row,"不可用跳过：关",124,-44,180,function()
+        widgets.skip=self:CreateActionButton(row,"跳过：关",124,-44,180,function()
             local rows=self:DraftRows()
             if rows and rows[index] then self:EditSequenceRow(index,"skip",not rows[index].skipUnavailable) end
         end)

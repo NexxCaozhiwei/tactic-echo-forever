@@ -66,11 +66,6 @@ end
 function U:RefreshStudioRow(w,row,index,source)
  if not row then return end
  w.studioAPLGroup=source=="apl" and row.group~=nil
- if source=="apl" then
-  anchor(self,w.groupEdit,w.frame,136,-44)
-  anchor(self,w.frame.studioSummary,w.frame,w.studioAPLGroup and 264 or 136,-56)
-  self:Paint(w.frame.studioSummary,"SetWidth",math.max(120,(self.studioEditorWidth or 580)-48-(w.studioAPLGroup and 276 or 148)))
- end
  local view=S.Spell(row.spellID,row.name or ("技能 " .. (row.spellID or "未知")))
  self:Paint(w.frame.studioIcon,"SetTexture",view.icon)
  self:Paint(w.frame.studioID,"SetText","ID " .. (row.spellID or "未知"))
@@ -79,11 +74,11 @@ function U:RefreshStudioRow(w,row,index,source)
  local snapshot=self.studioCurrentProbe and self.studioCurrentProbe.state or self.engine.aplSnapshot
  local sampled=source=="apl" and snapshot and snapshot.actions and snapshot.actions["custom_" .. index]
  local targetUnknown=not row.group and (not row.targetMode or row.targetMode=="auto") and sampled and sampled.spellID==row.spellID and sampled.reason=="CUSTOM_TARGET_UNKNOWN"
- self:Paint(w.frame.studioBadge,(source=="manual" or source=="group") and "Hide" or "Show")
+ self:Paint(w.frame.studioBadge,(source~="apl" or (row.group and self.studioRowPitch==52)) and "Hide" or "Show")
  self:Paint(w.frame.studioSummary,(source=="manual" or source=="group") and "Hide" or "Show")
  if source=="apl" then self:Paint(w.frame.studioSummary,"SetText",row.group and (#row.group.steps .. "步 · " .. row.group.rounds .. "轮") or ("策略 " .. #(row.strategies or {}) .. " 组 · 点击编辑策略")) end
- anchor(self,w.name,w.frame,68,-10); self:Paint(w.name,"SetWidth",math.max(120,(self.studioEditorWidth or 580)-396))
- self:Paint(w.name,"SetText",string.format("%02d",index) .. " " .. self:ShortLabel(row.group and row.group.name or view.name,7))
+ self:LayoutStudioRow(w,(self.studioEditorWidth or 584)-48)
+ self:Paint(w.name,"SetText",string.format("%02d",index) .. " " .. self:ShortLabel(row.group and row.group.name or view.name,12))
  local badge=row.enabled==false and "DISABLED" or "UNKNOWN"
  local p=self.studioCurrentProbe; local now=T.APL.State.Time(); local fresh=false
  if p and now and p.time and now>=p.time and now-p.time<=.25 and p.rows[index] and row.enabled~=false then
@@ -103,7 +98,7 @@ function U:RefreshStudioRow(w,row,index,source)
  for n,chip in ipairs(w.frame.studioChips or {}) do
   local shown=source=="apl" and not targetUnknown and not row.group and conditions[n]~=nil
   self:Paint(chip,shown and "Show" or "Hide")
-  if shown then self:Paint(chip.label,"SetText",n==3 and #conditions>3 and ("＋" .. (#conditions-2) .. "项") or self:ShortLabel(conditions[n],6)); chip.tefTooltipBody=table.concat(conditions,"\n") .. "\n使用条件全部满足；任一跳过策略全部满足则跳过。" end
+  if shown then self:Paint(chip.label,"SetText",n==3 and #conditions>3 and ("＋" .. (#conditions-2) .. "项") or self:ShortLabel(conditions[n],self.studioRowPitch==52 and 3 or 6)); chip.tefTooltipBody=table.concat(conditions,"\n") .. "\n使用条件全部满足；任一跳过策略全部满足则跳过。" end
  end
  if source=="apl" and #conditions>0 and not row.group then self:Paint(w.frame.studioSummary,"Hide") end
  if targetUnknown then

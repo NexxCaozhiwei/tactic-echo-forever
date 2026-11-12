@@ -43,6 +43,9 @@ function UI:Text(parent,x,y,width,template)
     self:Paint(t,"SetPoint","TOPLEFT",parent,"TOPLEFT",x,y)
     if self.StyleText then self:StyleText(t,template) end
     self:Paint(t,"SetWidth",width); self:Paint(t,"SetJustifyH","LEFT")
+    if parent.tefResponsivePage==true and width>=500 then
+        self:RegisterPageWidth(parent,function(extra) self:Paint(t,"SetWidth",width+extra) end)
+    end
     return t
 end
 function UI:Button(parent,label,x,y,width,callback)
@@ -246,8 +249,8 @@ function UI:CreateSettings()
     self:Paint(f,"SetBackdropColor",.025,.035,.055,.98); self:Paint(f,"SetBackdropBorderColor",.18,.24,.34,1)
     self:Paint(f,"SetMovable",true); self:Paint(f,"EnableMouse",true); self:Paint(f,"RegisterForDrag","LeftButton")
     self:Paint(f,"SetScript","OnDragStart",function() if self:Combat()==false then self:Call(f,"StartMoving") end end)
-    self:Paint(f,"SetScript","OnDragStop",function() self:Call(f,"StopMovingOrSizing") end)
-    local title=self:Text(f,24,-20,280,"GameFontNormalLarge"); self:ApplyControlFont(title,false,self.theme.fontTitle); self:Paint(title,"SetText","TEF Studio · 战术回响")
+    self:Paint(f,"SetScript","OnDragStop",function() self:Call(f,"StopMovingOrSizing"); self:KeepStudioWindowsOnScreen() end)
+    local title=self:Text(f,24,-20,280,"GameFontNormalLarge"); self:ApplyControlFont(title,false,self.theme.fontTitle); self:Paint(title,"SetText","TEF Studio · 战术工作区")
     self:Paint(self:Text(f,24,-48,640,"GameFontHighlightSmall"),"SetText","TEF " .. TEF.Version .. " · 设置期间派发阻断，运行意图由启停控制")
     self.studioClose=self:CreateActionButton(f,"关闭",722,-16,75,function() self:CloseSettings() end)
     self:Paint(f,"SetScript","OnHide",function()
@@ -256,7 +259,8 @@ function UI:CreateSettings()
     end)
     self.navigation={}; self.pageTitles={}; self.pageFrames={}; self.pageScrolls={}
     self.pageHeading=self:Text(f,192,-80,592,"GameFontNormalLarge")
-    local tabs={{"overview","派发总览"},{"profiles","列表循环"},{"customapl","优先级推荐"},{"maintenance","增益与紧急"},{"scene","场景与验证"},{"hud","HUD外观"},{"tek","高级TEK"},{"diagnostics","诊断/测试"}}
+    local tabs={{"overview","设置"},{"profiles","列表循环"},{"customapl","优先级推荐"},{"maintenance","增益与紧急"},{"scene","场景与验证"},{"hud","HUD外观"},{"tek","TEK 与施法接续"},{"diagnostics","诊断/测试"}}
+    self.pageWidthLayouts={}
     local visibleIndex=0
     for i,tab in ipairs(tabs) do
         local key=tab[1]
@@ -279,6 +283,7 @@ function UI:CreateSettings()
             self:Paint(content,"SetPoint","TOPLEFT",scroll,"TOPLEFT",0,0)
             self:Paint(content,"Show"); self:Paint(scroll,"Show")
             self.pages[key]=content; panel=content
+            content.tefResponsivePage=key=="overview" or key=="hud" or key=="tek"
         end
         self.readouts[key]=self:Text(panel,4,-4,580)
     end
@@ -334,14 +339,12 @@ function UI:CreateSettings()
     end)
     button("scene","切换单体",4,-345,115,function() TEF.Profiles:Select(e,"single") end)
     button("scene","切换多目标",129,-345,115,function() TEF.Profiles:Select(e,"multi") end)
-    self:CreateSectionCard(self.pages.overview,"派发状态",0,0,580,100)
-    self.overviewBadge=self:CreateStatusBadge(self.pages.overview,16,-38,368)
-    self.intentToggle=self:CreateToggleRow(self.pages.overview,"派发启/停",16,-64,548,
-        function() return TEF.Runtime:IsDispatchIntentEnabled() end,function() TEF_ToggleDispatchIntent() end)
-    self:CreateSectionCard(self.pages.overview,"运行模式",0,-112,580,80)
-    self.modeControls=self:CreateSegmentedControl(self.pages.overview,{{"auto","自动启停"},{"manual","手动启停"},{"stop","脱战后停止"}},16,-152,548,
+    self:CreateSectionCard(self.pages.overview,"派发状态",0,0,580,84)
+    self.overviewBadge=self:CreateStatusBadge(self.pages.overview,16,-40,548)
+    self:CreateSectionCard(self.pages.overview,"运行模式",0,-96,580,148)
+    self.modeControls=self:CreateSegmentedControl(self.pages.overview,{{"auto","自动启停"},{"manual","手动启停"},{"stop","脱战后停止"}},16,-132,548,
         function() return e.db.dispatch.mode end,function(value) TEF.Runtime:SetMode(value) end)
-    self:CreateToggleRow(self.pages.overview,"登录/reload自动启动（创建新意图）",16,-208,548,
+    self:CreateToggleRow(self.pages.overview,"登录或重载后自动启动",16,-184,548,
         function() return e.db.dispatch.autoStart end,function(value) e.db.dispatch.autoStart=value end)
     self:CreateSectionCard(self.pages.overview,"当前配置",0,-260,580,168)
     self:Paint(self.readouts.overview,"ClearAllPoints")
@@ -371,13 +374,15 @@ function UI:CreateSettings()
     self:CreateSectionCard(self.pages.hud,"标签样式",0,0,580,512)
     local labelPanel=self:Frame("Frame",self.pages.hud); self.labelStylePanel=labelPanel
     self:Paint(labelPanel,"SetSize",548,440); self:Paint(labelPanel,"SetPoint","TOPLEFT",self.pages.hud,"TOPLEFT",16,-48)
+    labelPanel.tefResponsivePage=true
+    self:RegisterPageWidth(labelPanel,function(extra) self:Paint(labelPanel,"SetWidth",548+extra) end)
     TEF.HudStyles:BuildUI(self,labelPanel)
-    self:CreateSectionCard(self.pages.hud,"HUD位置与缩放",0,-528,580,248)
+    self:CreateSectionCard(self.pages.hud,"HUD位置与缩放",0,-528,580,200)
     self.hudSlider=self:CreateSliderRow(self.pages.hud,"整体缩放",16,-576,548,.6,1,.1,
         function() return math.min(1,e.db.hud.scale) end,function(value) e.db.hud.scale=value; self:Layout() end)
-    self:CreateToggleRow(self.pages.hud,"锁定位置",16,-632,548,function() return e.db.hud.locked end,function(value) e.db.hud.locked=value end)
-    self:CreateToggleRow(self.pages.hud,"显示后续预览",16,-680,548,function() return e.db.hud.preview end,function(value) e.db.hud.preview=value end)
-    button("hud","恢复位置",16,-728,188,function()
+    self:CreateToggleRow(self.pages.hud,"锁定位置",16,-632,258,function() return e.db.hud.locked end,function(value) e.db.hud.locked=value end)
+    self:CreateToggleRow(self.pages.hud,"显示后续预览",306,-632,258,function() return e.db.hud.preview end,function(value) e.db.hud.preview=value end)
+    button("hud","恢复位置",16,-680,120,function()
         self:ConfirmAction("确认将HUD恢复到默认位置？其他设置保留。",function()
             if self:Combat()~=false then return end
             e.db.position=nil; e.db.hud.x=nil; e.db.hud.y=nil
@@ -385,11 +390,11 @@ function UI:CreateSettings()
             self:Paint(TEF.HUD.frame,"ClearAllPoints"); self:Paint(TEF.HUD.frame,"SetPoint","CENTER",UIParent,"CENTER",0,-155)
         end,"恢复位置")
     end)
-    self:CreateSectionCard(self.pages.hud,"技能图标大小与间距",0,-792,580,392)
+    self:CreateSectionCard(self.pages.hud,"技能图标大小与间距",0,-744,580,392)
     local geometryRows={{"mainSize","当前技能大小",32,44},{"preview1Size","后续技能1大小",24,36},{"preview2Size","后续技能2大小",24,36},{"gap1","主图标与文字间距",2,6},{"gap2","后续1与2间距",2,4}}
     self.hudGeometryControls={}
     for i,row in ipairs(geometryRows) do local field=row[1]
-        local slider,input=self:CreateSliderRow(self.pages.hud,row[2],16,-840-(i-1)*64,548,row[3],row[4],1,
+        local slider,input=self:CreateSliderRow(self.pages.hud,row[2],16,-792-(i-1)*64,548,row[3],row[4],1,
             function() return math.min(row[4],e.db.hud.geometry[field]) end,function(value) if e.db.hud.mode~="standard" then return end; e.db.hud.geometry[field]=value; TEF.HUD:Layout() end,true)
         self.hudGeometryControls[field]={slider=slider,input=input}
         self:AddControlSync(function()
@@ -400,21 +405,21 @@ function UI:CreateSettings()
             input.tefDisabledReason=slider.tefDisabledReason
         end,slider)
     end
-    self:CreateHintText(self.pages.hud,"简略与最小HUD固定图标大小与间距，以上几何设置仅用于标准HUD。左键主卡启停，右键设置；空白可拖动。",16,-1208,548)
-    self:CreateSectionCard(self.pages.hud,"HUD底纹与外框透明度",0,-1268,580,240)
+    self:CreateHintText(self.pages.hud,"简略与最小HUD固定图标大小与间距，以上几何设置仅用于标准HUD。左键主卡启停，右键设置；空白可拖动。",16,-1160,548)
+    self:CreateSectionCard(self.pages.hud,"HUD底纹与外框透明度",0,-1220,580,240)
     self.hudOpacityControls={}
     for i,spec in ipairs({{"background","底纹透明度（%）"},{"border","外框透明度（%）"}}) do
         local field=spec[1]
-        local slider,input=self:CreateSliderRow(self.pages.hud,spec[2],16,-1316-(i-1)*64,548,0,100,1,
+        local slider,input=self:CreateSliderRow(self.pages.hud,spec[2],16,-1268-(i-1)*64,548,0,100,1,
             function() return math.floor((1-e.db.hud.opacity[field])*100+.5) end,
             function(value) e.db.hud.opacity[field]=1-value/100; TEF.HUD:ApplyOpacity() end,true)
         self.hudOpacityControls[field]={slider=slider,input=input}
     end
-    self:CreateHintText(self.pages.hud,"0%不透明，100%完全透明；全部HUD模式共用。仅改变底纹和外框，技能图标与文字保持原样。",16,-1448,548)
-    self:Paint(self.pages.hud,"SetHeight",1532)
-    self:CreateSectionCard(self.pages.tek,"输入链许可",0,-138,580,144)
-    self.signalToggle=self:CreateToggleRow(self.pages.tek,"TEAP输出",12,-176,556,function() return e.db.dispatch.signal end,function(v) TEF.Runtime:SetSignal(v) end)
-    self.permissionToggle=self:CreateToggleRow(self.pages.tek,"TEK请求许可",12,-220,556,function() return e.db.dispatch.permission end,function(v) TEF.Runtime:SetPermission(v) end)
+    self:CreateHintText(self.pages.hud,"0%不透明，100%完全透明；全部HUD模式共用。仅改变底纹和外框，技能图标与文字保持原样。",16,-1400,548)
+    self:Paint(self.pages.hud,"SetHeight",1484)
+    self:CreateSectionCard(self.pages.tek,"输入链许可",0,-106,580,88)
+    self.signalToggle=self:CreateToggleRow(self.pages.tek,"TEAP 输出",16,-146,258,function() return e.db.dispatch.signal end,function(v) TEF.Runtime:SetSignal(v) end)
+    self.permissionToggle=self:CreateToggleRow(self.pages.tek,"TEK 请求许可",306,-146,258,function() return e.db.dispatch.permission end,function(v) TEF.Runtime:SetPermission(v) end)
     self.timingInputs={}; self.timingSliders={}
     local function timingToggle(label,y,key)
         return self:CreateToggleRow(self.pages.tek,label,16,y,548,
@@ -438,27 +443,27 @@ function UI:CreateSettings()
         self:CreateSelectRow(self.pages.tek,"提前量来源",{{"custom","自定义提前量"},{"client","跟随客户端窗口"}},16,y,548,
             function() return e.db.dispatch[key] end,function(v) TEF.Runtime:SetTimingOption(key,v) end)
     end
-    self:CreateSectionCard(self.pages.tek,"普通读条接续 · 固定列表／自定义APL",0,-306,580,408)
-    self.castQueueToggle=timingToggle("启用普通读条末尾排队",-350,"castQueue")
-    windowMode(-398,"queueWindowMode")
-    self.castQueueLeadSlider,self.castQueueLeadInput=milliseconds("自定义提前量（毫秒）",-462,"castQueueLead",500,"queueWindowMode")
-    timingToggle("普通读条网络补偿（仅自定义）",-534,"latencyCompensation")
-    milliseconds("额外补偿上限（毫秒）",-582,"latencyAllowanceMax",150,"queueWindowMode")
-    self:CreateHintText(self.pages.tek,"自定义模式：提前量＋有界世界延迟补偿；0等待结束。跟随模式直接使用客户端窗口，不再叠加补偿。两种模式均不超过客户端窗口及500毫秒。",16,-654,548)
-    self:CreateSectionCard(self.pages.tek,"技能组读条接续 · 组内换步／跨轮",0,-738,580,408)
-    self.groupQueueToggle=timingToggle("启用技能组读条末尾排队",-782,"groupQueue")
-    windowMode(-830,"groupQueueWindowMode")
-    milliseconds("自定义提前量（毫秒）",-894,"groupQueueLead",500,"groupQueueWindowMode")
-    timingToggle("技能组网络补偿（仅自定义）",-966,"groupLatencyCompensation")
-    milliseconds("额外补偿上限（毫秒）",-1014,"groupLatencyAllowanceMax",150,"groupQueueWindowMode")
-    self:CreateHintText(self.pages.tek,"技能组使用本组参数，独立于上方普通读条开关；不跨到父列表。补偿参考世界往返延迟的一半，且不超过所设上限。精确成功后才推进次数及轮数。",16,-1086,548)
-    self:CreateSectionCard(self.pages.tek,"引导末尾介入 · 可能截断最后一跳",0,-1170,580,252)
-    timingToggle("允许引导末尾提前介入",-1214,"channelTail")
-    milliseconds("引导提前量（毫秒）",-1262,"channelTailLead")
-    self:CreateHintText(self.pages.tek,"默认关闭，初测20～50毫秒；0等待自然结束。只在已确认精确成功且引导身份、时间公开时介入；不叠加网络补偿。组内还需开启技能组接续，其他来源需开启普通接续。",16,-1334,548)
-    self:CreateSectionCard(self.pages.tek,"失败重试与人工接管",0,-1446,580,332)
-    self.retryDelaySlider,self.retryDelayInput=milliseconds("失败重试间隔（毫秒）",-1490,"retryDelay")
-    self:CreateHintText(self.pages.tek,"仅用于已确认失败后的等待，不是正常技能之间的间隔。默认150毫秒；0表示下一次心跳重试。确认起手即撤掉旧请求，不随机增加等待。",16,-1562,548)
+    self:CreateSectionCard(self.pages.tek,"普通读条接续 · 固定列表／自定义APL",0,-210,580,408)
+    self.castQueueToggle=timingToggle("启用普通读条末尾排队",-254,"castQueue")
+    windowMode(-302,"queueWindowMode")
+    self.castQueueLeadSlider,self.castQueueLeadInput=milliseconds("自定义提前量（毫秒）",-366,"castQueueLead",500,"queueWindowMode")
+    timingToggle("普通读条网络补偿（仅自定义）",-438,"latencyCompensation")
+    milliseconds("额外补偿上限（毫秒）",-486,"latencyAllowanceMax",150,"queueWindowMode")
+    self:CreateHintText(self.pages.tek,"自定义模式：提前量＋有界世界延迟补偿；0等待结束。跟随模式直接使用客户端窗口，不再叠加补偿。两种模式均不超过客户端窗口及500毫秒。",16,-558,548)
+    self:CreateSectionCard(self.pages.tek,"技能组读条接续 · 组内换步／跨轮",0,-642,580,408)
+    self.groupQueueToggle=timingToggle("启用技能组读条末尾排队",-686,"groupQueue")
+    windowMode(-734,"groupQueueWindowMode")
+    milliseconds("自定义提前量（毫秒）",-798,"groupQueueLead",500,"groupQueueWindowMode")
+    timingToggle("技能组网络补偿（仅自定义）",-870,"groupLatencyCompensation")
+    milliseconds("额外补偿上限（毫秒）",-918,"groupLatencyAllowanceMax",150,"groupQueueWindowMode")
+    self:CreateHintText(self.pages.tek,"技能组使用本组参数，独立于上方普通读条开关；不跨到父列表。补偿参考世界往返延迟的一半，且不超过所设上限。精确成功后才推进次数及轮数。",16,-990,548)
+    self:CreateSectionCard(self.pages.tek,"引导末尾介入 · 可能截断最后一跳",0,-1074,580,252)
+    timingToggle("允许引导末尾提前介入",-1118,"channelTail")
+    milliseconds("引导提前量（毫秒）",-1166,"channelTailLead")
+    self:CreateHintText(self.pages.tek,"默认关闭，初测20～50毫秒；0等待自然结束。只在已确认精确成功且引导身份、时间公开时介入；不叠加网络补偿。组内还需开启技能组接续，其他来源需开启普通接续。",16,-1238,548)
+    self:CreateSectionCard(self.pages.tek,"失败重试与人工接管",0,-1350,580,332)
+    self.retryDelaySlider,self.retryDelayInput=milliseconds("失败重试间隔（毫秒）",-1394,"retryDelay")
+    self:CreateHintText(self.pages.tek,"仅用于已确认失败后的等待，不是正常技能之间的间隔。默认150毫秒；0表示下一次心跳重试。确认起手即撤掉旧请求，不随机增加等待。",16,-1466,548)
     self:Paint(self.readouts.diagnostics,"ClearAllPoints"); self:Paint(self.readouts.diagnostics,"SetPoint","TOPLEFT",self.pages.diagnostics,"TOPLEFT",4,-104)
     for i,option in ipairs({{"explain","策略解释"},{"audit","配置体检"},{"timeline","事件时间线"}}) do
         local mode=option[1]
@@ -466,12 +471,12 @@ function UI:CreateSettings()
     end
     self.testSingle=button("diagnostics","单步派发测试",4,-44,184,function() TEF_RequestCurrent() end)
     self:SetControlEnabled(self.testSingle,false,"设置期间禁止派发；关闭设置后使用 /tef dispatch。")
-    self:CreateSelectRow(self.pages.tek,"施放非当前步骤技能后",{{"continue","保留原进度"},{"pause","暂停等待手动继续"}},16,-1634,548,
+    self:CreateSelectRow(self.pages.tek,"施放非当前步骤技能后",{{"continue","保留原进度"},{"pause","暂停等待手动继续"}},16,-1538,548,
         function() return e.db.dispatch.takeover end,function(v) TEF.Runtime:Stop("TAKEOVER_SETTING_CHANGED"); e.db.dispatch.takeover=v end)
-    self:CreateToggleRow(self.pages.tek,"移动变化重新判断APL",16,-1706,548,
+    self:CreateToggleRow(self.pages.tek,"移动变化重新判断APL",16,-1610,548,
         function() return e.db.dispatch.movementReevaluate end,
         function(v) e.db.dispatch.movementReevaluate=v; TEF.Runtime.movementSample=nil; TEF.APL:Invalidate() end)
-    self:Paint(self.pages.tek,"SetHeight",1802)
+    self:Paint(self.pages.tek,"SetHeight",1706)
     for _,panel in pairs(self.pageFrames or self.pages) do self:Paint(panel,"Hide") end
     self:CreateStudio()
     self.settingsLayoutSignature=nil

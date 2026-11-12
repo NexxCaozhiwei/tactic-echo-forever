@@ -322,9 +322,9 @@ test("settings_fit_small_viewport_and_use_side_editor_when_room_exists",function
  local combat=InCombatLockdown; InCombatLockdown=function() return false end
  local parent=UIParent; UIParent={GetWidth=function() return 1000 end,GetHeight=function() return 600 end}
  T.UI.strategyPanel.IsShown=function() return true end; T.UI.groupPanel.IsShown=function() return false end
- T.UI:LayoutSettings(); eq(T.UI.settingsFitScale,1); eq(T.UI.settingsHeight,568); eq(T.UI.editorOverlay,true)
+ T.UI:LayoutSettings(); local smallScale=T.UI.settingsFitScale; assert(smallScale<1); eq(T.UI.settingsHeight,568); eq(T.UI.editorOverlay,false)
  UIParent.GetWidth=function() return 1920 end; UIParent.GetHeight=function() return 1080 end
- T.UI:LayoutSettings(); eq(T.UI.settingsFitScale,1); eq(T.UI.editorOverlay,false)
+ T.UI:LayoutSettings(); assert(T.UI.settingsFitScale>smallScale); eq(T.UI.editorOverlay,false)
  UIParent=parent; T.UI.strategyPanel.IsShown=nil; T.UI.groupPanel.IsShown=nil
  InCombatLockdown=combat
 end)
@@ -464,11 +464,22 @@ test("compact_list_controls_stay_inside_row_bounds",function()
    local x,y=point[4],-point[5]; assert(x>=0 and y>=0); assert(x+control.width<=frame.width); assert(y+control.height<=frame.height)
   end
  end
- for _,w in ipairs(T.UI.sequenceRows) do inside(w.frame,{w.count,w.groupEdit,w.policy,w.up,w.down,w.delete,w.skip,w.usage}); eq(w.frame.height,76) end
+ for _,w in ipairs(T.UI.sequenceRows) do inside(w.frame,{w.count,w.groupEdit,w.policy,w.up,w.down,w.delete,w.skip,w.usage}); eq(w.frame.height,T.UI.studioRowPitch-4) end
+ local w=T.UI.sequenceRows[1]
+ for _,width in ipairs({536,772}) do
+  T.UI:LayoutStudioRow(w,width)
+  local previous
+  for _,control in ipairs({w.count,w.skip,w.usage}) do
+   if previous then assert(previous.point[4]+previous.width<=control.point[4]) end
+   eq(control.point[5],width>=760 and -8 or -40)
+   previous=control
+  end
+  if width>=760 then assert(previous.point[4]+previous.width<=w.policy.point[4]) end
+ end
  T.UI:ShowPage("customapl"); T.UI:AddCustomSpell(143)
- for _,w in ipairs(T.UI.customWidgets) do if w.frame.shown then inside(w.frame,{w.policy,w.up,w.down,w.delete}); eq(w.frame.height,76) end end
+ for _,w in ipairs(T.UI.customWidgets) do if w.frame.shown then inside(w.frame,{w.policy,w.up,w.down,w.delete}); eq(w.frame.height,T.UI.studioRowPitch-4) end end
  T.UI:AddSkillGroup("apl"); T.UI:GroupAdd(143)
- for _,w in ipairs(T.UI.groupWidgets) do inside(w.frame,{w.count,w.policy,w.up,w.down,w.delete,w.skip}); eq(w.frame.height,76) end
+ for _,w in ipairs(T.UI.groupWidgets) do inside(w.frame,{w.count,w.policy,w.up,w.down,w.delete,w.skip}); eq(w.frame.height,T.UI.studioRowPitch-4) end
  T.UI:CloseSkillGroup(true)
 end)
 
@@ -483,9 +494,9 @@ test("strategy_viewport_preserves_border_and_scrollbar_gutter",function()
  local oldStrategyWidth,oldGroupWidth=panel.GetWidth,T.UI.groupPanel.GetWidth
  panel.GetWidth=function() return panel.width end; T.UI.groupPanel.GetWidth=function() return 432 end
  UIParent.GetHeight=function() return 1000 end
- for _,case in ipairs({{960,true},{1296,false},{1920,false}}) do
-  UIParent.GetWidth=function() return case[1] end
-  T.UI.settingsLayoutSignature=nil; T.UI:LayoutSettings(); eq(T.UI.editorOverlay,case[2])
+ for _,width in ipairs({960,1296,1920}) do
+  UIParent.GetWidth=function() return width end
+  T.UI.settingsLayoutSignature=nil; T.UI:LayoutSettings(); eq(T.UI.editorOverlay,false)
  end
  UIParent.GetWidth,UIParent.GetHeight=oldWidth,oldHeight
  panel.GetWidth,T.UI.groupPanel.GetWidth=oldStrategyWidth,oldGroupWidth
@@ -537,9 +548,11 @@ test("studio_layout_collapses_panels_without_mutating_draft_and_reuses_frames",f
  F.runtime(); InCombatLockdown=function() return false end
  T.UI:ShowPage("profiles"); T.UI:WriteDraft({spell(143,3,true)})
  local parent=UIParent; UIParent={GetWidth=function() return 1920 end,GetHeight=function() return 1080 end}
- T.UI:LayoutSettings(); eq(T.UI.studioInspector.shown,true); eq(T.UI.studioWorkspace.shown,true)
+ T.UI:LayoutSettings(); eq(T.UI.studioWidth,1120); eq(T.UI.studioInspector.shown,false); eq(T.UI.studioWorkspace.shown,true)
+ assert(T.UI:SelectStudioRule("manual",1)); eq(T.UI.studioInspector.shown,true)
  UIParent.GetWidth=function() return 1000 end; UIParent.GetHeight=function() return 720 end
- T.UI:LayoutSettings(); eq(T.UI.studioInspector.shown,false); eq(T.UI.studioWorkspace.shown,false)
+ T.UI:LayoutSettings(); eq(T.UI.studioInspector.shown,true); eq(T.UI.studioWorkspace.shown,false)
+ T.UI:StudioAction(T.UI.studioInspectorClose); eq(T.UI.studioInspector.shown,false)
  UIParent.GetWidth=function() return 900 end; T.UI:LayoutSettings(); eq(T.UI.studioWorkspace.shown,false)
  eq(T.UI:DraftRows()[1].repeatCount,3)
  local create=CreateFrame; local made=0; CreateFrame=function(...) made=made+1; return create(...) end
