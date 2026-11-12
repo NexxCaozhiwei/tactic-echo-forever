@@ -5,6 +5,7 @@
 *.py text eol=lf
 *.ps1 text eol=crlf
 *.cmd text eol=crlf
+*.bat text eol=crlf
 *.toc text eol=lf
 *.json text eol=lf
 *.txt text eol=lf
