@@ -117,13 +117,11 @@ function P:Initialize(e, old)
                 local key=S.Public(rawKey,"string")
                 if key and validKey(key) then
                     e.db.classProfiles[key]={}
-                    local savedSource=sources and S.Field(sources,key,"table")
                     e.db.sourceByProfile[key]={}
                     for _,sceneKey in ipairs({"single","multi","third"}) do
                         -- Preserve old 17..32-row configuration for explicit editing;
                         -- Engine.Validate refuses to run it until reduced to 16.
                         e.db.classProfiles[key][sceneKey]=self:Clean(S.Field(rawProfile,sceneKey,"table"),32) or {}
-                        local source=savedSource and S.Field(savedSource,sceneKey,"string")
                         e.db.sourceByProfile[key][sceneKey]="manual"
                     end
                 end

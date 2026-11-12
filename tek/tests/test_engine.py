@@ -42,6 +42,30 @@ def frame_fields(state=1, action_code=1, sequence=1, frame_freshness_counter=Non
 
 
 class TEKEngineTests(unittest.TestCase):
+    def test_paused_frames_retry_cleanup_without_dispatching_skill(self):
+        class Recovery(FakeInputDispatcher):
+            held = True
+            pending = True
+            calls = 0
+            def recovery_pending(self): return self.pending
+            def release_modifiers(self):
+                self.calls += 1
+                if not self.held: self.pending = False
+                return DispatchResult(not self.held, "fake", "input_recovery_wait_physical_release", 0)
+            def dispatch(self, plan): raise AssertionError("不应派发技能")
+        dispatcher = Recovery()
+        engine = TEKEngine(RETRIBUTION_V2, ProfileResolver.from_file(LAPTOP), input_dispatcher=dispatcher)
+        context = SafetyContext(bootstrapped=True, wow_foreground=True)
+        frame = decode_fields(frame_fields(state=2))
+        self.assertEqual(engine.process_frame(frame, context).reason, "input_recovery_wait_physical_release")
+        dispatcher.held = False
+        context.wow_foreground = False
+        engine.process_frame(frame, context)
+        self.assertEqual(dispatcher.calls, 1)
+        context.wow_foreground = True
+        self.assertEqual(engine.process_frame(frame, context).reason, "input_recovery_completed_wait_fresh_frame")
+        self.assertFalse(dispatcher.pending)
+
     def setUp(self):
         self.engine = TEKEngine(
             catalog=RETRIBUTION_V2,

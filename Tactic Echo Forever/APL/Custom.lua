@@ -694,8 +694,25 @@ end
 -- 体检只检查可证明的配置问题，不用瞬时资源或未知API拒绝保存。
 function C:Audit(rows,e)
  local errors,warnings={},{}
+ local sharedRadii={}
+ local function radii(row)
+  local found,count={},0
+  if row.enabled~=false and not row.invalid then
+   for _,strategy in ipairs(row.strategies or {}) do
+    for _,condition in ipairs(strategy.conditions or {}) do
+     if condition.kind=="nearbyEnemies" or condition.kind=="rangedEnemies" then
+      local radius=condition.radius or 10
+      if not found[radius] then found[radius]=true; count=count+1 end
+     end
+    end
+   end
+  end
+  return found,count
+ end
  local checked,budget={},0
  local function inspect(row,path)
+  local _,radiusCount=radii(row)
+  if radiusCount>4 then errors[#errors+1]=path .. "：人数条件超过4种半径，超出部分无法采样；请减少不同半径。" end
   local combined={}
   if e and row.spellID and not row.group and not checked[row.spellID] and budget<64 then
    checked[row.spellID]=true; budget=budget+1
@@ -733,9 +750,13 @@ function C:Audit(rows,e)
   if row.group then for i,step in ipairs(row.group.steps) do inspect(step,path .. "/组内" .. i) end end
  end
  for i,row in ipairs(rows or {}) do
+  local found=radii(row)
+  for radius in pairs(found) do sharedRadii[radius]=true end
   inspect(row,"第" .. i .. "项")
   if row.enabled~=false and not row.group and #(row.strategies or {})==0 then warnings[#warnings+1]="第" .. i .. "项无策略条件，可能优先遮蔽后续条目；仍受技能资格限制。" end
  end
+ local radiusCount=0; for _ in pairs(sharedRadii) do radiusCount=radiusCount+1 end
+ if radiusCount>4 then warnings[#warnings+1]="这些条目合计使用超过4种人数半径：若在优先级推荐中同次采样，后续半径会未知；列表逐步执行不共享此预算。" end
  return #errors==0,table.concat(errors,"\n"),table.concat(warnings,"\n")
 end
 function C:Explain(e)

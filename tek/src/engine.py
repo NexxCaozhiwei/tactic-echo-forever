@@ -216,6 +216,17 @@ class TEKEngine:
                 diagnostics=self._runtime_diagnostics(),
             )
 
+        # 清理既有输入不依赖插件继续武装；仍要求前台与物理监听有效。
+        pending_recovery = getattr(self.input_dispatcher, "recovery_pending", None)
+        if callable(pending_recovery) and pending_recovery():
+            foreground_ok, foreground_reason = self.safety_gate._evaluate_foreground(context)
+            if foreground_ok:
+                recovery = self.input_dispatcher.release_modifiers()
+                reason = "input_recovery_completed_wait_fresh_frame" if recovery.sent else recovery.reason
+            else:
+                reason = foreground_reason
+            return self._consume_manual_frame(frame, context, reason)
+
         manual_reason = self._manual_gate_reason(frame)
         if manual_reason:
             return self._consume_manual_frame(frame, context, manual_reason)

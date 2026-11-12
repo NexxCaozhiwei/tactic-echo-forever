@@ -1,0 +1,11 @@
+Lua 5.1语法：66个受版本控制Lua文件通过。
+Markdown扫描：189份受控及本轮新增文档，发现5行英文长文本候选。
+扫描规则：排除代码围栏、内联代码、中文行及网址后，保留至少10个英文词的行；仅作候选筛选。
+差异格式检查：通过。
+Tactic Echo Forever\docs\WOTLK_MIGRATION_0.12.0.md:44: |fire:2T10:1|fireball|BLOCKED|SOURCE_CONDITION_UNSUPPORTED|(debuff.living_bomb.remains > 6 or debuff.living_bomb.down) & (buff.pushing_the_limit.remains > (cast_time +latency) ) & (buff.heating_up.down or (buff.heating_up.up & buff.hot_streak.down ) )|
+Tactic Echo Forever\docs\WOTLK_MIGRATION_0.12.0.md:50: |fire:default:5|combustion|BLOCKED|ABILITY_SEMANTICS_UNVERIFIED|down & (debuff.living_bomb.remains > 6  or debuff.living_bomb.down) & ((buff.quad_core.up & buff.magic_damage_increase.up) or (buff.quad_core.remains < 7 & buff.magic_damage_increase.down) or buff.magic_damage_increase.remains > 5 or target.health.pct < 36)|
+Tactic Echo Forever\docs\WOTLK_MIGRATION_0.12.0.md:58: |fire:default:13|pyroblast|BLOCKED|ABILITY_SEMANTICS_UNVERIFIED|buff.hot_streak.up & buff.magic_damage_increase.remains <( action.fireball.cast_time +latency )|
+Tactic Echo Forever\docs\WOTLK_MIGRATION_0.12.0.md:87: |frost:default:11|deep_freeze|BLOCKED|ABILITY_SEMANTICS_UNVERIFIED|( debuff.frozen.up &#124;&#124; buff.fingers_of_frost.stack = 1 ) & ( action.frostfire_bolt.in_flight &#124;&#124; action.frostbolt.in_flight )|
+Tactic Echo Forever\docs\WOTLK_MIGRATION_0.12.0.md:88: |frost:default:12|frostbolt|BLOCKED|SOURCE_CONDITION_UNSUPPORTED|buff.fingers_of_frost.up & talent.deep_freeze.enabled & cooldown.deep_freeze.remains < cast_time * buff.fingers_of_frost.stack|
+候选人工复核：上述5行均为历史规则表达式与协议状态表格，不是英文自然语言段落，保留原语义。
+本轮新增Markdown及Python附件：未发现行尾空白。

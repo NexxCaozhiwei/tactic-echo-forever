@@ -20,6 +20,18 @@ local function setup()
  return e
 end
 local function tick() T.Runtime:Reconcile(); T.Dispatch:TickContinuous() end
+test("manual_receipt_recovery_retires_identity_without_success",function()
+ local e=setup()
+ receipt("UNIT_SPELLCAST_SENT",116,"lost-terminal")
+ UnitCastingInfo=function() return "读条" end
+ eq(T.Runtime:Intervene("recover"),false)
+ UnitCastingInfo=function() return nil end
+ assert(T.Runtime:Intervene("recover"))
+ eq(T.Runtime.intent,false); eq(e.index,1); eq(e.receiptSerial or 0,0)
+ eq(e.seen["lost-terminal"],"retired")
+ receipt("UNIT_SPELLCAST_SUCCEEDED",116,"lost-terminal")
+ eq(e.receiptSerial or 0,0); eq(e.index,1)
+end)
 
 test("paced_sent_before_cast_query_revokes_token_without_replacing_receipt",function()
  local e=setup(); local serial=e.receiptSerial or 0

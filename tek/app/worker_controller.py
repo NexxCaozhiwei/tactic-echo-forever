@@ -159,6 +159,8 @@ class WorkerController:
 
     def start(self, options: WorkerOptions) -> bool:
         with self._lock:
+            if self._input_cleanup_pending():
+                return False
             if self._hook_shutdown_pending_locked():
                 self._publish_hook_stopping_snapshot_locked()
                 return False
@@ -338,11 +340,23 @@ class WorkerController:
                 closer()
             except Exception:
                 LOGGER.debug("signal source close deferred", exc_info=True)
-        self._release_modifiers()
-        hook_stopped = self._stop_physical_input_monitor()
         if thread and thread.is_alive() and thread is not threading.current_thread():
             thread.join(timeout_seconds)
         worker_stopped = not thread or not thread.is_alive()
+        # 先结束派发，避免清理与仍在执行的输入计划竞争。
+        if not worker_stopped:
+            return False
+        self._release_modifiers()
+        if self._input_cleanup_pending():
+            # 保留dispatcher和监听，下一次停止操作继续清理，禁止新实例覆盖状态。
+            with self._lock:
+                snapshot = self._snapshot
+                self._set_snapshot(TEKStatusSnapshot(**{
+                    **snapshot.to_dict(), "process_state": "Stopping", "worker_alive": False,
+                    "last_reason": "input_recovery_wait_physical_release", "updated_at": utc_now_iso(),
+                }), urgent=True)
+            return False
+        hook_stopped = self._stop_physical_input_monitor()
 
         with self._lock:
             if worker_stopped:
@@ -547,6 +561,15 @@ class WorkerController:
 
     def _interval_seconds(self) -> float:
         return self.settings_store.load().sampling_interval_ms / 1000.0
+
+    def _input_cleanup_pending(self) -> bool:
+        checker = getattr(self._active_dispatcher, "recovery_pending", None)
+        if not callable(checker):
+            return False
+        try:
+            return bool(checker())
+        except Exception:
+            return True
 
     def _release_modifiers(self) -> None:
         try:

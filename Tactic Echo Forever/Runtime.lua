@@ -196,6 +196,16 @@ function C:ToggleIntent(reason) return self:SetIntent(not self.intent,reason) en
 -- 人工操作通过Runtime撤销旧身份；跳过不等于成功，不写成功额度。
 function C:Intervene(action)
  local e=self.e
+ if action=="recover" then
+  if not e or TEF.UI.settingsOpen or e.maintenanceActive or not TEF.Dispatch:CastIdle() or TEF.Dispatch.channelInputLock then
+   return false,"请关闭设置，并等待施法公开结束；未知状态不能恢复。"
+  end
+  if not e:RecommendationLocked() then return false,"当前没有等待终态的施法身份。" end
+  -- 人工放弃未知结果，不增加计数；暂停后由玩家决定是否重新尝试。
+  self:Stop("RUNTIME_MANUAL_PAUSE")
+  e:Log("observed","USER_RECEIPT_RECOVERY_PAUSED")
+  return true,"已退休未完成回执并暂停，未增加次数；请确认实际施法结果后手动继续。"
+ end
  if not e or TEF.UI.settingsOpen or e:RecommendationLocked() or e.maintenanceActive then return false,"请关闭设置，并等待当前施法及回执结束。" end
  if action=="endgroup" then
   if not e.groupRun then return false,"当前没有活动技能组。" end
@@ -574,8 +584,6 @@ function Timing:Phase()
  if d.pending then return "REQUESTED" end
  return r.state=="running" and "READY" or "BLOCKED"
 end
-function Timing:CanRequest() return self:Phase()=="READY" end
-function Timing:CanQueue() return TEF.Dispatch:CastQueueWindow()~=nil end
 function C:UpdateTiming()
  local e=self.e; if not e then return end
  local phase=Timing:Phase(); local decision=Timing:RetryDecision()

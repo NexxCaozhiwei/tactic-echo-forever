@@ -15,6 +15,7 @@ release/
 *.zip
 
 # Local runtime data
+work/
 logs/
 *.log
 *.tmp

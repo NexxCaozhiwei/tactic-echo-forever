@@ -178,6 +178,30 @@ test("group_queue_cross_round_promotes_only_on_exact_success",function()
  receipt("UNIT_SPELLCAST_SUCCEEDED",116,"group-round-next"); eq(e.receiptSerial,3)
 end)
 
+test("group_queue_cross_round_uses_current_repeat_count",function()
+ fixture(3); local e=T.engine
+ e.groupRun={targetSerial=e.usageTargetSerial or 0,round=1,group={maintain=false,rounds=2}}
+ e.db.dispatch.groupQueue=true
+ UnitCastingInfo=function() return nil end
+ receipt("UNIT_SPELLCAST_SUCCEEDED",116,"queue-A")
+ for n=2,3 do
+  T.Runtime:Reconcile(); T.Dispatch:TickContinuous()
+  receipt("UNIT_SPELLCAST_SENT",116,"repeat-A-"..n)
+  receipt("UNIT_SPELLCAST_SUCCEEDED",116,"repeat-A-"..n)
+ end
+ T.Runtime:Reconcile(); T.Dispatch:TickContinuous()
+ receipt("UNIT_SPELLCAST_SENT",205,"unequal-round-end")
+ UnitCastingInfo=function() return "寒冰箭",nil,nil,10000,12500,nil,nil,false,205 end
+ now=12.31
+ assert(T.Dispatch:TryCastQueue()); eq(T.Dispatch.castQueue.nextRound,2)
+ receipt("UNIT_SPELLCAST_SENT",116,"unequal-round-next")
+ receipt("UNIT_SPELLCAST_SUCCEEDED",205,"unequal-round-end")
+ eq(e.groupRun.round,2); eq(e.index,1); eq(e.completed,false)
+ assert(T.Dispatch:HasCurrentInitiation()); eq(e.seen["unequal-round-next"],nil)
+ receipt("UNIT_SPELLCAST_SUCCEEDED",116,"unequal-round-next")
+ eq(e.stepCasts,1); eq(e.receiptSerial,5)
+end)
+
 test("client_window_caps_network_allowance_and_channel_budget",function()
  fixture(); local previous=GetNetStats
  GetNetStats=function() return 0,0,50,200 end

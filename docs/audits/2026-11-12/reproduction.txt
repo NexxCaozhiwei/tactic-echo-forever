@@ -1,0 +1,6 @@
+AUDIT | R01 | firstRepeats | 1 | reservedRound | 2 | actualRound | 2 | completed | False | nextReceiptRetired | None | nextInitiation | True
+AUDIT | R01 | firstRepeats | 3 | reservedRound | None | actualRound | 1 | completed | True | nextReceiptRetired | retired | nextInitiation | False
+AUDIT | R02 | idle | True | initiation | True | state | blocked | reason | CONTINUOUS_WAIT_CURRENT_RECEIPT | token | None | index | 1
+AUDIT | R03 | policySamplesInOnePulse | 3 | token | 5 | reason | RUNTIME_RUNNING | policy | CUSTOM_CONDITIONS_TRUE
+AUDIT | R05 | fifthRadius | PROBE_CAPACITY | auditValid | True | errors |  | warnings | 
+AUDIT | R04 | pausedAfterPhysicalRelease | nativeCalls 1 | pendingKeys ['2']

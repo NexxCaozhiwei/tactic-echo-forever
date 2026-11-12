@@ -197,7 +197,7 @@ SlashCmdList.TEF=function(raw)
         local valid,errors,warnings=TEF.APL.Custom:Audit(rows,engine)
         printSafe((valid and "配置体检未发现可证明的矛盾。" or errors) .. "\n" .. warnings)
     elseif command=="timeline" then printSafe(TEF.APL.Custom:Timeline(engine))
-    elseif command=="skip" or command=="endgroup" or command=="restartgroup" or command=="recheck" then
+    elseif command=="skip" or command=="endgroup" or command=="restartgroup" or command=="recheck" or command=="recover" then
         local _,message=TEF.Runtime:Intervene(command); printSafe(message)
     elseif command=="diag" then
         printSafe("session=" .. engine.session .. " generation=" .. engine.generation

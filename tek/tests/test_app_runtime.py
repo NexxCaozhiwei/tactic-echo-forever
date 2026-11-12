@@ -210,6 +210,24 @@ class AppRuntimeTests(unittest.TestCase):
             self.assertEqual(worker.snapshot.process_state, "Stopped")
             self.assertTrue(paths.trace_path_for_today().exists())
 
+    def test_stop_preserves_pending_cleanup_and_blocks_restart(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = AppPaths.from_root(directory)
+            paths.ensure()
+            worker = WorkerController(paths=paths, status_store=StatusStore(paths.status_json))
+            class Recovery:
+                pending = True
+                def recovery_pending(self): return self.pending
+                def release_modifiers(self): return None
+            dispatcher = Recovery()
+            worker._active_dispatcher = dispatcher
+            self.assertFalse(worker.stop())
+            self.assertIs(worker._active_dispatcher, dispatcher)
+            self.assertFalse(worker.start_dry_run())
+            dispatcher.pending = False
+            self.assertTrue(worker.stop())
+            self.assertIsNone(worker._active_dispatcher)
+
     def test_error_locked_recovery_resets_failure_limiter_and_recovery_gate(self):
         with tempfile.TemporaryDirectory() as directory:
             paths = AppPaths.from_root(directory)

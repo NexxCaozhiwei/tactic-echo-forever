@@ -139,6 +139,9 @@ class WindowsSendInputDispatcher:
             except AttributeError:
                 pass
 
+    def recovery_pending(self) -> bool:
+        return bool(self._unreleased_keys)
+
     def dispatch(self, plan: InputPlan) -> DispatchResult:
         if self._unreleased_keys and plan.binding != "release_modifiers":
             recovery = self.release_modifiers()

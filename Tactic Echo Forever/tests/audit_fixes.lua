@@ -1,6 +1,20 @@
 local T,F=...
 local U,H,C=T.UI,T.HUD,T.APL.Custom
 local eq,test=F.eq,F.test
+test("audit_reports_radius_capacity_without_combining_group_steps",function()
+ local rows={}
+ for i,radius in ipairs({5,10,20,25,30}) do
+  rows[i]={spellID=116,enabled=true,strategies={{mode="use",conditions={{kind="nearbyEnemies",radius=radius,min=1}}}}}
+ end
+ local valid,errors,warnings=C:Audit(rows)
+ eq(valid,true); eq(errors,""); assert(warnings:find("4",1,true))
+ local conditions={}
+ for _,row in ipairs(rows) do conditions[#conditions+1]=row.strategies[1].conditions[1] end
+ valid=C:Audit({{enabled=true,strategies={{mode="use",conditions=conditions}}}})
+ eq(valid,false)
+ valid,errors,warnings=C:Audit({{group={steps=rows}}})
+ eq(valid,true); eq(errors,""); eq(warnings,"")
+end)
 local function setup(page)
  F.deliveryFixture("manual"); InCombatLockdown=function() return false end
  UIParent.GetWidth=function() return 1920 end; UIParent.GetHeight=function() return 1080 end

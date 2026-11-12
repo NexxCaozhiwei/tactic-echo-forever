@@ -611,7 +611,7 @@ function D:TryCastQueue()
         or self.initiation~=initiation or not self.continuous then return false end
     local q={generation=generation,index=index,receiptSerial=serial,
         nextIndex=nextIndex,spellID=step.spellID,originGUID=initiation.guid}
-    if e.groupRun and nextIndex==1 and index==#e.steps and (e.stepCasts or 0)+1>=step.repeatCount then
+    if e.groupRun and nextIndex==1 and index==#e.steps and (e.stepCasts or 0)+1>=e.steps[index].repeatCount then
         q.groupRun=e.groupRun; q.nextRound=e.groupRun.round+1
     end
     local prepared=self.queueAPLPreparation
@@ -860,7 +860,9 @@ function D:Request(fromContinuous,queue)
     elseif not queue and not self:TransportCastAllowed(fromContinuous==true) then blocked="TEK_CAST_PRESENT_OR_UNKNOWN"
     elseif not queue and self:HasCurrentInitiation() then blocked="CONTINUOUS_WAIT_CURRENT_RECEIPT" end
     if blocked then e:Log("transport",blocked); return false,blocked end
-    local policyAllowed,policyReason=self:ManualPolicy(e,step,true)
+    -- 普通连续请求复用本轮决策；最终Packet仍强制实时复核。
+    -- 手工请求与预载保留独立实时检查。
+    local policyAllowed,policyReason=self:ManualPolicy(e,step,fromContinuous~=true or queue~=nil)
     if policyAllowed~=true then return false,policyReason end
     local eligible,usageReason,usageContext=e:UsageEligibility(queue and queue.nextIndex or e.index)
     if eligible~=true then return false,usageReason end
