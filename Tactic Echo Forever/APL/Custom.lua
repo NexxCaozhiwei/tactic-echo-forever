@@ -506,6 +506,12 @@ function C:Check(state,row,index)
  end
  -- Preview eligibility is independent of the transport combat gate.
  local terms=A.Conditions:ActionTerms("custom_" .. index,false)
+ -- 自动攻击是开启动作，近战命中范围由游戏判断。显式距离策略仍按原值求值。
+ if row.spellID==6603 then
+  for i,term in ipairs(terms) do
+   if term.field=="in_range" then table.remove(terms,i); break end
+  end
+ end
  if row.moving~="any" then terms[#terms+1]={op="moving",equals=row.moving=="yes"} end
  local basic,why=A.Conditions:All(state,terms,{})
  if basic==false then return false,"custom:" .. (why:match("([^:]+)$") or why) end

@@ -7,6 +7,16 @@ local function test(name,fn) fn(); n=n+1 end
 local function row(id,conditions) return C.CleanRows({{spellID=id,strategies={{mode="use",conditions=conditions}}}})[1] end
 local function snapshot() return {actions={custom_1={}},combat={in_combat=true},moving=false} end
 
+test("auto_attack_can_be_selected_with_unknown_melee_range",function()
+ local r=row(6603,{{kind="usable",value=true}})
+ local s=snapshot()
+ s.actions.custom_1={spellID=6603,known=true,usable=true,power_ok=true,loss_control_clear=true}
+ eq(C:Check(s,r,1),true)
+ eq(C:Check(s,row(6603,{{kind="range",value=true}}),1),nil)
+ s.actions.custom_1.spellID=143
+ eq(C:Check(s,row(143,{{kind="usable",value=true}}),1),nil)
+end)
+
 test("arcane_blast_estimate_counts_unique_successes_in_first_cast_window",function()
  local e=F.runtime(); local oldTime=GetTime; local clock=100
  GetTime=function() return clock end
