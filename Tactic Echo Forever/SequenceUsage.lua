@@ -134,10 +134,22 @@ end
 
 -- 仅由现有精确成功回执路径写入；暂停及候选替换不清除。
 function E:MarkStrategySuccess(id)
+ self.strategySuccessTimes=self.strategySuccessTimes or {}
+ if self.strategySuccessTimes[id]~=nil or (self.strategySuccessTimeCount or 0)<128 then
+  if self.strategySuccessTimes[id]==nil then self.strategySuccessTimeCount=(self.strategySuccessTimeCount or 0)+1 end
+  self.strategySuccessTimes[id]=TEF.APL.State.Time() or false
+ else self.strategySuccessTimeSaturated=true end
  self.strategySuccess=self.strategySuccess or {}
  if self.strategySuccess[id] then return end
  if (self.strategySuccessCount or 0)>=128 then self.strategySuccessSaturated=true; return end
  self.strategySuccess[id]=true; self.strategySuccessCount=(self.strategySuccessCount or 0)+1
+end
+function E:InternalCooldownReady(id,seconds)
+ local last=self.strategySuccessTimes and self.strategySuccessTimes[id]
+ if last==nil then if not self.strategySuccessTimeSaturated then return true end; return nil end
+ local now=TEF.APL.State.Time()
+ if last==false or not now or now<last then return nil end
+ return now-last>=seconds
 end
 function E:StrategySucceeded(id)
  if self.strategySuccess and self.strategySuccess[id] then return true end

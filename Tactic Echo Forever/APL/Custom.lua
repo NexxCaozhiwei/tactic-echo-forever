@@ -1,6 +1,7 @@
 local _,T=...
 local A,S=T.APL,T.Safety
 local C={PolicyIdentities=setmetatable({}, {__mode="k"})}; A.Custom=C
+C.InternalCooldownMax=86400
 -- 自定义增益技能独立授权，不改变内置伤害规则或技能等级选择。
 C.AdditionalActions={arcane_intellect=true}
 function C:SupportsName(name,id)
@@ -44,8 +45,12 @@ function C.CleanStrategies(raw)
    if not v or not onlyFields(v,{kind=true,value=true,min=true,max=true,spellID=true,op=true,threshold=true,target=true,radius=true,control=true},10) then return nil,"CUSTOM_STRATEGY_INVALID" end
    local value,classification=S.Field(v,"value","boolean")
    local c={kind=kind,value=value}
-   if not conditionKinds[kind] then return nil,"CUSTOM_STRATEGY_INVALID" end
-   if kind=="comboPoints" or kind=="distance" or kind=="enemies" or kind=="rangedEnemies" or kind=="cdmStacks" or kind=="nearbyEnemies" then
+   if kind=="internalCooldown" then
+    local seconds=S.Field(v,"threshold","number")
+    if not seconds or seconds<1 or seconds>C.InternalCooldownMax or seconds%1~=0 then return nil,"CUSTOM_STRATEGY_INVALID" end
+    c.threshold=seconds; c.value=nil
+   elseif not conditionKinds[kind] then return nil,"CUSTOM_STRATEGY_INVALID"
+   elseif kind=="comboPoints" or kind=="distance" or kind=="enemies" or kind=="rangedEnemies" or kind=="cdmStacks" or kind=="nearbyEnemies" then
     local op,status=S.Field(v,"op","string")
     if status~="NO_DATA" then
      local threshold=S.Field(v,"threshold","number")
@@ -308,6 +313,10 @@ function C:SampleStrategies(state,rows,e)
  end
 end
 function C:StrategyCondition(state,row,index,c)
+ if c.kind=="internalCooldown" then
+  if state.engine then return state.engine:InternalCooldownReady(row.spellID,c.threshold) end
+  return nil
+ end
  local a=state.actions["custom_" .. index] or {}; local value
  if c.kind=="usable" then
   if a.usable==false or a.power_ok==false then value=false
@@ -350,14 +359,39 @@ function C:StrategyCondition(state,row,index,c)
  if value==nil then return nil end
  return value==c.value
 end
+function C:HasInternalCooldown(row)
+ return self:InternalCooldownSeconds(row)~=nil
+end
+function C:InternalCooldownSeconds(row)
+ local seconds
+ for _,strategy in ipairs(row and row.strategies or {}) do
+  for _,condition in ipairs(strategy.conditions) do
+   if condition.kind=="internalCooldown" then seconds=math.max(seconds or 0,condition.threshold) end
+  end
+ end
+ return seconds
+end
 function C:CheckStrategies(state,row,index)
  local useFalse,useUnknown,skipUnknown
  local firstFalse,firstUnknown
  state.strategyBlockDetails=state.strategyBlockDetails or {}; state.strategyBlockDetails[index]=nil
+ local seconds=self:InternalCooldownSeconds(row)
+ if seconds then
+  local ready
+  if state.engine then ready=state.engine:InternalCooldownReady(row.spellID,seconds) end
+  if ready~=true then
+   state.strategyBlockDetails[index]={kind="internalCooldown",spellID=row.spellID,unknown=ready==nil,
+    description=ready==false and "人工内置 CD 计时中" or "人工内置 CD 时间未知"}
+   return ready,ready==false and "CUSTOM_USE_STRATEGY_UNMATCHED" or "UNKNOWN:custom:strategy"
+  end
+ end
  for si,strategy in ipairs(row.strategies or {}) do
   local failed,unknown=false,false
   local falseDetail,unknownDetail
+  local hasCondition=false
   for ci,condition in ipairs(strategy.conditions) do
+   if condition.kind~="internalCooldown" then
+   hasCondition=true
    local v=self:StrategyCondition(state,row,index,condition)
    if v==false then failed=true elseif v==nil then unknown=true end
    if (v==false and not falseDetail) or (v==nil and not unknownDetail) then
@@ -365,8 +399,9 @@ function C:CheckStrategies(state,row,index)
      unknown=v==nil,description="策略" .. si .. "／条件" .. ci .. " · ID " .. (condition.spellID or row.spellID or 0) .. " · " .. self:ConditionView(state,row,index,condition)}
     if v==false then falseDetail=falseDetail or detail else unknownDetail=unknownDetail or detail end
    end
+   end
   end
-  if strategy.mode=="skip" then
+  if hasCondition and strategy.mode=="skip" then
    if not failed and not unknown then return false,"CUSTOM_SKIP_STRATEGY_MATCHED" end
    if not failed and unknown then skipUnknown=true; firstUnknown=firstUnknown or unknownDetail end
   else
@@ -654,6 +689,9 @@ local function publicText(v)
  return "未知"
 end
 function C:ConditionView(state,row,index,c)
+ if c.kind=="internalCooldown" then
+  return "人工内置CD " .. tostring(c.threshold) .. "秒 · " .. publicText(state and self:StrategyCondition(state,row,index,c))
+ end
  if c.kind=="cdmStacks" then return "CDM层数条件已移除：请删除或更换类型后保存；旧条件保持未知阻断。" end
  local a=state and state.actions and state.actions["custom_" .. index] or {}
  local expected=c.value==nil and "" or (c.value and "是" or "否")

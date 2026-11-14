@@ -4,17 +4,24 @@ function U:CustomMessage(text) self:Paint(self.strategyMessage,"SetText",text); 
 function U:CustomRow() if self.strategySource=="groupStep" then return self.groupDraft and self.groupDraft.steps[self.groupSelected or 1] end; if self.strategySource=="manual" then return self.sequencePolicyRow end; return self.customDraft and self.customDraft[self.customSelected or 1] end
 function U:CommitCustomNumbers()
  local pending={}
- for _,entry in ipairs(self.strategyInputs or {}) do
+ local inputs={}
+ for _,entry in ipairs(self.strategyInputs or {}) do inputs[#inputs+1]=entry end
+ if self.strategyInternalInput and self.strategyInternalInput.internalRow==self:CustomRow() then inputs[#inputs+1]=self.strategyInternalInput end
+ for _,entry in ipairs(inputs) do
   local ok,raw=self:Invoke(entry.box,"GetText"); local text=ok and S.Public(raw,"string")
   if not text then self:CustomMessage("无法公开读取输入，请取消编辑或重新输入。"); return false end
   text=text:match("^%s*(.-)%s*$")
   local n=text~="" and text:match("^%d+%.?%d*$") and tonumber(text) or nil
   local limit=entry.field=="spellID" and 2147483647 or entry.field=="radius" and 40 or entry.condition.kind=="distance" and 2000 or entry.condition.kind=="comboPoints" and 10 or 40
+  if entry.condition.kind=="internalCooldown" then
+   limit=C.InternalCooldownMax
+   if not n or n>limit or n%1~=0 then self:CustomMessage("人工内置CD请输入0～86400的整数秒。"); return false end
+  end
   if text~="" and (not n or n>limit or (entry.condition.kind~="distance" and entry.field~="radius" and n%1~=0) or ((entry.field=="spellID" or entry.field=="radius") and n<=0)) then
    if entry.label then self:Paint(entry.label,"SetText",(entry.labelText or "数值") .. "：格式或范围无效") end
    self:CustomMessage("数值无效：距离0～2000码、敌人数0～40整数、连击点0～10整数，观察技能填写精确ID。"); return false
   end
-  pending[#pending+1]={condition=entry.condition,field=entry.field,value=n}
+  pending[#pending+1]={condition=entry.condition,field=entry.field,value=n,internalRow=entry.internalRow}
  end
  for _,entry in ipairs(pending) do
   local function effective(field)
@@ -30,6 +37,29 @@ function U:CommitCustomNumbers()
  end
  for _,input in ipairs(self.strategyInputs or {}) do if input.label then self:Paint(input.label,"SetText",input.labelText) end end
  for _,entry in ipairs(pending) do if self.strategySource=="groupStep" and entry.condition[entry.field]~=entry.value then self.groupDirty=true end; entry.condition[entry.field]=entry.value end
+ for _,entry in ipairs(pending) do
+  local row=entry.internalRow
+  if row and (C:InternalCooldownSeconds(row) or 0)~=entry.value then
+   local strategies=row.strategies or {}
+   if entry.value>0 and not C:HasInternalCooldown(row) and #strategies>=8 then
+    local room=false
+    for _,strategy in ipairs(strategies) do if #strategy.conditions<8 then room=true; break end end
+    if not room then self:CustomMessage("策略容量已满，请先删除一个条件。"); return false end
+   end
+   for i=#strategies,1,-1 do
+    local conditions=strategies[i].conditions
+    for j=#conditions,1,-1 do if conditions[j].kind=="internalCooldown" then table.remove(conditions,j) end end
+    if #conditions==0 then table.remove(strategies,i) end
+   end
+   if entry.value>0 then
+    local carrier
+    for _,strategy in ipairs(strategies) do if #strategy.conditions<8 then carrier=strategy; break end end
+    if not carrier then carrier={mode="use",conditions={}}; strategies[#strategies+1]=carrier end
+    carrier.conditions[#carrier.conditions+1]={kind="internalCooldown",threshold=entry.value}
+   end
+   row.strategies=strategies
+  end
+ end
  if self:StoreSequencePolicy()==false then self:CustomMessage("策略条件无效：请检查范围上下限或清空条件后重建。"); return false end
  return true
 end
@@ -197,6 +227,7 @@ function U:ReorderCustomRule(index,other)
 end
 local strategyKinds={"comboPoints","lossOfControl","usable","range","distance","moving","enemies","cdmCooldown","cdmBuff","cooldown","combat","targetType","learned","succeeded","nearbyEnemies"}
 local strategyNames={comboPoints="连击点数",lossOfControl="自身失控类型",usable="技能可用性",range="技能范围",distance="目标距离",moving="移动状态",enemies="可见敌人数",cdmCooldown="CDM冷却状态",cdmBuff="CDM增益状态",cooldown="技能是否CD",combat="战斗状态",targetType="当前目标类型",learned="指定技能已学",succeeded="精确成功使用记录",cdmStacks="已移除：CDM增益层数",rangedEnemies="自身范围内可见敌人数",nearbyEnemies="自身范围内可见敌人数"}
+strategyNames.internalCooldown="人工内置CD"
 U.conditionNames=strategyNames; U.conditionKinds=strategyKinds
 function U:RefreshStrategyKinds()
  local count=0
@@ -287,7 +318,7 @@ function U:RefreshStrategyForm()
  self:Paint(form,"SetSize",390,100); self:Paint(self.strategyScroll,"SetScrollChild",form)
  -- SetScrollChild复用同一对象时不能代替重新锚定。
  self:Paint(form,"SetPoint","TOPLEFT",self.strategyScroll,"TOPLEFT",0,0)
- self.strategyInputs={}; self.customNumbers={}
+ self.strategyInputs={}; self.strategyInternalInput=nil; self.customNumbers={}
  local y=0
  if row then
   local function audit(x,width)
@@ -297,7 +328,14 @@ function U:RefreshStrategyForm()
     self:CustomMessage(not valid and errors or warnings~="" and warnings or "未发现可证明的条件矛盾。")
    end)
   end
+  local internalInput
   if not row.group then
+   local seconds=C:InternalCooldownSeconds(row)
+   local label=self:CreateHintText(form,"人工内置 CD（秒，0关闭）",0,y,220)
+   local box=self:SequenceInput(form,228,y,96)
+   self:Paint(box,"SetText",tostring(seconds or 0))
+   internalInput={box=box,condition={kind="internalCooldown",threshold=seconds or 0},field="threshold",label=label,internalRow=row}
+   y=y-36
    self:CreateHintText(form,"精确技能ID · 更换技能保留策略条件",0,y,390); y=y-20
    self.strategySpellID=self:SequenceInput(form,0,y,96); self:Paint(self.strategySpellID,"SetText",tostring(row.spellID))
    self.strategyReplaceID=self:CreateActionButton(form,"ID替换",104,y,72,function()
@@ -349,15 +387,20 @@ function U:RefreshStrategyForm()
    self:CreateHintText(form,"保留旧配置条件，与新策略共同判断；清空可移除旧条件。",0,y,390); y=y-36
   end
   for si,strategy in ipairs(row.strategies or {}) do
+   local hasOrdinaryCondition=false
+   for _,c in ipairs(strategy.conditions) do if c.kind~="internalCooldown" then hasOrdinaryCondition=true; break end end
+   if hasOrdinaryCondition then
    local index=si; local card=self:Frame("Frame",form,"BackdropTemplate")
    local heights={}; local height=44
    for ci,c in ipairs(strategy.conditions) do
+    if c.kind~="internalCooldown" then
     local size=84
     if c.kind=="cdmBuff" or c.kind=="cdmCooldown" or c.kind=="rangedEnemies" or c.kind=="nearbyEnemies" then size=176
-    elseif c.kind=="learned" or c.kind=="succeeded" or c.kind=="comboPoints" or c.kind=="distance" or c.kind=="enemies" then size=140
+    elseif c.kind=="learned" or c.kind=="succeeded" or c.kind=="comboPoints" or c.kind=="distance" or c.kind=="enemies" or c.kind=="internalCooldown" then size=140
     elseif c.kind=="lossOfControl" then size=112
     elseif c.kind=="targetType" then size=124 end
     heights[ci]=size; height=height+size
+    end
    end
    self:Paint(card,"SetPoint","TOPLEFT",form,"TOPLEFT",0,y); self:Paint(card,"SetSize",390,height)
    self:Paint(card,"SetBackdrop",{bgFile="Interface\\Buttons\\WHITE8X8",edgeFile="Interface\\Buttons\\WHITE8X8",edgeSize=1})
@@ -370,6 +413,7 @@ function U:RefreshStrategyForm()
    self:CreateActionButton(card,"删除策略",279,-8,102,function() self:ConfirmAction("确认删除这条策略及全部条件？保存后生效。",function() self:ChangeCustomStrategy(function(r) table.remove(r.strategies,index) end) end,"删除策略") end)
    local cy=-44
    for ci,condition in ipairs(strategy.conditions) do
+    if condition.kind~="internalCooldown" then
     local conditionIndex=ci
     local typeButton=self:CreateActionButton(card,condition.kind=="comboPoints" and self.engine.classToken~="ROGUE" and "当前职业不支持此条件" or strategyNames[condition.kind] or "未知条件",8,cy,190,function() end)
     self:Paint(typeButton,"SetScript","OnClick",function() self:Guard(function()
@@ -387,12 +431,16 @@ function U:RefreshStrategyForm()
     end) end,"删除条件") end)
     local function input(field,x,width)
      local labels={min="下限",max="上限",threshold="阈值",spellID="观察技能ID",radius="自身范围（码）"}
+     if condition.kind=="internalCooldown" then labels.threshold="CD秒数" end
      local label=self:CreateHintText(card,labels[field] or field,x,cy-36,width)
      local box=self:SequenceInput(card,x,cy-56,width)
      self:Paint(box,"SetText",condition[field] and tostring(condition[field]) or "")
      self.strategyInputs[#self.strategyInputs+1]={box=box,condition=condition,field=field,label=label,labelText=labels[field] or field}
     end
-    if condition.kind=="cdmStacks" then
+    if condition.kind=="internalCooldown" then
+     input("threshold",8,96)
+     self:CreateHintText(card,"用于使用策略。精确成功后计时（1～86400秒）。",8,cy-96,370)
+    elseif condition.kind=="cdmStacks" then
      self:CreateHintText(card,"此条件已移除，旧配置保持未知阻断。请删除此条件或更换类型后保存。",8,cy-36,370)
     elseif condition.kind=="comboPoints" and self.engine.classToken~="ROGUE" then
      self:CreateHintText(card,"当前职业不支持，保持未知阻断；可以删除或更换条件。",8,cy-40,370)
@@ -437,9 +485,12 @@ function U:RefreshStrategyForm()
      end
     end
     cy=cy-heights[ci]
+    end
    end
    y=y-height-8
+   end
   end
+  self.strategyInternalInput=internalInput
   if #(row.strategies or {})==0 then self:CreateHintText(form,"点击「添加策略」；没有策略时按基础可用性判断。",0,y,390); y=y-55 end
  end
  local height=math.max(120,-y); self:Paint(form,"SetHeight",height)
@@ -517,6 +568,7 @@ function U:CreateStrategyPanel()
    local c=self.strategyKindTarget; if not c then return end
    for k in pairs(c) do c[k]=nil end
    c.kind=selectedKind
+   if selectedKind=="internalCooldown" then c.threshold=30; return end
    if selectedKind=="comboPoints" then c.min=5 elseif selectedKind=="lossOfControl" then c.control="stun"; c.value=true elseif selectedKind=="distance" then c.max=20 elseif selectedKind=="nearbyEnemies" then c.min=1; c.radius=10 elseif selectedKind=="enemies" or selectedKind=="rangedEnemies" or selectedKind=="cdmStacks" then c.min=1 elseif selectedKind=="targetType" then c.target="enemy" else c.value=selectedKind~="cdmCooldown" and selectedKind~="cooldown" end
   end); self:Paint(menu,"Hide") end)
  end

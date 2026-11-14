@@ -581,6 +581,10 @@ function D:CastQueueWindow()
     local nextStep=preparation and preparation.step or e.steps[nextIndex]
     self.queueWindowReason="NEXT_STEP_OR_GROUP_BOUNDARY"
     if not nextStep or nextStep.group or nextStep.unverified then return nil end
+    if nextStep.spellID==initiation.spellID and TEF.APL.Custom:HasInternalCooldown(preparation and preparation.policyRow or nextStep) then
+        self.queueWindowReason="NEXT_INTERNAL_COOLDOWN"
+        return nil
+    end
     local eligible,typeReason=self:QueueStepAllowed(nextStep)
     if not eligible then self.queueWindowReason=typeReason; return nil end
     self.queueWindowReason="NEXT_BEHAVIOR_NOT_CONTINUOUS"
@@ -960,7 +964,7 @@ function D:Packet()
     if combat==nil then self:Cancel("TEK_COMBAT_UNKNOWN"); return nil end
     if TEF.Runtime and TEF.Runtime.e==e and TEF.Runtime.intent and combat==false and e.db.dispatch.mode=="manual"
         and not TEF.Runtime:CombatAllowed(e,combat) then self:Cancel("RUNTIME_MANUAL_START_REQUIRED"); return nil end
-    if e.groupRun and not e.maintenanceActive and combat~=true then self:Cancel("GROUP_COMBAT_REQUIRED"); return nil end
+    if e.groupRun and not e.maintenanceActive and not TEF.Runtime:GroupCombatAllowed(e,combat) then self:Cancel("GROUP_COMBAT_REQUIRED"); return nil end
     if TEF.Runtime and TEF.Runtime.e==e and TEF.Runtime.intent
         and e.db.dispatch.mode=="auto" and combat~=true and not TEF.Maintenance:OutsideAllowed(e) then self:Cancel("RUNTIME_AUTO_STANDBY"); return nil end
     if p.castQueue and combat~=true then self:Cancel("CAST_QUEUE_COMBAT_REQUIRED"); return nil end
@@ -1025,7 +1029,7 @@ function D:Event(event,unit,id,guidRaw)
         local step=e.steps[e.index]
         local nextIndex=(e.stepCasts or 0)+1<step.repeatCount and e.index or e.index+1
         local nextStep=e.steps[nextIndex]
-        if nextStep and not nextStep.group and not step.behavior and not nextStep.behavior and nextStep.spellID==spellValue and spellValue==self.initiation.spellID then
+        if nextStep and not nextStep.group and not step.behavior and not nextStep.behavior and not TEF.APL.Custom:HasInternalCooldown(nextStep) and nextStep.spellID==spellValue and spellValue==self.initiation.spellID then
             q={generation=e.generation,index=e.index,receiptSerial=e.receiptSerial or 0,
                 nextIndex=nextIndex,spellID=spellValue,originGUID=self.initiation.guid,
                 request=TEF.Runtime.requestSerial,implicitContinuous=true}
@@ -1111,7 +1115,7 @@ function D:Event(event,unit,id,guidRaw)
                     end
                     local reason=moving==true and "CONTINUOUS_MOVEMENT_FAILURE_RETRY" or (moving==false and "CONTINUOUS_FAILURE_RETRY" or "CONTINUOUS_FAILURE_MOVEMENT_UNKNOWN")
                     e:Log("observed",reason,spell,nil,nil,event)
-                    runtime:Suspend(reason); runtime:DeferRetry(); return true
+                    runtime:Suspend(reason); runtime:DeferRetry(true); return true
                 else
                     -- A same-ID failure without this attempt's initiation is not
                     -- proof of current failure, especially adjacent rank repeats.

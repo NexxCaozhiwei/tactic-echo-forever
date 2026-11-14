@@ -7,6 +7,26 @@ local function test(name,fn) fn(); n=n+1 end
 local function row(id,conditions) return C.CleanRows({{spellID=id,strategies={{mode="use",conditions=conditions}}}})[1] end
 local function snapshot() return {actions={custom_1={}},combat={in_combat=true},moving=false} end
 
+test("internal_cooldown_refreshes_only_on_accepted_success",function()
+ local e=F.runtime(); local clock=100; local oldTime=GetTime
+ GetTime=function() return clock end
+ local condition={kind="internalCooldown",threshold=30}
+ local r=row(143,{condition}); eq(r.invalid,nil)
+ assert(C:Save(e,{r,{spellID=205}},"single","MAGE"))
+ T.Runtime:SetIntent(true)
+ local s=snapshot(); C:SampleStrategies(s,{r},e)
+ eq(C:CheckStrategies(s,r,1),true)
+ F.receipt("UNIT_SPELLCAST_SUCCEEDED",143,"orphan-cd")
+ eq(C:CheckStrategies(s,r,1),true)
+ F.receipt("UNIT_SPELLCAST_SENT",143,"exact-cd")
+ F.receipt("UNIT_SPELLCAST_SUCCEEDED",143,"exact-cd")
+ clock=129; eq(C:CheckStrategies(s,r,1),false)
+ e:Reset(); eq(C:CheckStrategies(s,r,1),false)
+ clock=130; eq(C:CheckStrategies(s,r,1),true)
+ e:MarkStrategySuccess(143); eq(C:CheckStrategies(s,r,1),false)
+ GetTime=oldTime
+end)
+
 test("new_conditions_clean_roundtrip_secret_and_bounds",function()
  local conditions={{kind="combat",value=true},{kind="targetType",target="enemy"},{kind="learned",spellID=205,value=true},{kind="succeeded",spellID=143,value=false},{kind="cdmStacks",spellID=133,min=2,max=4},{kind="rangedEnemies",spellID=143,min=1,max=3}}
  local r=row(143,conditions); eq(r.invalid,nil); eq(#r.strategies[1].conditions,6)

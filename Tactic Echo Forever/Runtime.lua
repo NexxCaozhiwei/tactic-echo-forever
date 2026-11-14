@@ -64,12 +64,21 @@ function C:Changed(state,reason)
     self.notifying=false
 end
 function C:EngineCall(method)
+    local retry=self.groupRetry
+    local preserveRetry=retry and retry.generation==self.e.generation and (method=="Pause" or method=="Resume")
     local channel=method=="Resume" and TEF.Dispatch:ChannelTailAllowed() and TEF.Dispatch.channelReceipt
     if method=="Reset" and self.e.groupRun then TEF.SkillGroups:Restore(self.e,"GROUP_RESET") end
     if method=="Reset" and self.e.maintenanceActive then TEF.Maintenance:Restore(self.e,"MAINTENANCE_RESET") end
     self.internal=true
     local ok=pcall(self.e[method],self.e)
     self.internal=false
+    if ok and preserveRetry and self.groupRetry==retry and retry.group==self.e.groupRun then
+        local wait=self.retryWait
+        if wait and wait.engine==self.e and wait.generation==retry.generation and wait.index==retry.index and wait.serial==retry.serial then
+            wait.generation=self.e.generation
+        end
+        retry.generation=self.e.generation
+    end
     if ok and channel and channel.serial==(self.e.receiptSerial or 0) and channel.group==self.e.groupRun then channel.generation=self.e.generation end
     if not ok then
         -- Last-resort containment belongs to Runtime, never to presentation.
@@ -90,6 +99,7 @@ function C:ReplaceRecommendation(rows)
     return result
 end
 function C:Initialize(e)
+    self.groupRetry=nil
     self.retryWait=nil; self.movementSample=nil; self.timingFingerprint=nil; self.targetChangePending=nil
     self.maintenanceManual=false
     self.e=e; self.intent=false; self.worldSeen=false; self.state="paused"
@@ -100,6 +110,7 @@ end
 function C:Invalidated(e)
     -- Explicit edits/reset and the retained developer Engine API stop intent.
     if e==self.e and not self.internal then
+        self.groupRetry=nil
         self.retryWait=nil
         self.maintenanceManual=false
         if e.maintenanceActive then TEF.Maintenance:Restore(e,"MAINTENANCE_INVALIDATED") end
@@ -109,6 +120,7 @@ function C:Invalidated(e)
     end
 end
 function C:Stop(reason,state)
+    self.groupRetry=nil
     TEF.Dispatch.handoff=nil
     self.targetChangePending=nil; self.e.finishOldTargetReceipt=nil
     self.retryWait=nil
@@ -132,8 +144,11 @@ function C:OnDispatchFault(reason)
     else self:Fault(reason) end
 end
 -- 复用现有心跳；缓冲只延后同一步重试，不计成功、不推进序列。
-function C:DeferRetry()
+function C:DeferRetry(exactFailure)
     local e=self.e
+    if exactFailure and e.groupRun and not e.maintenanceActive and self:OutsideCombatAllowed(e) then
+        self.groupRetry={group=e.groupRun,generation=e.generation,index=e.index,serial=e.receiptSerial or 0}
+    end
     self.retryClass=TEF.APL:IsActive(e) and "REEVALUATE" or "RETRY"
     if self.retryClass=="REEVALUATE" then TEF.APL:Invalidate() end
     local delay=S.Field(e.db.dispatch,"retryDelay","number")
@@ -155,6 +170,7 @@ function C:RetryReady()
 end
 function C:Suspend(reason,state)
     if not self.e then return end
+    if reason=="RUNTIME_SETTINGS_STANDBY" then self.groupRetry=nil end
     local detail=TEF.Dispatch:BlockDetail(reason)
     local policy=TEF.Dispatch:PolicyEvidence(reason)
     if self.e.running and not self:EngineCall("Pause") then return end
@@ -170,6 +186,13 @@ end
 -- 仅用户手动开启且选择手动启停时授予普通来源脱战资格。
 function C:OutsideCombatAllowed(e)
  return self.e==e and TEF.engine==e and self.intent==true and self.maintenanceManual==true and e.db.dispatch.mode=="manual"
+end
+function C:GroupCombatAllowed(e,combat)
+ if combat==true then return true end
+ local retry=self.groupRetry
+ if not retry or retry.group~=e.groupRun or retry.generation~=e.generation
+  or retry.index~=e.index or retry.serial~=(e.receiptSerial or 0) then return false end
+ return combat==false and self:OutsideCombatAllowed(e) and TEF.APL.State.Boolean("IsPlayerMoving")==false
 end
 function C:CombatAllowed(e,combat)
  return combat==true or (combat==false and (self:OutsideCombatAllowed(e) or TEF.Maintenance:OutsideAllowed(e)))
@@ -345,6 +368,7 @@ function C:TryConfirmAttackEnabled()
     return confirmed
 end
 function C:TargetChanged()
+ self.groupRetry=nil
  local e,d=self.e,TEF.Dispatch
  TEF.APL:Invalidate(); d.aplQueuePreparation=nil
  d:Cancel("TARGET_REEVALUATE")
@@ -427,7 +451,7 @@ function C:ReconcileCore()
     if combat==nil then self:Suspend("RUNTIME_COMBAT_UNKNOWN"); return end
     if combat==false and e.db.dispatch.mode=="manual" and not self:OutsideCombatAllowed(e)
         and not TEF.Maintenance:OutsideAllowed(e) then self:Suspend("RUNTIME_MANUAL_START_REQUIRED","standby"); return end
-    if e.groupRun and not e.maintenanceActive and combat~=true then
+    if e.groupRun and not e.maintenanceActive and not self:GroupCombatAllowed(e,combat) then
         if TEF.Dispatch:HasCurrentInitiation() then
             TEF.Dispatch:YieldCast("GROUP_COMBAT_REQUIRED"); self:Changed("standby","GROUP_COMBAT_REQUIRED")
         else self:Suspend("GROUP_COMBAT_REQUIRED","standby") end

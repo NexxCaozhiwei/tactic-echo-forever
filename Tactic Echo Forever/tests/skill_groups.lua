@@ -116,6 +116,31 @@ test("manual_group_finite_rounds_and_failed_receipt",function()
  receipt(143,"group-round2"); T.Runtime:Reconcile(); eq(e.groupRun,nil); eq(e.index,2)
  T.Runtime:Stop()
 end)
+test("manual_group_out_of_combat_retry_keeps_only_failed_step_authorized",function()
+ local e=F.runtime()
+ local oldCombat,oldMoving,oldTime=InCombatLockdown,IsPlayerMoving,GetTime
+ local combat,moving,now=true,false,10
+ InCombatLockdown=function() return combat end
+ IsPlayerMoving=function() return moving end
+ GetTime=function() return now end
+ e.db.dispatch.mode="manual"; e.db.dispatch.retryDelay=.05
+ assert(T.Recommendation:SetSource(e,"manual","single"))
+ assert(T.Profiles:Save(e,"single",{T.SkillGroups:Row(group()),spell(143)}))
+ T.Runtime:SetIntent(true); assert(e.groupRun)
+ T.Dispatch:TickContinuous(); assert(T.Dispatch:Packet())
+ F.receipt("UNIT_SPELLCAST_SENT",143,"group-movement-old")
+ combat=false; moving=true
+ F.receipt("UNIT_SPELLCAST_INTERRUPTED",143,"group-movement-old")
+ T.Runtime:Reconcile(); T.Dispatch:TickContinuous(); eq(T.Dispatch:Packet(),nil)
+ moving=false; now=10.02
+ T.Runtime:Reconcile(); T.Dispatch:TickContinuous(); eq(T.Dispatch:Packet(),nil)
+ now=10.10; T.Runtime:Reconcile(); T.Dispatch:TickContinuous(); assert(T.Dispatch:Packet())
+ F.receipt("UNIT_SPELLCAST_SUCCEEDED",143,"group-movement-old"); eq(e.index,1)
+ receipt(143,"group-movement-retry"); eq(e.index,2)
+ T.Runtime:Reconcile(); T.Dispatch:TickContinuous(); eq(T.Dispatch:Packet(),nil)
+ T.Runtime:Stop()
+ InCombatLockdown,IsPlayerMoving,GetTime=oldCombat,oldMoving,oldTime
+end)
 test("priority_group_locks_order_then_consumes_trigger",function()
  local e=F.runtime(); local g=group()
  assert(T.APL.Custom:Save(e,{{group=g,spellID=143,enabled=true,strategies={}}, {spellID=205,enabled=true}},"single","MAGE"))
