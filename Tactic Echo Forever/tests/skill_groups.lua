@@ -116,16 +116,19 @@ test("manual_group_finite_rounds_and_failed_receipt",function()
  receipt(143,"group-round2"); T.Runtime:Reconcile(); eq(e.groupRun,nil); eq(e.index,2)
  T.Runtime:Stop()
 end)
-test("manual_group_out_of_combat_retry_keeps_only_failed_step_authorized",function()
+test("manual_group_can_start_retry_and_continue_out_of_combat",function()
  local e=F.runtime()
  local oldCombat,oldMoving,oldTime=InCombatLockdown,IsPlayerMoving,GetTime
- local combat,moving,now=true,false,10
+ local combat,moving,now=false,false,10
  InCombatLockdown=function() return combat end
  IsPlayerMoving=function() return moving end
  GetTime=function() return now end
  e.db.dispatch.mode="manual"; e.db.dispatch.retryDelay=.05
  assert(T.Recommendation:SetSource(e,"manual","single"))
- assert(T.Profiles:Save(e,"single",{T.SkillGroups:Row(group()),spell(143)}))
+ local g=group(); g.steps[2]=spell(143)
+ assert(T.Profiles:Save(e,"single",{T.SkillGroups:Row(g),spell(143)}))
+ T.Runtime:SetIntent(true,"RUNTIME_AUTO_WORLD"); eq(e.groupRun,nil)
+ T.Runtime:Stop()
  T.Runtime:SetIntent(true); assert(e.groupRun)
  T.Dispatch:TickContinuous(); assert(T.Dispatch:Packet())
  F.receipt("UNIT_SPELLCAST_SENT",143,"group-movement-old")
@@ -137,7 +140,7 @@ test("manual_group_out_of_combat_retry_keeps_only_failed_step_authorized",functi
  now=10.10; T.Runtime:Reconcile(); T.Dispatch:TickContinuous(); assert(T.Dispatch:Packet())
  F.receipt("UNIT_SPELLCAST_SUCCEEDED",143,"group-movement-old"); eq(e.index,1)
  receipt(143,"group-movement-retry"); eq(e.index,2)
- T.Runtime:Reconcile(); T.Dispatch:TickContinuous(); eq(T.Dispatch:Packet(),nil)
+ T.Runtime:Reconcile(); T.Dispatch:TickContinuous(); assert(T.Dispatch:Packet())
  T.Runtime:Stop()
  InCombatLockdown,IsPlayerMoving,GetTime=oldCombat,oldMoving,oldTime
 end)
@@ -278,7 +281,7 @@ end)
 test("manual_start_before_combat_is_adopted_once_and_never_grants_outside_input",function()
  local e=F.runtime(); assert(T.Recommendation:SetSource(e,"manual","single"))
  assert(T.Profiles:Save(e,"single",{T.SkillGroups:Row(group()),spell(205)})); e:SetLoop(true)
- InCombatLockdown=function() return false end; T.Runtime:SetIntent(true); eq(e.groupRun,nil)
+ InCombatLockdown=function() return false end; e.db.dispatch.mode="auto"; T.Runtime:SetIntent(true); eq(e.groupRun,nil)
  UnitCastingInfo=function() return "火球术" end
  F.receipt("UNIT_SPELLCAST_SENT",143,"hand-first"); assert(e.groupRun); assert(e.associations["hand-first"])
  T.Runtime:Reconcile(); eq(T.Dispatch:Packet(),nil); assert(e.associations["hand-first"])
@@ -291,18 +294,18 @@ test("manual_start_before_combat_is_adopted_once_and_never_grants_outside_input"
 end)
 test("priority_manual_start_matches_selected_group_and_rejects_higher_priority_conflict",function()
  local e=F.runtime(); assert(T.APL.Custom:Save(e,{{group=group(),spellID=143,enabled=true,strategies={}}},"single","MAGE"))
- InCombatLockdown=function() return false end; T.Runtime:SetIntent(true); UnitCastingInfo=function() return "火球术" end
+ InCombatLockdown=function() return false end; e.db.dispatch.mode="auto"; T.Runtime:SetIntent(true); UnitCastingInfo=function() return "火球术" end
  F.receipt("UNIT_SPELLCAST_SENT",143,"apl-hand-first"); assert(e.groupRun); eq(e.groupRun.source,"apl")
  InCombatLockdown=function() return true end; UnitCastingInfo=function() return nil end
  F.receipt("UNIT_SPELLCAST_SUCCEEDED",143,"apl-hand-first"); T.Runtime:Reconcile(); eq(e.index,2); eq(e.receiptSerial,1)
  T.Runtime:Stop()
  e=F.runtime(); assert(T.APL.Custom:Save(e,{{spellID=205,enabled=true},{group=group(),spellID=143,enabled=true,strategies={}}},"single","MAGE"))
- InCombatLockdown=function() return false end; T.Runtime:SetIntent(true); F.receipt("UNIT_SPELLCAST_SENT",143,"wrong-group"); eq(e.groupRun,nil)
+ InCombatLockdown=function() return false end; e.db.dispatch.mode="auto"; T.Runtime:SetIntent(true); F.receipt("UNIT_SPELLCAST_SENT",143,"wrong-group"); eq(e.groupRun,nil)
  T.Runtime:Stop()
 end)
 test("manual_group_start_failure_or_secret_identity_never_advances",function()
  local e=F.runtime(); local now=10; GetTime=function() return now end; e.db.dispatch.retryDelay=.05; assert(T.Recommendation:SetSource(e,"manual","single"))
- assert(T.Profiles:Save(e,"single",{T.SkillGroups:Row(group())})); InCombatLockdown=function() return false end; T.Runtime:SetIntent(true)
+ assert(T.Profiles:Save(e,"single",{T.SkillGroups:Row(group())})); InCombatLockdown=function() return false end; e.db.dispatch.mode="auto"; T.Runtime:SetIntent(true)
  F.receipt("UNIT_SPELLCAST_SENT",143,F.secret); eq(e.groupRun,nil)
  F.receipt("UNIT_SPELLCAST_SUCCEEDED",143,"success-without-start"); eq(e.groupRun,nil)
  F.receipt("UNIT_SPELLCAST_SENT",143,"failed-hand"); assert(e.groupRun)

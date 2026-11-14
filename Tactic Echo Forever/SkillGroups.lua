@@ -52,7 +52,7 @@ function G:Restore(e,reason,finished)
 end
 function G:Begin(e,row,source,observedGUID)
  local combat=T.APL.State.Boolean("InCombatLockdown")
- if combat~=true and (not observedGUID or combat~=false) then return false end
+ if not T.Runtime:CombatAllowed(e,combat) and not (observedGUID and combat==false) then return false end
  if e.groupRun or e.maintenanceActive or (not observedGUID and e:RecommendationLocked()) or not row.group or #row.group.steps==0 then return false end
  local group=self:Clean(row.group); if not group then return false end
  for i,step in ipairs(group.steps) do T.APL.Custom.PolicyIdentities[step]=row.group.steps[i] end

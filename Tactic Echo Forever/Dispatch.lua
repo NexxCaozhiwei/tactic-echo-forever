@@ -988,7 +988,7 @@ function D:Packet()
     if combat==nil then self:Cancel("TEK_COMBAT_UNKNOWN"); return nil end
     if TEF.Runtime and TEF.Runtime.e==e and TEF.Runtime.intent and combat==false and e.db.dispatch.mode=="manual"
         and not TEF.Runtime:CombatAllowed(e,combat) then self:Cancel("RUNTIME_MANUAL_START_REQUIRED"); return nil end
-    if e.groupRun and not e.maintenanceActive and not TEF.Runtime:GroupCombatAllowed(e,combat) then self:Cancel("GROUP_COMBAT_REQUIRED"); return nil end
+    if e.groupRun and not e.maintenanceActive and not TEF.Runtime:CombatAllowed(e,combat) then self:Cancel("GROUP_COMBAT_REQUIRED"); return nil end
     if TEF.Runtime and TEF.Runtime.e==e and TEF.Runtime.intent
         and e.db.dispatch.mode=="auto" and combat~=true and not TEF.Maintenance:OutsideAllowed(e) then self:Cancel("RUNTIME_AUTO_STANDBY"); return nil end
     if p.castQueue and combat~=true then self:Cancel("CAST_QUEUE_COMBAT_REQUIRED"); return nil end
@@ -1139,7 +1139,7 @@ function D:Event(event,unit,id,guidRaw)
                     end
                     local reason=moving==true and "CONTINUOUS_MOVEMENT_FAILURE_RETRY" or (moving==false and "CONTINUOUS_FAILURE_RETRY" or "CONTINUOUS_FAILURE_MOVEMENT_UNKNOWN")
                     e:Log("observed",reason,spell,nil,nil,event)
-                    runtime:Suspend(reason); runtime:DeferRetry(true); return true
+                    runtime:Suspend(reason); runtime:DeferRetry(); return true
                 else
                     -- A same-ID failure without this attempt's initiation is not
                     -- proof of current failure, especially adjacent rank repeats.
