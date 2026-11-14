@@ -37,22 +37,28 @@ set "BRANCH="
 for /f "delims=" %%B in ('git branch --show-current 2^>nul') do set "BRANCH=%%B"
 setlocal EnableDelayedExpansion
 set "DISPLAY_BRANCH=!BRANCH!"
-if not defined BRANCH for /f "delims=" %%H in ('git rev-parse --short HEAD 2^>nul') do set "DISPLAY_BRANCH=分离 HEAD @ %%H"
+if not defined BRANCH for /f "delims=" %%H in ('git rev-parse --short HEAD 2^>nul') do set "DISPLAY_BRANCH=未检出本地分支（当前提交 %%H）"
 echo ========================================
 echo              Git 工具箱
 echo ========================================
 echo 仓库：!REPO_ROOT!
 echo 分支：!DISPLAY_BRANCH!
 echo.
+echo [日常操作]
 echo   1. 查看状态和差异
-echo   2. 同步（先拉取，再推送）
-echo   3. 拉取（快进或确认变基）
-echo   4. 推送当前分支
-echo   5. 暂存并提交
-echo   6. 获取远端更新（fetch）
+echo   2. 提交改动
+echo   3. 同步（整合上游，再推送）
+echo.
+echo [远端操作]
+echo   4. 获取远端更新（仅获取）
+echo   5. 拉取上游改动
+echo   6. 推送当前分支
+echo.
+echo [分支和暂存]
 echo   7. 查看分支并切换
 echo   8. 新建分支
 echo   9. 取消暂存（保留文件修改）
+echo.
 echo   0. 退出
 echo.
 choice /c 1234567890 /n /m "请选择操作："
@@ -61,11 +67,11 @@ if errorlevel 10 exit /b 0
 if errorlevel 9 goto unstage
 if errorlevel 8 goto new_branch
 if errorlevel 7 goto switch_branch
-if errorlevel 6 goto fetch
-if errorlevel 5 goto commit
-if errorlevel 4 goto push
-if errorlevel 3 goto pull
-if errorlevel 2 goto sync
+if errorlevel 6 goto push
+if errorlevel 5 goto pull
+if errorlevel 4 goto fetch
+if errorlevel 3 goto sync
+if errorlevel 2 goto commit
 if errorlevel 1 goto status
 exit /b 0
 
@@ -97,18 +103,35 @@ if defined DIRTY (
     echo 请先处理工作区和暂存区的改动，再执行同步或拉取。
     goto done
 )
-git fetch -- "!REMOTE!" || goto done
+echo 正在获取远端更新：!REMOTE!
+git fetch -- "!REMOTE!"
+if errorlevel 1 (
+    echo [错误] 获取远端更新失败，本次同步已停止。
+    goto done
+)
 set "AHEAD="
 set "BEHIND="
 for /f "tokens=1,2" %%A in ('git rev-list --left-right --count HEAD...@{upstream}') do (
     set "AHEAD=%%A"
     set "BEHIND=%%B"
 )
-if not defined BEHIND goto done
+if not defined BEHIND (
+    echo [错误] 无法比较本地分支与上游分支的提交。
+    goto done
+)
+if !AHEAD! EQU 0 if !BEHIND! EQU 0 (
+    echo 本地与上游已一致，无需拉取或推送。
+    goto done
+)
 echo 本地领先 !AHEAD! 个提交，落后 !BEHIND! 个提交。
 if !BEHIND! GTR 0 (
     if !AHEAD! EQU 0 (
-        git merge --ff-only "@{upstream}" || goto done
+        git merge --ff-only "@{upstream}"
+        if errorlevel 1 (
+            echo [错误] 无法快进到上游分支，本次同步已停止。
+            goto done
+        )
+        echo 已快进到上游分支。
     ) else (
         choice /c NY /n /m "本地与上游已分叉。将本地提交变基到上游？[N/Y] "
         if not errorlevel 2 goto done
@@ -133,9 +156,9 @@ git status --short --branch || goto done
 echo 推送目标：!REMOTE! !UPSTREAM_REF!
 choice /c NY /n /m "确认推送？[N/Y] "
 if not errorlevel 2 goto menu
-if errorlevel 3 goto menu
+if errorlevel 3 goto sync
 git push -- "!REMOTE!" "HEAD:!UPSTREAM_REF!"
-if errorlevel 1 echo 推送失败，请检查上游更新、权限或分支保护规则。
+if errorlevel 1 (echo 推送失败，请检查上游更新、权限或分支保护规则。) else (echo 推送完成。)
 goto done
 
 :commit
@@ -143,7 +166,7 @@ call :check_operation || goto done
 git status --short || goto done
 set "STAGE_ALL="
 choice /c 012 /n /m "0 返回，1 仅提交已暂存，2 暂存全部并提交："
-if errorlevel 4 goto menu
+if errorlevel 4 goto fetch
 if not errorlevel 2 goto menu
 if errorlevel 3 set "STAGE_ALL=1"
 set "COMMIT_MSG="
@@ -154,26 +177,26 @@ if defined STAGE_ALL (
 )
 git --no-pager diff --cached --stat || goto done
 git diff --cached --quiet
-if errorlevel 2 goto done
+if errorlevel 2 goto commit
 if not errorlevel 1 (
     echo 暂存区没有可提交的改动。
     goto done
 )
 choice /c NY /n /m "确认提交以上暂存内容？[N/Y] "
 if not errorlevel 2 goto menu
-if errorlevel 3 goto menu
+if errorlevel 3 goto sync
 rem 通过临时文件传递说明，避免将文字放进 Git 命令参数。
 set "MSG_FILE=!TEMP!\tef-git-!RANDOM!-!RANDOM!.msg"
 pwsh.exe -NoLogo -NoProfile -Command "[IO.File]::WriteAllText($env:MSG_FILE, $env:COMMIT_MSG)"
-if errorlevel 1 goto done
+if errorlevel 1 goto status
 git -c i18n.commitEncoding=UTF-8 commit -F "!MSG_FILE!"
-if errorlevel 1 echo 提交未完成；请检查暂存区、Git 用户配置或提交钩子。
+if errorlevel 1 (echo 提交未完成，请检查暂存区、Git 用户配置或提交钩子。) else (echo 提交完成。)
 del /q "!MSG_FILE!"
 goto done
 
 :resolve_upstream
 if not defined BRANCH (
-    echo 分离 HEAD 无法同步。请先切换到本地分支。
+    echo 当前未检出本地分支，无法同步或推送。请先切换到本地分支。
     exit /b 1
 )
 set "REMOTE="
@@ -207,7 +230,7 @@ goto menu
 :fetch
 echo.
 git fetch --all --prune
-if errorlevel 1 echo 获取远端更新失败，请检查网络和远端配置。
+if errorlevel 1 (echo 获取远端更新失败，请检查网络和远端配置。) else (echo 已获取远端更新。)
 pause
 goto menu
 
@@ -220,7 +243,7 @@ set /p "TARGET_BRANCH=输入要切换的本地分支名："
 if not defined TARGET_BRANCH goto menu
 git show-ref --verify --quiet "refs/heads/!TARGET_BRANCH!" || goto invalid_branch
 git switch -- "!TARGET_BRANCH!"
-if errorlevel 1 echo 切换失败。未跟踪的远端分支请先 fetch，再用 git switch --track 创建本地跟踪分支。
+if errorlevel 1 echo 切换失败。如需切换到远端分支，请先获取远端更新，再用 git switch --track 创建本地跟踪分支。
 pause
 goto menu
 
@@ -246,7 +269,7 @@ echo 取消暂存不会删除文件修改。
 git status --short
 choice /c NY /n /m "取消全部已暂存内容？[N/Y] "
 if not errorlevel 2 goto menu
-if errorlevel 3 goto menu
+if errorlevel 3 goto sync
 git restore --staged -- .
-if errorlevel 1 echo 取消暂存失败。
+if errorlevel 1 (echo 取消暂存失败。) else (echo 已取消暂存，文件修改已保留。)
 goto done
