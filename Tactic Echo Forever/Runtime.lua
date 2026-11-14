@@ -493,8 +493,13 @@ function C:ReconcileCore()
         end
         if allowed~=true then
             if allowed==nil then self:Suspend(reason or "SEQUENCE_POLICY_UNKNOWN"); return end
+            local evidence=TEF.Dispatch:PolicyEvidence(reason)
             TEF.Dispatch:Cancel(reason or "SEQUENCE_POLICY_UNMATCHED")
             self.internal=true; local ok,skipped=pcall(e.SkipUnavailable,e,"STRATEGY_STEP_SKIPPED"); self.internal=false
+            if ok and skipped and evidence then
+                local entry=e.db.diagnostics[#e.db.diagnostics]
+                if entry and entry.reason=="STRATEGY_STEP_SKIPPED" then entry.policy=evidence end
+            end
             if not ok then self:Fault("SEQUENCE_POLICY_SKIP_FAILED")
             elseif not skipped then
                 local now=TEF.APL.State.Time()

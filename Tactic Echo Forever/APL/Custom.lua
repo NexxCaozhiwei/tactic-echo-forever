@@ -18,7 +18,7 @@ local fields={group=true,targetMode=true,strategies=true,spellID=true,enabled=tr
  manaOp=true,manaValue=true,distanceOp=true,distanceValue=true,cdmKind=true,cdmState=true,cdmSpellID=true}
 local classes={"MAGE","WARRIOR","PALADIN","HUNTER","ROGUE","PRIEST","SHAMAN","WARLOCK","DRUID","DEATHKNIGHT","MONK","DEMONHUNTER","EVOKER"}
 function C:ClassSupported(class) for _,value in ipairs(classes) do if value==class then return true end end; return false end
-local conditionKinds={comboPoints=true,lossOfControl=true,usable=true,range=true,distance=true,moving=true,enemies=true,cdmCooldown=true,cdmBuff=true,cooldown=true,combat=true,targetType=true,learned=true,succeeded=true,cdmStacks=true,rangedEnemies=true,nearbyEnemies=true}
+local conditionKinds={arcaneBlastStacks=true,comboPoints=true,lossOfControl=true,usable=true,range=true,distance=true,moving=true,enemies=true,cdmCooldown=true,cdmBuff=true,cooldown=true,combat=true,targetType=true,learned=true,succeeded=true,cdmStacks=true,rangedEnemies=true,nearbyEnemies=true}
 local function onlyFields(record,allowed,limit)
  local count=0
  local ok=pcall(function() for raw in pairs(record) do
@@ -50,7 +50,7 @@ function C.CleanStrategies(raw)
     if not seconds or seconds<1 or seconds>C.InternalCooldownMax or seconds%1~=0 then return nil,"CUSTOM_STRATEGY_INVALID" end
     c.threshold=seconds; c.value=nil
    elseif not conditionKinds[kind] then return nil,"CUSTOM_STRATEGY_INVALID"
-   elseif kind=="comboPoints" or kind=="distance" or kind=="enemies" or kind=="rangedEnemies" or kind=="cdmStacks" or kind=="nearbyEnemies" then
+   elseif kind=="arcaneBlastStacks" or kind=="comboPoints" or kind=="distance" or kind=="enemies" or kind=="rangedEnemies" or kind=="cdmStacks" or kind=="nearbyEnemies" then
     local op,status=S.Field(v,"op","string")
     if status~="NO_DATA" then
      local threshold=S.Field(v,"threshold","number")
@@ -59,7 +59,7 @@ function C.CleanStrategies(raw)
     end
     for _,field in ipairs({"min","max"}) do
      local n,status=S.Field(v,field,"number")
-     if status~="NO_DATA" and (not n or n<0 or n>(kind=="distance" and 2000 or kind=="cdmStacks" and 255 or kind=="comboPoints" and 10 or 40) or (kind~="distance" and n%1~=0)) then return nil,"CUSTOM_STRATEGY_INVALID" end
+     if status~="NO_DATA" and (not n or n<0 or n>(kind=="distance" and 2000 or kind=="cdmStacks" and 255 or kind=="comboPoints" and 10 or kind=="arcaneBlastStacks" and 4 or 40) or (kind~="distance" and n%1~=0)) then return nil,"CUSTOM_STRATEGY_INVALID" end
      c[field]=n
     end
     if (not c.min and not c.max and not c.op) or (c.min and c.max and c.min>c.max) then return nil,"CUSTOM_STRATEGY_INVALID" end
@@ -322,6 +322,10 @@ function C:StrategyCondition(state,row,index,c)
   if a.usable==false or a.power_ok==false then value=false
   elseif a.usable==true and a.power_ok==true then value=true end
  elseif c.kind=="lossOfControl" then value=A.State.ControlMatch(state.controlProbe,c.control)
+ elseif c.kind=="arcaneBlastStacks" then
+  local n=state.engine and state.engine:ArcaneBlastStacks()
+  if n==nil then return nil end
+  return (not c.min or n>=c.min) and (not c.max or n<=c.max)
  elseif c.kind=="comboPoints" then
   if state.classToken~="ROGUE" then return nil end
   local p=state.comboPointProbe; local n=p and p.value
@@ -452,6 +456,10 @@ function C:Sample(e,state,provided)
       end
      end
      if condition.kind=="targetType" then observation.text=state.targetType end
+     if condition.kind=="arcaneBlastStacks" then
+      observation.number=e:ArcaneBlastStacks()
+      observation.reason=observation.number~=nil and "ARCANE_BLAST_ESTIMATE" or "ARCANE_BLAST_ESTIMATE_UNKNOWN"
+     end
      if condition.kind=="comboPoints" then local p=state.comboPointProbe; observation.number=p and p.value; observation.reason=state.classToken~="ROGUE" and "CLASS_UNSUPPORTED" or p and p.reason or "UNKNOWN_COMBO_POINTS" end
      if condition.kind=="lossOfControl" then observation.text=condition.control; observation.reason=state.controlProbe and state.controlProbe.reason or "UNKNOWN_CONTROL"; observation.number=state.controlProbe and state.controlProbe.count end
      if condition.kind=="cdmStacks" then
@@ -680,7 +688,7 @@ function C:PolicyStamp(e,row)
  return "stable"
 end
 local conditionLabels={moving="移动",combat="战斗",usable="技能可用与资源",range="技能范围",distance="目标距离",enemies="可见敌人数",
- nearbyEnemies="自身范围内可见敌人数",rangedEnemies="自身范围内可见敌人数",comboPoints="连击点",cdmStacks="已移除的CDM层数条件",
+ nearbyEnemies="自身范围内可见敌人数",rangedEnemies="自身范围内可见敌人数",comboPoints="连击点",arcaneBlastStacks="奥术冲击层数（估算）",cdmStacks="已移除的CDM层数条件",
  cdmBuff="CDM增益活动",cdmCooldown="CDM冷却活动",cooldown="技能冷却活动",learned="已学技能",succeeded="精确成功记录",targetType="目标类型",lossOfControl="失控状态"}
 local function publicText(v)
  local n=S.Public(v,"number"); if n then return tostring(n) end
@@ -707,6 +715,7 @@ function C:ConditionView(state,row,index,c)
   elseif c.kind=="distance" then value=A.PublicConditions.DistanceText(state)
   elseif c.kind=="targetType" then value=state.targetType
   elseif c.kind=="enemies" then value=state.enemy_count
+  elseif c.kind=="arcaneBlastStacks" then value=state.engine and state.engine:ArcaneBlastStacks()
   elseif c.kind=="comboPoints" then value=state.comboPointProbe and state.comboPointProbe.value
   elseif c.kind=="learned" then value=state.otherKnown and state.otherKnown[c.spellID or row.spellID]
   elseif c.kind=="succeeded" then value=state.succeeded and state.succeeded[c.spellID or row.spellID]

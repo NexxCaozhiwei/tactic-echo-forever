@@ -156,3 +156,35 @@ function E:StrategySucceeded(id)
  if self.strategySuccessSaturated then return nil end
  return false
 end
+
+-- 参考本地奥冲提醒的首发窗口。只记录公开玩家成功事件，独立于派发进度。
+local blastRanks = {[400574]=true,[1239696]=true,[1239697]=true,[1239699]=true,[1239700]=true}
+local blastWindow = 18
+function E:ObserveArcaneBlast(unit,guid,id)
+    if self.classToken~="MAGE" or S.Public(unit,"string")~="player" or not blastRanks[S.ID(id)] then return end
+    guid=S.Identity(guid)
+    local now=TEF.APL.State.Time()
+    if not now then self.arcaneBlastUnknown=true; return end
+    local window=self.arcaneBlastWindow
+    if window and now<window.start then self.arcaneBlastUnknown=true; return end
+    if not guid then self.arcaneBlastUnknownUntil=now+blastWindow; return end
+    if self.arcaneBlastUnknown or (self.arcaneBlastUnknownUntil and now<self.arcaneBlastUnknownUntil) then return end
+    if window and window.seen[guid] then return end
+    if not window or now-window.start>=blastWindow then
+        window={start=now,count=0,seen={}}
+        self.arcaneBlastWindow=window
+    end
+    if window.count<4 and not window.seen[guid] then
+        window.seen[guid]=true
+        window.count=window.count+1
+    end
+end
+function E:ArcaneBlastStacks()
+    if self.classToken~="MAGE" or self.arcaneBlastUnknown then return nil end
+    local now=TEF.APL.State.Time()
+    local window=self.arcaneBlastWindow
+    if not now or (window and now<window.start) then return nil end
+    if self.arcaneBlastUnknownUntil and now<self.arcaneBlastUnknownUntil then return nil end
+    if not window or now-window.start>=blastWindow then return 0 end
+    return window.count
+end

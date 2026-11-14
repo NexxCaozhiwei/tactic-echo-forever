@@ -12,14 +12,14 @@ function U:CommitCustomNumbers()
   if not text then self:CustomMessage("无法公开读取输入，请取消编辑或重新输入。"); return false end
   text=text:match("^%s*(.-)%s*$")
   local n=text~="" and text:match("^%d+%.?%d*$") and tonumber(text) or nil
-  local limit=entry.field=="spellID" and 2147483647 or entry.field=="radius" and 40 or entry.condition.kind=="distance" and 2000 or entry.condition.kind=="comboPoints" and 10 or 40
+  local limit=entry.field=="spellID" and 2147483647 or entry.field=="radius" and 40 or entry.condition.kind=="distance" and 2000 or entry.condition.kind=="comboPoints" and 10 or entry.condition.kind=="arcaneBlastStacks" and 4 or 40
   if entry.condition.kind=="internalCooldown" then
    limit=C.InternalCooldownMax
    if not n or n>limit or n%1~=0 then self:CustomMessage("人工内置CD请输入0～86400的整数秒。"); return false end
   end
   if text~="" and (not n or n>limit or (entry.condition.kind~="distance" and entry.field~="radius" and n%1~=0) or ((entry.field=="spellID" or entry.field=="radius") and n<=0)) then
    if entry.label then self:Paint(entry.label,"SetText",(entry.labelText or "数值") .. "：格式或范围无效") end
-   self:CustomMessage("数值无效：距离0～2000码、敌人数0～40整数、连击点0～10整数，观察技能填写精确ID。"); return false
+   self:CustomMessage("数值无效：距离0～2000码、敌人数0～40整数、连击点0～10整数、奥冲层数0～4整数，观察技能填写精确ID。"); return false
   end
   pending[#pending+1]={condition=entry.condition,field=entry.field,value=n,internalRow=entry.internalRow}
  end
@@ -225,8 +225,8 @@ function U:ReorderCustomRule(index,other)
  local row=table.remove(self.customDraft,index); table.insert(self.customDraft,other,row)
  self.customSelected=other; self.studioSelected={source="apl",index=other}; self.customFormIndex=nil; self:RefreshCustomAPL()
 end
-local strategyKinds={"comboPoints","lossOfControl","usable","range","distance","moving","enemies","cdmCooldown","cdmBuff","cooldown","combat","targetType","learned","succeeded","nearbyEnemies"}
-local strategyNames={comboPoints="连击点数",lossOfControl="自身失控类型",usable="技能可用性",range="技能范围",distance="目标距离",moving="移动状态",enemies="可见敌人数",cdmCooldown="CDM冷却状态",cdmBuff="CDM增益状态",cooldown="技能是否CD",combat="战斗状态",targetType="当前目标类型",learned="指定技能已学",succeeded="精确成功使用记录",cdmStacks="已移除：CDM增益层数",rangedEnemies="自身范围内可见敌人数",nearbyEnemies="自身范围内可见敌人数"}
+local strategyKinds={"comboPoints","arcaneBlastStacks","lossOfControl","usable","range","distance","moving","enemies","cdmCooldown","cdmBuff","cooldown","combat","targetType","learned","succeeded","nearbyEnemies"}
+local strategyNames={arcaneBlastStacks="奥术冲击层数",comboPoints="连击点数",lossOfControl="自身失控类型",usable="技能可用性",range="技能范围",distance="目标距离",moving="移动状态",enemies="可见敌人数",cdmCooldown="CDM冷却状态",cdmBuff="CDM增益状态",cooldown="技能是否CD",combat="战斗状态",targetType="当前目标类型",learned="指定技能已学",succeeded="精确成功使用记录",cdmStacks="已移除：CDM增益层数",rangedEnemies="自身范围内可见敌人数",nearbyEnemies="自身范围内可见敌人数"}
 strategyNames.internalCooldown="人工内置CD"
 U.conditionNames=strategyNames; U.conditionKinds=strategyKinds
 function U:RefreshStrategyKinds()
@@ -236,7 +236,7 @@ function U:RefreshStrategyKinds()
   if button then
    local filter=(self.studioConditionFilter or ""):lower()
    local category=self.ConditionCategory and self:ConditionCategory(kind) or ""
-   if (kind=="comboPoints" and self.engine.classToken~="ROGUE") or (filter~="" and not (strategyNames[kind] .. kind .. category):lower():find(filter,1,true)) then self:Paint(button,"Hide")
+   if (kind=="arcaneBlastStacks" and self.engine.classToken~="MAGE") or (kind=="comboPoints" and self.engine.classToken~="ROGUE") or (filter~="" and not (strategyNames[kind] .. kind .. category):lower():find(filter,1,true)) then self:Paint(button,"Hide")
    else self:Paint(button,"SetText",category .. " · " .. strategyNames[kind]); self:Paint(button,"Show"); self:Paint(button,"ClearAllPoints"); self:Paint(button,"SetPoint","TOPLEFT",self.strategyKindChild,"TOPLEFT",0,-count*40); count=count+1 end
   end
  end
@@ -396,7 +396,7 @@ function U:RefreshStrategyForm()
     if c.kind~="internalCooldown" then
     local size=84
     if c.kind=="cdmBuff" or c.kind=="cdmCooldown" or c.kind=="rangedEnemies" or c.kind=="nearbyEnemies" then size=176
-    elseif c.kind=="learned" or c.kind=="succeeded" or c.kind=="comboPoints" or c.kind=="distance" or c.kind=="enemies" or c.kind=="internalCooldown" then size=140
+    elseif c.kind=="learned" or c.kind=="succeeded" or c.kind=="comboPoints" or c.kind=="arcaneBlastStacks" or c.kind=="distance" or c.kind=="enemies" or c.kind=="internalCooldown" then size=140
     elseif c.kind=="lossOfControl" then size=112
     elseif c.kind=="targetType" then size=124 end
     heights[ci]=size; height=height+size
@@ -444,6 +444,9 @@ function U:RefreshStrategyForm()
      self:CreateHintText(card,"此条件已移除，旧配置保持未知阻断。请删除此条件或更换类型后保存。",8,cy-36,370)
     elseif condition.kind=="comboPoints" and self.engine.classToken~="ROGUE" then
      self:CreateHintText(card,"当前职业不支持，保持未知阻断；可以删除或更换条件。",8,cy-40,370)
+    elseif condition.kind=="arcaneBlastStacks" then
+     self:CreateHintText(card,"本地估算，0～4层。首发起算18秒。",8,cy-96,370)
+     input("min",8,96); input("max",112,96)
     elseif condition.kind=="comboPoints" or condition.kind=="distance" or condition.kind=="enemies" or condition.kind=="rangedEnemies" or condition.kind=="nearbyEnemies" then
      if condition.op then
       local ops={{"lt","<"},{"le","≤"},{"eq","="},{"ne","≠"},{"ge","≥"},{"gt",">"}}
@@ -563,13 +566,14 @@ function U:CreateStrategyPanel()
  self:Paint(menu,"SetBackdropColor",.03,.05,.08,1)
  for i,kind in ipairs(strategyKinds) do local selectedKind=kind
   self.strategyKindButtons[kind]=self:CreateActionButton(child,strategyNames[kind],0,-(i-1)*40,187,function()
+   if selectedKind=="arcaneBlastStacks" and self.engine.classToken~="MAGE" then return end
    if selectedKind=="comboPoints" and self.engine.classToken~="ROGUE" then return end
    self:ChangeCustomStrategy(function()
    local c=self.strategyKindTarget; if not c then return end
    for k in pairs(c) do c[k]=nil end
    c.kind=selectedKind
    if selectedKind=="internalCooldown" then c.threshold=30; return end
-   if selectedKind=="comboPoints" then c.min=5 elseif selectedKind=="lossOfControl" then c.control="stun"; c.value=true elseif selectedKind=="distance" then c.max=20 elseif selectedKind=="nearbyEnemies" then c.min=1; c.radius=10 elseif selectedKind=="enemies" or selectedKind=="rangedEnemies" or selectedKind=="cdmStacks" then c.min=1 elseif selectedKind=="targetType" then c.target="enemy" else c.value=selectedKind~="cdmCooldown" and selectedKind~="cooldown" end
+   if selectedKind=="arcaneBlastStacks" then c.min=4 elseif selectedKind=="comboPoints" then c.min=5 elseif selectedKind=="lossOfControl" then c.control="stun"; c.value=true elseif selectedKind=="distance" then c.max=20 elseif selectedKind=="nearbyEnemies" then c.min=1; c.radius=10 elseif selectedKind=="enemies" or selectedKind=="rangedEnemies" or selectedKind=="cdmStacks" then c.min=1 elseif selectedKind=="targetType" then c.target="enemy" else c.value=selectedKind~="cdmCooldown" and selectedKind~="cooldown" end
   end); self:Paint(menu,"Hide") end)
  end
  self:RefreshStrategyKinds(); self:Paint(menu,"Hide"); self:Paint(panel,"Hide")

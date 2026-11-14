@@ -92,12 +92,17 @@ local function onEvent(_,event,...)
         if engine.db.dispatch.signal then TEF.Transport:SetEnabled(true) end
         TEF.UI:Layout(); refresh(); return
     end
+    if event=="PLAYER_DEAD" then
+        engine.arcaneBlastWindow=nil; engine.arcaneBlastUnknown=nil; engine.arcaneBlastUnknownUntil=nil
+        TEF.APL:Invalidate(); refresh(); return
+    end
     if TEF.Events[event] then
         local unit,guid,id,ignoredTarget
         if event == "UNIT_SPELLCAST_SENT" then
             -- Deliberately ignore target (argument 2), including its Secret value.
             unit,ignoredTarget,guid,id=...
         else unit,guid,id=... end
+        if event=="UNIT_SPELLCAST_SUCCEEDED" then engine:ObserveArcaneBlast(unit,guid,id) end
         local consumed=TEF.Dispatch:Event(event,unit,id,guid)
         if not consumed then engine:Handle(engine.generation,event,unit,guid,id) end
         -- Events invalidate research evidence, never manufacture cast=false.
@@ -116,7 +121,7 @@ if created then
         if not handled and engine then TEF.Runtime:Fault("EVENT_CALL_FAILED") end
     end)
     if ok then
-        local events={"ADDON_LOADED","PLAYER_LOGIN","PLAYER_LOGOUT","PLAYER_ENTERING_WORLD","SPELLS_CHANGED","UPDATE_MACROS",
+        local events={"ADDON_LOADED","PLAYER_DEAD","PLAYER_LOGIN","PLAYER_LOGOUT","PLAYER_ENTERING_WORLD","SPELLS_CHANGED","UPDATE_MACROS",
             "PLAYER_TARGET_CHANGED","PLAYER_REGEN_ENABLED","PLAYER_REGEN_DISABLED","UI_SCALE_CHANGED","ACTIONBAR_SLOT_CHANGED","UPDATE_BINDINGS","SPELL_UPDATE_COOLDOWN","SPELL_UPDATE_CHARGES","PLAYER_SPECIALIZATION_CHANGED","CHARACTER_POINTS_CHANGED","PLAYER_TALENT_UPDATE","TRAIT_CONFIG_UPDATED","ACTIVE_TALENT_GROUP_CHANGED"}
         for event in pairs(TEF.Events) do events[#events+1]=event end
         for _,event in ipairs({"UNIT_POWER_UPDATE","UNIT_MAXPOWER","COOLDOWN_VIEWER_DATA_LOADED","COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED"}) do events[#events+1]=event end

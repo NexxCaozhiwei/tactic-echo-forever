@@ -7,6 +7,24 @@ local function test(name,fn) fn(); n=n+1 end
 local function row(id,conditions) return C.CleanRows({{spellID=id,strategies={{mode="use",conditions=conditions}}}})[1] end
 local function snapshot() return {actions={custom_1={}},combat={in_combat=true},moving=false} end
 
+test("arcane_blast_estimate_counts_unique_successes_in_first_cast_window",function()
+ local e=F.runtime(); local oldTime=GetTime; local clock=100
+ GetTime=function() return clock end
+ local r=row(143,{{kind="arcaneBlastStacks",min=2,max=4}})
+ eq(r.invalid,nil)
+ assert(row(143,{{kind="arcaneBlastStacks",min=5}}).invalid)
+ local s=snapshot(); C:SampleStrategies(s,{r},e)
+ eq(C:CheckStrategies(s,r,1),false)
+ e:ObserveArcaneBlast("player","blast-a",1239696)
+ e:ObserveArcaneBlast("player","blast-a",1239696)
+ eq(e:ArcaneBlastStacks(),1)
+ clock=117
+ for i=1,5 do e:ObserveArcaneBlast("player","blast-"..i,400574) end
+ eq(e:ArcaneBlastStacks(),4); eq(C:CheckStrategies(s,r,1),true)
+ clock=118; eq(e:ArcaneBlastStacks(),0); eq(C:CheckStrategies(s,r,1),false)
+ GetTime=oldTime
+end)
+
 test("internal_cooldown_refreshes_only_on_accepted_success",function()
  local e=F.runtime(); local clock=100; local oldTime=GetTime
  GetTime=function() return clock end
