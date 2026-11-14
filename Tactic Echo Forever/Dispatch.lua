@@ -13,6 +13,30 @@ function D:ObservePublishedFrame(sequence,freshness,token)
   if #rows>=128 then table.remove(rows,1); e.db.deliveryEvicted=(e.db.deliveryEvicted or 0)+1 end
   row={session=e.session,generation=e.generation,request=p.request,spellID=p.binding.spellID,token=token,
    requestedAt=p.requestedAt,firstPublishedAt=now,firstSequence=sequence,firstFreshness=freshness}
+  if e:IsArcaneBlast(row.spellID) then
+   local queue,run=p.castQueue,e.groupRun
+   local candidate=queue and queue.candidate or e.aplCandidate
+   local source=TEF.Recommendation:Source(e)
+   local index=queue and queue.nextIndex or e.index
+   local policy=e.steps and e.steps[index]
+   if source=="apl" then
+    index=candidate and candidate.customIndex
+    policy=index and TEF.APL.Custom:Rows(e)[index] or nil
+   end
+   local stacks,startedAt,expiresAt=e:ArcaneBlastStacks(now)
+   local arcane={stacks=stacks,windowStartedAt=startedAt,windowExpiresAt=expiresAt,
+    source=source,plan=e.scene,index=index,groupIndex=run and (run.candidate and run.candidate.customIndex or run.index),
+    groupRound=run and run.round,queued=queue~=nil,conditions={}}
+   for si,strategy in ipairs(policy and policy.strategies or {}) do
+    for ci,condition in ipairs(strategy.conditions) do
+     if condition.kind=="arcaneBlastStacks" then
+      arcane.conditions[#arcane.conditions+1]={strategyIndex=si,conditionIndex=ci,mode=strategy.mode,
+       min=condition.min,max=condition.max}
+     end
+    end
+   end
+   row.arcaneBlast=arcane
+  end
   rows[#rows+1]=row; p.deliveryRow=row
  end
  row.lastSequence=sequence; row.lastFreshness=freshness; row.lastPublishedAt=now

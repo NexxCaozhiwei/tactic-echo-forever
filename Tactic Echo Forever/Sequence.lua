@@ -150,6 +150,28 @@ function Engine.New(config, db)
         local raw=S.Field(deliveries,i,"table"); local row={}
         for _,key in ipairs({"session","generation","request","spellID","token","requestedAt","firstPublishedAt","lastPublishedAt","firstSequence","lastSequence","firstFreshness","lastFreshness","initiatedAt"}) do row[key]=S.Field(raw,key,"number") end
         row.guid=S.Identity(S.Field(raw,"guid","string"))
+        local arcane=S.Field(raw,"arcaneBlast","table")
+        if arcane then
+            local info={conditions={}}
+            for _,key in ipairs({"stacks","windowStartedAt","windowExpiresAt","index","groupIndex","groupRound"}) do
+                info[key]=S.Field(arcane,key,"number")
+            end
+            local source,plan=S.Field(arcane,"source","string"),S.Field(arcane,"plan","string")
+            if source=="manual" or source=="apl" then info.source=source end
+            if plan=="single" or plan=="multi" or plan=="third" then info.plan=plan end
+            info.queued=S.Field(arcane,"queued","boolean")
+            local conditions=S.Field(arcane,"conditions","table")
+            for j=1,64 do
+                local condition=S.Field(conditions,j,"table"); if not condition then break end
+                local mode=S.Field(condition,"mode","string")
+                if mode=="use" or mode=="skip" then
+                    local entry={mode=mode}
+                    for _,key in ipairs({"strategyIndex","conditionIndex","min","max"}) do entry[key]=S.Field(condition,key,"number") end
+                    info.conditions[#info.conditions+1]=entry
+                end
+            end
+            row.arcaneBlast=info
+        end
         if row.session and row.request and row.spellID and row.token and row.firstSequence and row.lastSequence
             and row.firstFreshness and row.lastFreshness and row.firstPublishedAt then clean.deliveryDiagnostics[#clean.deliveryDiagnostics+1]=row end
     end

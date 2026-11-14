@@ -160,6 +160,7 @@ end
 -- 参考本地奥冲提醒的首发窗口。只记录公开玩家成功事件，独立于派发进度。
 local blastRanks = {[400574]=true,[1239696]=true,[1239697]=true,[1239699]=true,[1239700]=true}
 local blastWindow = 18
+function E:IsArcaneBlast(id) return blastRanks[id]==true end
 function E:ObserveArcaneBlast(unit,guid,id)
     if self.classToken~="MAGE" or S.Public(unit,"string")~="player" or not blastRanks[S.ID(id)] then return end
     guid=S.Identity(guid)
@@ -179,12 +180,13 @@ function E:ObserveArcaneBlast(unit,guid,id)
         window.count=window.count+1
     end
 end
-function E:ArcaneBlastStacks()
+function E:ArcaneBlastStacks(sampledAt)
     if self.classToken~="MAGE" or self.arcaneBlastUnknown then return nil end
-    local now=TEF.APL.State.Time()
+    local now=sampledAt or TEF.APL.State.Time()
     local window=self.arcaneBlastWindow
     if not now or (window and now<window.start) then return nil end
     if self.arcaneBlastUnknownUntil and now<self.arcaneBlastUnknownUntil then return nil end
-    if not window or now-window.start>=blastWindow then return 0 end
-    return window.count
+    if not window then return 0 end
+    local expires=window.start+blastWindow
+    return now>=expires and 0 or window.count,window.start,expires
 end
