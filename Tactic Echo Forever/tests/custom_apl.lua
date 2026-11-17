@@ -209,6 +209,15 @@ test("manual_apl_mode_explicit_start_can_dispatch_opener",function()
  local e=F.runtime(); C:Save(e,{row(143)},"single","MAGE"); e.db.dispatch.mode="manual"; InCombatLockdown=function() return false end
  T.Runtime:SetIntent(true); eq(e.aplCandidate.spellID,143); eq(T.Runtime.state,"running")
  eq(T.APL:Allowed(e,143),true); T.Dispatch:TickContinuous(); assert(T.Dispatch:Packet())
+ local sampledRevision=e.aplSnapshot.revision
+ A:Invalidate(false,"SPELL_UPDATE_COOLDOWN")
+ local allowed,reason=A:Allowed(e,143)
+ eq(allowed,false); eq(reason,"APL_STALE_OR_UNKNOWN")
+ local reload=T.Engine.New(T.Config,e.db)
+ local last=reload.db.queueDiagnostics[#reload.db.queueDiagnostics]
+ eq(last.reason,"APL_SNAPSHOT_REJECTED"); eq(last.aplPhase,"before_live_check")
+ eq(last.aplCause,"REVISION_CHANGED"); eq(last.aplInvalidation,"SPELL_UPDATE_COOLDOWN")
+ eq(last.aplSnapshotRevision,sampledRevision); eq(last.aplCandidateID,143)
  T.Runtime:Stop(); eq(T.Dispatch:Packet(),nil)
 end)
 test("editor_order_delete_draft_and_scene_keep_saved",function()

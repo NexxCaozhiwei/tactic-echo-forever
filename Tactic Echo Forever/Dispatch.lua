@@ -56,9 +56,9 @@ D.enabled=false
 -- Runtime-only opt-in; no timer estimates, persisted arm state or second transport.
 D.continuous=false
 -- Independent bounded evidence only; never read by queue/dispatch admission.
-function D:TraceQueue(reason,event,id,guid,queue)
+function D:TraceQueue(reason,event,id,guid,queue,apl)
     local e=TEF.engine
-    if not e or not e.db.dispatch or (not e.db.dispatch.castQueue and not e.db.dispatch.groupQueue and not e.db.dispatch.ordinaryContinuous) then return end
+    if not e or not e.db.dispatch or (not apl and not e.db.dispatch.castQueue and not e.db.dispatch.groupQueue and not e.db.dispatch.ordinaryContinuous) then return end
     local q=queue or self.castQueue or (self.pending and self.pending.castQueue)
     local ok,clock=S.Call("GetTime")
     local row={reason=S.Public(reason,"string"),event=S.Public(event,"string"),spellID=S.ID(id),guid=S.Identity(guid),
@@ -80,6 +80,9 @@ function D:TraceQueue(reason,event,id,guid,queue)
         if not q then row.remaining=timing.remaining; row.clientWindow=timing.clientWindow; row.effectiveLead=timing.effectiveLead end
         row.windowSampledAt=timing.sampledAt; row.windowAge=row.time and math.max(0,row.time-timing.sampledAt) or nil
         row.windowKind=timing.kind
+    end
+    if apl then
+        for key,value in pairs(apl) do row[key]=value end
     end
     local rows=e.db.queueDiagnostics
     if not rows then rows={}; e.db.queueDiagnostics=rows end

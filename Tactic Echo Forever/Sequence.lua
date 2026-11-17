@@ -25,6 +25,7 @@ function Engine:Log(kind, reason, spellID, current, nextStep, event, attempt, at
         kind = kind, reason = reason, spellID = spellID,
         scene = self.scene, version=TEF.Version,
         event = observed[event] and event or nil }
+    if kind == "probe" then return end
     self.lastReason = reason
     if self.groupRun and not self.maintenanceActive then
         local row=d[#d]; row.groupName=self.groupRun.group.name; row.groupRound=self.groupRun.round; row.groupIndex=self.index
@@ -105,7 +106,7 @@ function Engine.New(config, db)
     local clean = {schema=1, version=TEF.Version, session=oldSession + 1,
         loop=loopMode~="none", loopMode=loopMode, position=position, diagnostics={}, evicted=0}
     local kinds = {transport=true, match=true, completed=true, deviation=true, ignored=true, unknown=true,
-        lifecycle=true, duplicate=true, associated=true, observed=true, display=true, error=true}
+        lifecycle=true, duplicate=true, associated=true, observed=true, display=true, error=true, probe=true}
     if type(db.diagnostics) == "table" then
         for i = math.max(1, #db.diagnostics - 127), #db.diagnostics do
             local r = db.diagnostics[i]
@@ -197,6 +198,13 @@ function Engine.New(config, db)
         for _,key in ipairs({"reason","event","guid","originGUID","queuedGUID","currentGUID","loopMode","version","source","windowReason","windowKind"}) do
             local value=S.Field(raw,key,"string")
             if value and #value<=128 then row[key]=value end
+        end
+        for _,key in ipairs({"aplPhase","aplCause","aplInvalidation"}) do
+            local value=S.Field(raw,key,"string")
+            if value and #value<=128 then row[key]=value end
+        end
+        for _,key in ipairs({"aplCandidateID","aplCandidateIndex","aplSnapshotGeneration","aplSnapshotSerial","aplSnapshotRevision","aplRevision","aplSampledAt","aplCheckedAt"}) do
+            row[key]=S.Field(raw,key,"number")
         end
         for _,key in ipairs({"session","generation","cycle","request","time","spellID","index","count","receiptSerial","queueRequest","queueIndex","nextIndex","queueSpellID","queueSerial","lead","retryDelay","clientWindow","remaining","effectiveLead","worldLatency","homeLatency","latencyAllowance","windowSampledAt","windowAge"}) do
             row[key]=S.Field(raw,key,"number")

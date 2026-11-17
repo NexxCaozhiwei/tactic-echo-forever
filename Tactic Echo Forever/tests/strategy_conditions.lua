@@ -112,7 +112,8 @@ test("cdm_stacks_exact_public_secret_hidden_missing_conflict",function()
  local saved={}; for _,key in ipairs({"C_CooldownViewer","BuffIconCooldownViewer","BuffBarCooldownViewer"}) do saved[key]={_G[key]} end
  C_CooldownViewer={GetCooldownViewerCategorySet=function(cat) return cat==2 and {10} or {} end,GetCooldownViewerCooldownInfo=function() return {spellID=133} end}
  local data={spellId=133,applications=3}; local shown=true; local reads=0
- local frame={cooldownID=10,isActive=true,IsVisible=function() return shown end,GetAuraDataCached=function() reads=reads+1; return data end}
+ local frame=setmetatable({cooldownID=10,isActive=true,IsVisible=function() return shown end},{
+  __index=function(_,key) if key=="auraDataCached" then reads=reads+1; return data end end})
  local function pool(frames) return {EnumerateActive=function() local i=0; return function() i=i+1; return frames[i] end end} end
  BuffIconCooldownViewer={itemFramePool=pool({frame})}; BuffBarCooldownViewer={itemFramePool=pool({})}
  local requests={{enabled=true,cdmKind="buff",cdmSpellID=133,cdmStacks=true}}
@@ -122,10 +123,24 @@ test("cdm_stacks_exact_public_secret_hidden_missing_conflict",function()
  data.applications=3; shown=false; eq(P.CDM(requests)["buff:133"].stacks,nil)
  shown=true; data.spellId=143; eq(P.CDM(requests)["buff:133"].stacks,nil)
  data.spellId=133
- local other={cooldownID=10,isActive=true,IsVisible=function() return true end,GetAuraDataCached=function() return {spellId=133,applications=4} end}
+ local other={cooldownID=10,isActive=true,IsVisible=function() return true end,auraDataCached={spellId=133,applications=4}}
  BuffIconCooldownViewer.itemFramePool=pool({frame,other}); eq(P.CDM(requests)["buff:133"].stacks,nil)
  BuffIconCooldownViewer.itemFramePool=pool({}); eq(P.CDM(requests)["buff:133"].stacks,nil)
  eq(reads,0)
+ BuffIconCooldownViewer.itemFramePool=pool({frame})
+ data.spellId=143
+ local probe=P.ProbeBuffStacks({133})[133]
+ eq(probe.catalogMatches,1); eq(probe.frameMatches,1)
+ eq(probe.stacks,3); eq(probe.auraID,143)
+ data.spellId=F.secret; probe=P.ProbeBuffStacks({133})[133]
+ eq(probe.stacks,3); eq(probe.auraID,nil); eq(probe.reason,"PUBLIC")
+ data.applications=F.secret; probe=P.ProbeBuffStacks({133})[133]
+ eq(probe.stacks,nil); eq(probe.reason,"SECRET")
+ data=F.secret; probe=P.ProbeBuffStacks({133})[133]
+ eq(probe.stacks,nil); eq(probe.reason,"AURA_SECRET")
+ BuffIconCooldownViewer.itemFramePool=pool({frame,other})
+ probe=P.ProbeBuffStacks({133})[133]
+ eq(probe.stacks,nil); eq(probe.reason,"AMBIGUOUS_FRAME")
  for key,value in pairs(saved) do _G[key]=value[1] end
 end)
 

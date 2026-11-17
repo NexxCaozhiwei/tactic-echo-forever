@@ -181,7 +181,7 @@ local function visible(frame)
   if ok then return S.Public(value,"boolean") end
  end
 end
-function P.CDM(rows)
+function P.CDM(rows,inspect)
  local requests,needed,out,skipped={},{},{},{}
  local evidence,matched,frames={},{},{}
  for _,row in ipairs(rows) do
@@ -264,6 +264,7 @@ function P.CDM(rows)
        if value==false then active=false; classification="PUBLIC_INACTIVE_HIDDEN"
        else classification=value==nil and why or "CDM_HIDDEN_OR_UNKNOWN" end
       else classification="CDM_HIDDEN_OR_UNKNOWN" end
+      if inspect then inspect(k,frame,shown,active) end
       local old=out[k]
       if active==nil then out[k]={reason=classification or "CDM_ACTIVE_UNKNOWN",uncertain=true}
       elseif old.uncertain or (old.value~=nil and old.value~=active) then out[k]={reason="CDM_CONFLICT",uncertain=true}
@@ -291,6 +292,45 @@ function P.CDM(rows)
  end
  return out
 end
+
+-- 仅由手动诊断命令调用。目录 ID 和帧缓存中的光环 ID 分别保留。
+local function readAuraApplications(frame,shown,active)
+ if shown~=true then return nil,"HIDDEN_OR_UNKNOWN" end
+ if active~=true then return nil,active==false and "INACTIVE" or "ACTIVE_UNKNOWN" end
+ local aura,reason=S.Field(frame,"auraDataCached","table")
+ if not aura then return nil,"AURA_" .. reason end
+ -- CDM 条目的精确匹配已完成。缓存的 ID 是附加诊断，不阻止观察层数字段。
+ local auraID=S.ID(S.Field(aura,"spellId","number"))
+ local stacks,status=S.Field(aura,"applications","number")
+ if stacks==nil then return nil,status,auraID end
+ if stacks<0 or stacks>255 or stacks%1~=0 then return nil,"UNKNOWN_NUMBER",auraID end
+ return stacks,"PUBLIC",auraID
+end
+
+function P.ProbeBuffStacks(ids)
+ local rows,observed={},{}
+ for _,id in ipairs(ids) do rows[#rows+1]={enabled=true,cdmKind="buff",cdmSpellID=id} end
+ local status=P.CDM(rows,function(k,frame,shown,active)
+  if observed[k] then return end
+  local stacks,reason,auraID=readAuraApplications(frame,shown,active)
+  observed[k]={stacks=stacks,reason=reason,auraID=auraID}
+ end)
+ local results={}
+ for _,id in ipairs(ids) do
+  local k=key("buff",id)
+  local match=status[k]
+  local result
+  if match.frameMatchCount==1 and match.value==true then result=observed[k]
+  elseif (match.frameMatchCount or 0)>1 then result={reason="AMBIGUOUS_FRAME"}
+  else result={reason=match.reason} end
+  result.catalogMatches=match.catalogMatchCount or 0
+  result.frameMatches=match.frameMatchCount or 0
+  result.catalogSpellIDs=match.catalogSpellIDs
+  results[id]=result
+ end
+ return results
+end
+
 function P:Sample(state,rows)
  local distance=false
  for _,r in ipairs(rows) do if r.enabled and not r.invalid then

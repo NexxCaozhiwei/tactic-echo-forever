@@ -107,7 +107,7 @@ function A:Ledger(e)
  return table.concat(lines,"\n")
 end
 function A:IsActive(e) return TEF.Recommendation:Source(e)=="apl" end
-function A:Invalidate(static) self.State:Invalidate(static) end
+function A:Invalidate(static,cause) self.State:Invalidate(static,cause) end
 function A:Refresh(e)
  if e.maintenanceActive then return end
  if not self:IsActive(e) then return end
@@ -170,16 +170,42 @@ function A:PrepareQueueCandidate(e,state)
  if not row or row.group or (row.behavior and row.behavior.trigger~="continuous") then return end
  return candidate,state,row
 end
+-- 仅记录最终复核的拒绝细节，沿用现有阻断原因和派发门禁。
+local function stale(e,id,queue,s,c,now,phase,why)
+ local state=A.State
+ local d=TEF.Dispatch
+ if e==TEF.engine and d.pending then
+  d:TraceQueue("APL_SNAPSHOT_REJECTED",nil,id,nil,queue,{
+   aplPhase=phase,aplCause=why,aplInvalidation=state.invalidationCause,
+   aplCandidateID=c and c.spellID,aplCandidateIndex=c and c.customIndex,
+   aplSnapshotGeneration=s and s.generation,aplSnapshotSerial=s and s.receiptSerial,
+   aplSnapshotRevision=s and s.revision,aplRevision=state.revision or 0,
+   aplSampledAt=s and s.sampledAt,aplCheckedAt=now,
+  })
+ end
+ return false,"APL_STALE_OR_UNKNOWN"
+end
+
+local function staleCause(e,s,c,id,now)
+ if not s then return "SNAPSHOT_MISSING" end
+ if not c then return "CANDIDATE_MISSING" end
+ if c.spellID~=id then return "CANDIDATE_CHANGED" end
+ if s.generation~=e.generation then return "GENERATION_CHANGED" end
+ if s.receiptSerial~=(e.receiptSerial or 0) then return "RECEIPT_CHANGED" end
+ if s.revision~=(A.State.revision or 0) then return "REVISION_CHANGED" end
+ if not now or not s.sampledAt then return "CLOCK_UNKNOWN" end
+ if now<s.sampledAt then return "CLOCK_REVERSED" end
+ if now-s.sampledAt>1 then return "SNAPSHOT_TOO_OLD" end
+end
+
 function A:Allowed(e,id,queue)
  if not self:IsActive(e) then return true end
  local s,c=queue and queue.snapshot or e.aplSnapshot,queue and queue.candidate or e.aplCandidate; local now=self.State.Time()
  if queue then
   if not queue.targetIdentity or queue.targetIdentity~=self:QueueTargetIdentity(e) then return false,"APL_QUEUE_TARGET_CHANGED" end
  end
- if not s or not c or c.spellID~=id or s.generation~=e.generation or s.receiptSerial~=(e.receiptSerial or 0)
-  or s.revision~=(self.State.revision or 0) or not now or not s.sampledAt or now<s.sampledAt or now-s.sampledAt>1 then
-  return false,"APL_STALE_OR_UNKNOWN"
- end
+ local mismatch=staleCause(e,s,c,id,now)
+ if mismatch then return stale(e,id,queue,s,c,now,"before_live_check",mismatch) end
  -- 推荐预览不授予输入资格；派发复查公开战斗或显式手动脱战授权。
  local combat=self.State.Boolean("InCombatLockdown")
  if not TEF.Runtime:CombatAllowed(e,combat) then return false,"APL_DISPATCH_COMBAT_REQUIRED" end
@@ -201,7 +227,8 @@ function A:Allowed(e,id,queue)
   if row.enemyMin or row.enemyMax then local v=TEF.Research:CountVisible(); if v.state=="PUBLIC_VALUE" then live.enemy_count=v.value end end
   local allowed=self.Custom:Check(live,row,c.customIndex)
   if allowed~=true then return false,"APL_LIVE_DEPENDENCY_BLOCKED" end
-  if s.revision~=(self.State.revision or 0) or s.generation~=e.generation or s.receiptSerial~=(e.receiptSerial or 0) then return false,"APL_STALE_OR_UNKNOWN" end
+  local changed=staleCause(e,s,c,id,now)
+  if changed then return stale(e,id,queue,s,c,now,"after_live_check",changed) end
   return true
  end
  local action=self.State:ReadAction(c.action,{known=true,spellID=id,reason="CURRENT_CANDIDATE"},self:NeedsReady(e.db.apl,c.action))
@@ -216,7 +243,8 @@ function A:Allowed(e,id,queue)
  for _,rows in pairs(template.lists) do for _,rule in ipairs(rows) do if rule.id==c.rule then
   local allowed,_,key=self:RuleAllowed(live,rule,e.db.apl)
   if allowed~=true or key~=c.action then return false,"APL_LIVE_DEPENDENCY_BLOCKED" end
-  if s.revision~=(self.State.revision or 0) or s.generation~=e.generation or s.receiptSerial~=(e.receiptSerial or 0) then return false,"APL_STALE_OR_UNKNOWN" end
+  local changed=staleCause(e,s,c,id,now)
+  if changed then return stale(e,id,queue,s,c,now,"after_live_check",changed) end
   return true
  end end end
  return false,"APL_RULE_UNKNOWN"

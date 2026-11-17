@@ -49,12 +49,12 @@ local function onEvent(_,event,...)
     if not engine then return end
     if event=="SPELLS_CHANGED" or event=="CHARACTER_POINTS_CHANGED" or event=="PLAYER_TALENT_UPDATE"
         or event=="TRAIT_CONFIG_UPDATED" or event=="ACTIVE_TALENT_GROUP_CHANGED" or event=="PLAYER_ENTERING_WORLD" then
-        TEF.APL:Invalidate(true)
+        TEF.APL:Invalidate(true,event)
     elseif event=="SPELL_UPDATE_COOLDOWN" or event=="SPELL_UPDATE_CHARGES" or event=="PLAYER_TARGET_CHANGED"
         or event=="PLAYER_REGEN_ENABLED" or event=="PLAYER_REGEN_DISABLED"
-        or event=="COOLDOWN_VIEWER_DATA_LOADED" or event=="COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED" then TEF.APL:Invalidate() end
+        or event=="COOLDOWN_VIEWER_DATA_LOADED" or event=="COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED" then TEF.APL:Invalidate(false,event) end
     if event=="UNIT_POWER_UPDATE" or event=="UNIT_MAXPOWER" then
-        if S.Public((...),"string")=="player" then TEF.APL:Invalidate() end
+        if S.Public((...),"string")=="player" then TEF.APL:Invalidate(false,event) end
     end
     if event == "PLAYER_LOGOUT" then TEF.Runtime:Stop("RUNTIME_LOGOUT"); TEF.Transport:SetEnabled(false); return end
     if event == "PLAYER_LOGIN" then TEF.Hotkeys:Apply(); refresh(); return end
@@ -107,7 +107,7 @@ local function onEvent(_,event,...)
         if not consumed then engine:Handle(engine.generation,event,unit,guid,id) end
         -- Events invalidate research evidence, never manufacture cast=false.
         local publicUnit=S.Public(unit,"string")
-        if publicUnit=="player" then TEF.Research:Invalidate(); TEF.APL:Invalidate() end
+        if publicUnit=="player" then TEF.Research:Invalidate(); TEF.APL:Invalidate(false,event) end
         if publicUnit=="player" and event=="UNIT_SPELLCAST_CHANNEL_STOP" then TEF.Transport:Pulse("CHANNEL_STOP_RECONCILE") end
         refresh()
     end
@@ -185,6 +185,24 @@ SlashCmdList.TEF=function(raw)
     elseif command=="plan2" or command=="multi" then TEF.Profiles:UsePlan(engine,TEF.Recommendation:Source(engine),"multi")
     elseif command=="plan3" then TEF.Profiles:UsePlan(engine,TEF.Recommendation:Source(engine),"third")
     elseif command=="sample" then TEF.Research:Sample(engine); printSafe(TEF.Research:View())
+    elseif command=="cdmstack" then
+        local arg=input:match("^%s*%S+%s*(.-)%s*$")
+        local id=arg:match("^%d+$") and S.ID(tonumber(arg))
+        if arg~="" and not id then printSafe("用法：/tef cdmstack [CDM 增益 ID]"); return end
+        local spellID=id or 400574
+        local sample=TEF.APL.PublicConditions.ProbeBuffStacks({spellID})[spellID]
+        local reason="CDM_STACK_PROBE_V2:C" .. sample.catalogMatches .. ":F" .. sample.frameMatches .. ":" .. sample.reason
+        if sample.stacks~=nil then reason=reason .. ":" .. sample.stacks end
+        if sample.auraID then reason=reason .. ":A" .. sample.auraID end
+        engine:Log("probe",reason,spellID)
+        local value=sample.stacks~=nil and ("公开层数 " .. sample.stacks) or ("层数未知（" .. sample.reason .. "）")
+        printSafe("CDM ID " .. spellID .. "，目录匹配 " .. sample.catalogMatches .. "，帧匹配 " .. sample.frameMatches
+            .. "，" .. value .. (sample.auraID and ("，光环 ID " .. sample.auraID) or ""))
+        local catalog=sample.catalogSpellIDs
+        if sample.catalogMatches==0 and catalog and #catalog>0 then
+            printSafe("本次扫描的部分增益 ID：" .. table.concat(catalog,"、"))
+        end
+        return
     elseif command=="confirm" then
         local ok,reason=TEF.Profiles:ConfirmObserved(engine)
         printSafe(ok and "已确认公开成功ID，重置并暂停；请重新开始。" or ("未确认：" .. reason))

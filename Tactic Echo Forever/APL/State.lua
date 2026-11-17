@@ -13,8 +13,9 @@ end
 local function int(value,max)
  local v=S.Public(value,"number"); if v and v>=0 and v<=max and v%1==0 then return v end
 end
-function P:Invalidate(static)
+function P:Invalidate(static,cause)
  self.revision=(self.revision or 0)+1; self.dirty=true
+ self.invalidationCause=S.Public(cause,"string")
  if static then self.learned=nil; self.talents=nil; self.build=nil end
 end
 -- 编辑时按需完整扫描；等级只来自同一公开法术书槽位，绝不按ID大小推断。

@@ -367,7 +367,7 @@ function C:ObserveMovement()
     local value=TEF.APL.State.Boolean("IsPlayerMoving")
     self.movementSample={engine=e,time=now,value=value}
     if old and old.engine==e and old.value~=value and self.intent and TEF.APL:IsActive(e) then
-        TEF.APL:Invalidate()
+        TEF.APL:Invalidate(false,"MOVEMENT_REEVALUATE")
         TEF.Dispatch:Cancel("MOVEMENT_REEVALUATE")
         e:Log("observed","MOVEMENT_REEVALUATE")
     end
