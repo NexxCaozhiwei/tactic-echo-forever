@@ -865,8 +865,8 @@ function D:OrdinaryContinuous()
     return r and r.e==e and r.intent and not e.groupRun and e.db.dispatch.ordinaryContinuous==true
         and step and step.spellID~=5019 and step.spellID~=6603 and step.spellID~=75 or false
 end
-function D:TransportCastAllowed(continuous)
-    if self:ChannelTailAllowed() then return true end
+function D:TransportCastAllowed(continuous,channelTailAllowed)
+    if channelTailAllowed==true or (channelTailAllowed==nil and self:ChannelTailAllowed()) then return true end
     if TEF.engine.db.dispatch.ordinaryContinuous and self.channelInputLock then return false end
     return self:CastIdle()
 end
@@ -879,6 +879,7 @@ function D:Request(fromContinuous,queue)
     self:Cancel()
     local e=TEF.engine; local step=queue and queue.step or (e.steps and e.steps[queue and queue.nextIndex or e.index])
     local generation,index,serial=e.generation,e.index,e.receiptSerial or 0
+    local channelTailAllowed
     local blocked
     if not self.enabled then blocked="TEK_PERMISSION_DISABLED"
     elseif TEF.UI.settingsOpen then blocked="TEK_SETTINGS_OPEN"
@@ -888,8 +889,11 @@ function D:Request(fromContinuous,queue)
         and TEF.Runtime.state=="standby" and TEF.Runtime.reason=="RUNTIME_AUTO_STANDBY" then blocked="RUNTIME_AUTO_STANDBY"
     elseif not step or step.unverified then blocked="TEK_STEP_UNRESOLVED"
     elseif queue and (queue~=self.castQueue or self:CastQueueWindow()~=queue.nextIndex) then blocked="CAST_QUEUE_WINDOW_CLOSED"
-    elseif not queue and not self:TransportCastAllowed(fromContinuous==true) then blocked="TEK_CAST_PRESENT_OR_UNKNOWN"
-    elseif not queue and self:HasCurrentInitiation() then blocked="CONTINUOUS_WAIT_CURRENT_RECEIPT" end
+    elseif not queue then
+        channelTailAllowed=self:ChannelTailAllowed()==true
+        if not self:TransportCastAllowed(fromContinuous==true,channelTailAllowed) then blocked="TEK_CAST_PRESENT_OR_UNKNOWN"
+        elseif self:HasCurrentInitiation() then blocked="CONTINUOUS_WAIT_CURRENT_RECEIPT" end
+    end
     if blocked then e:Log("transport",blocked); return false,blocked end
     -- 普通连续请求复用本轮决策；最终Packet仍强制实时复核。
     -- 手工请求与预载保留独立实时检查。
@@ -916,7 +920,8 @@ function D:Request(fromContinuous,queue)
         or generation~=e.generation or index~=e.index or serial~=(e.receiptSerial or 0) or not e.running or not self.enabled or TEF.UI.settingsOpen then
         return false,"SEQUENCE_USAGE_SCOPE_CHANGED"
     end
-    self.pending={generation=e.generation,index=e.index,binding=binding,receiptSerial=serial,castQueue=queue,usageContext=usageContext,requestedAt=TEF.APL.State.Time()}
+    self.pending={generation=e.generation,index=e.index,binding=binding,receiptSerial=serial,castQueue=queue,
+        earlyDispatch=queue~=nil or channelTailAllowed==true,usageContext=usageContext,requestedAt=TEF.APL.State.Time()}
     if TEF.Runtime and TEF.Runtime.e==e then TEF.Runtime.requestSerial=TEF.Runtime.requestSerial+1 end
     self.pending.request=TEF.Runtime.requestSerial
     if queue then queue.request=self.pending.request end

@@ -271,6 +271,8 @@ function H:CreateChrome()
  U:Paint(self.chrome,"SetFrameLevel",self.baseLevel+1)
  self.chromeInner=panel(self.frame); anchor(self.chromeInner,self.frame,1,-1,258,86)
  U:Paint(self.chromeInner,"SetFrameLevel",self.baseLevel+1)
+ self.commandGlow=panel(self.frame); U:Paint(self.commandGlow,"SetFrameLevel",self.baseLevel+12)
+ U:Paint(self.commandGlow,"EnableMouse",false); U:Paint(self.commandGlow,"Hide")
  self.content=U:Frame("Frame",self.frame); U:Paint(self.content,"SetAllPoints",self.frame)
  U:Paint(self.content,"SetFrameLevel",self.baseLevel+3); U:Paint(self.content,"EnableMouse",false); U:Paint(self.content,"SetClipsChildren",true)
  self.badge=panel(self.content); self.badgeText=U:Text(self.badge,8,-7,88,"GameFontHighlightSmall")
@@ -434,6 +436,91 @@ function H:CompactVisibility()
  if minimal then U:Paint(self.cards[1].key,"Hide"); U:Paint(self.cards[1].keycap,"Hide") end
  for _,field in ipairs({self.role,self.castText,self.castTime}) do U:Paint(field,mini and "Hide" or "Show") end
 end
+H.commandColors={ordinary={.96,.68,.20},queue={.25,.78,1}}
+-- 只呈现插件已经建立的TEK请求；pending不证明桌面端已读取或发送按键。
+function H:CommandVisualState()
+ local e=self.engine; local p=TEF.Dispatch and TEF.Dispatch.pending
+ if not e or not p or TEF.engine~=e or not TEF.Runtime or TEF.Runtime.e~=e or TEF.Runtime.intent~=true then return nil end
+ local generation=S.Public(p.generation,"number"); local index=S.Public(p.index,"number")
+ local request=S.Public(p.request,"number"); local early=S.Public(p.earlyDispatch,"boolean")==true
+ if not generation or not index or not request or generation~=e.generation or index~=e.index then return nil end
+ return {request=request,kind=(p.castQueue or early) and "queue" or "ordinary"}
+end
+function H:PaintPrimaryPressed(pressed)
+ local primary=self.cards and self.cards[1]; local icon=primary and primary.icon
+ if not icon then return end
+ U:Paint(icon,"ClearAllPoints")
+ U:Paint(icon,"SetPoint","TOPLEFT",primary.frame,"TOPLEFT",3,pressed and -5 or -3)
+ U:Paint(icon,"SetPoint","BOTTOMRIGHT",primary.frame,"BOTTOMRIGHT",-3,pressed and 1 or 3)
+end
+function H:PaintCommandVisual(force)
+ if not self.frame or not self.cards or not self.commandGlow then return end
+ local e=self.engine; local live=self:CommandVisualState()
+ local ok,rawNow=S.Call("GetTime"); local now=ok and S.Public(rawNow,"number")
+ if self.commandVisualEngine~=e or self.commandVisualGeneration~=(e and e.generation) then
+  self.commandVisualRequest=nil; self.commandVisualKind=nil; self.commandPulseUntil=nil
+  self.commandVisualEngine=e; self.commandVisualGeneration=e and e.generation
+ end
+ if live then
+  if live.request~=self.commandVisualRequest then
+   self.commandVisualRequest=live.request; self.commandPulseUntil=now and now+.24 or nil
+  end
+  self.commandVisualKind=live.kind
+ end
+ local pulsing=self.commandPulseUntil and now and now<self.commandPulseUntil or false
+ local active=pulsing
+ local kind=live and live.kind or self.commandVisualKind
+ if not live and not pulsing then
+  self.commandVisualRequest=nil; self.commandVisualKind=nil; self.commandPulseUntil=nil
+ end
+ local primary=self.cards[1]
+ local glowEnabled=self.engine.db.hud.commandGlow~=false
+ local pressEnabled=self.engine.db.hud.commandPress~=false
+ local fingerprint=(active and (kind or "ordinary") or "none") .. ":" .. (pulsing and "pulse" or "steady")
+  .. ":" .. tostring(self.displayMode) .. ":" .. tostring(primary.hover==true) .. ":" .. tostring(primary.pressed==true)
+  .. ":" .. tostring(glowEnabled) .. ":" .. tostring(pressEnabled)
+ if not force and fingerprint==self.commandPaintFingerprint then return end
+ self.commandPaintFingerprint=fingerprint
+ if not active then
+  self:ApplyOpacity()
+  self:SurfaceColor(primary.border,"border",.3,.8,1,1)
+  local v=TEF.Runtime:GetViewState(); local c=self.colors[v.state] or self.colors.paused
+  U:Paint(primary.overlay,"SetColorTexture",c[1],c[2],c[3],primary.pressed and .22 or primary.hover and .12 or .025)
+  if primary.keycap then
+   self:SurfaceColor(primary.keycap,"fill",.015,.03,.055,.96); self:SurfaceColor(primary.keycap,"border",.22,.5,.72,1)
+  end
+  if primary.key then
+   U:Paint(primary.key,"ClearAllPoints"); U:Paint(primary.key,"SetPoint","CENTER",primary.keycap,"CENTER",0,0)
+  end
+  self:PaintPrimaryPressed(false); U:Paint(self.commandGlow,"Hide")
+  return
+ end
+ local c=self.commandColors[kind] or self.commandColors.ordinary
+ local v=TEF.Runtime:GetViewState(); local overlayColor=self.colors[v.state] or self.colors.paused
+ U:Paint(primary.overlay,"SetColorTexture",overlayColor[1],overlayColor[2],overlayColor[3],primary.pressed and .22 or primary.hover and .12 or .025)
+ if glowEnabled then
+  local borderAlpha=math.max(.78,self.engine.db.hud.opacity.border)
+  self:SurfaceColor(self.chrome,"border",c[1],c[2],c[3],borderAlpha)
+  self:SurfaceColor(self.chromeInner,"border",c[1],c[2],c[3],.62)
+  self:SurfaceColor(self.commandGlow,"border",c[1],c[2],c[3],1)
+  self:SurfaceColor(primary.border,"border",c[1],c[2],c[3],1)
+  if primary.keycap then
+   self:SurfaceColor(primary.keycap,"fill",c[1]*.16,c[2]*.16,c[3]*.16,1)
+   self:SurfaceColor(primary.keycap,"border",c[1],c[2],c[3],1)
+  end
+  U:Paint(self.commandGlow,"Show")
+ else
+  self:ApplyOpacity(); self:SurfaceColor(primary.border,"border",.3,.8,1,1)
+  if primary.keycap then
+   self:SurfaceColor(primary.keycap,"fill",.015,.03,.055,.96); self:SurfaceColor(primary.keycap,"border",.22,.5,.72,1)
+  end
+  U:Paint(self.commandGlow,"Hide")
+ end
+ if primary.key then
+  U:Paint(primary.key,"ClearAllPoints"); U:Paint(primary.key,"SetPoint","CENTER",primary.keycap,"CENTER",0,pressEnabled and active and -2 or 0)
+ end
+ self:PaintPrimaryPressed(pressEnabled and active)
+end
 function H:Layout()
  if not self.frame then return end
  if U:Combat()~=false then self.pending=true; return end
@@ -455,6 +542,10 @@ function H:Layout()
  self:RoundSurface(self.chrome,width,height,8,true,true)
  anchor(self.chromeInner,self.frame,1,-1,width-2,height-2)
  self:RoundSurface(self.chromeInner,width-2,height-2,7,false,true); self:ApplyOpacity()
+ anchor(self.commandGlow,self.frame,-2,2,width+4,height+4)
+ self:RoundSurface(self.commandGlow,width+4,height+4,8,false,true)
+ for _,part in ipairs(self.roundSurfaces[self.commandGlow].border) do U:Paint(part,"SetBlendMode","ADD") end
+ U:Paint(self.commandGlow,"Hide")
  local xs=mini and {6,62,108} or {6,previewX,previewX+sizes[2]+gap}
  for i,card in ipairs(self.cards or {}) do
   card.size=sizes[i]; anchor(card.frame,self.frame,minimal and i==1 and 0 or xs[i],minimal and i==1 and 0 or mini and (i==1 and -6 or -10) or (i==1 and -8 or -12),sizes[i],sizes[i])
@@ -541,6 +632,8 @@ function H:Create(e)
         if ok and S.Public(shown,"boolean")==false then return end
         -- 每帧只插值缓存的公开施法时间；其他显示查询仍保持原节拍。
         self:PaintCastVisual(true)
+        -- 复用同一显示心跳捕捉短暂请求；只读取既有pending，不新增派发或查询路径。
+        self:PaintCommandVisual()
         self.elapsed=(self.elapsed or 0)+elapsed
         if self.elapsed>=.25 then self.elapsed=self.elapsed%.25; self:VisualTick() end
     end)
@@ -629,6 +722,7 @@ function H:RefreshState()
     else U:Paint(primary.keycap,"Hide"); U:Paint(primary.key,"SetText","") end
     self:CompactVisibility()
     self:RefreshQuickPlans()
+    self:PaintCommandVisual(true)
 end
 function H:VisualTick()
     -- 复用显示节拍，距离及变色只读，不参与派发。

@@ -390,11 +390,17 @@ function UI:CreateSettings()
             self:Paint(TEF.HUD.frame,"ClearAllPoints"); self:Paint(TEF.HUD.frame,"SetPoint","CENTER",UIParent,"CENTER",0,-155)
         end,"恢复位置")
     end)
-    self:CreateSectionCard(self.pages.hud,"技能图标大小与间距",0,-744,580,392)
+    self:CreateSectionCard(self.pages.hud,"派发视觉提示",0,-744,580,136)
+    self.commandGlowToggle=self:CreateToggleRow(self.pages.hud,"派发外框",16,-792,258,
+        function() return e.db.hud.commandGlow end,function(value) e.db.hud.commandGlow=value; TEF.HUD:PaintCommandVisual(true) end)
+    self.commandPressToggle=self:CreateToggleRow(self.pages.hud,"派发按下动画",306,-792,258,
+        function() return e.db.hud.commandPress end,function(value) e.db.hud.commandPress=value; TEF.HUD:PaintCommandVisual(true) end)
+    self:CreateHintText(self.pages.hud,"普通派发与提前派发共用这两个开关，外框与按下动画同步显示0.24秒；仅改变HUD提示，不改变TEK请求或游戏输入。",16,-840,548)
+    self:CreateSectionCard(self.pages.hud,"技能图标大小与间距",0,-896,580,392)
     local geometryRows={{"mainSize","当前技能大小",32,44},{"preview1Size","后续技能1大小",24,36},{"preview2Size","后续技能2大小",24,36},{"gap1","主图标与文字间距",2,6},{"gap2","后续1与2间距",2,4}}
     self.hudGeometryControls={}
     for i,row in ipairs(geometryRows) do local field=row[1]
-        local slider,input=self:CreateSliderRow(self.pages.hud,row[2],16,-792-(i-1)*64,548,row[3],row[4],1,
+        local slider,input=self:CreateSliderRow(self.pages.hud,row[2],16,-944-(i-1)*64,548,row[3],row[4],1,
             function() return math.min(row[4],e.db.hud.geometry[field]) end,function(value) if e.db.hud.mode~="standard" then return end; e.db.hud.geometry[field]=value; TEF.HUD:Layout() end,true)
         self.hudGeometryControls[field]={slider=slider,input=input}
         self:AddControlSync(function()
@@ -405,18 +411,18 @@ function UI:CreateSettings()
             input.tefDisabledReason=slider.tefDisabledReason
         end,slider)
     end
-    self:CreateHintText(self.pages.hud,"简略与最小HUD固定图标大小与间距，以上几何设置仅用于标准HUD。左键主卡启停，右键设置；空白可拖动。",16,-1160,548)
-    self:CreateSectionCard(self.pages.hud,"HUD底纹与外框透明度",0,-1220,580,240)
+    self:CreateHintText(self.pages.hud,"简略与最小HUD固定图标大小与间距，以上几何设置仅用于标准HUD。左键主卡启停，右键设置；空白可拖动。",16,-1312,548)
+    self:CreateSectionCard(self.pages.hud,"HUD底纹与外框透明度",0,-1372,580,240)
     self.hudOpacityControls={}
     for i,spec in ipairs({{"background","底纹透明度（%）"},{"border","外框透明度（%）"}}) do
         local field=spec[1]
-        local slider,input=self:CreateSliderRow(self.pages.hud,spec[2],16,-1268-(i-1)*64,548,0,100,1,
+        local slider,input=self:CreateSliderRow(self.pages.hud,spec[2],16,-1420-(i-1)*64,548,0,100,1,
             function() return math.floor((1-e.db.hud.opacity[field])*100+.5) end,
             function(value) e.db.hud.opacity[field]=1-value/100; TEF.HUD:ApplyOpacity() end,true)
         self.hudOpacityControls[field]={slider=slider,input=input}
     end
-    self:CreateHintText(self.pages.hud,"0%不透明，100%完全透明；全部HUD模式共用。仅改变底纹和外框，技能图标与文字保持原样。",16,-1400,548)
-    self:Paint(self.pages.hud,"SetHeight",1484)
+    self:CreateHintText(self.pages.hud,"0%不透明，100%完全透明；全部HUD模式共用。仅改变底纹和外框，技能图标与文字保持原样。",16,-1552,548)
+    self:Paint(self.pages.hud,"SetHeight",1636)
     self:CreateSectionCard(self.pages.tek,"输入链许可",0,-106,580,88)
     self.signalToggle=self:CreateToggleRow(self.pages.tek,"TEAP 输出",16,-146,258,function() return e.db.dispatch.signal end,function(v) TEF.Runtime:SetSignal(v) end)
     self.permissionToggle=self:CreateToggleRow(self.pages.tek,"TEK 请求许可",306,-146,258,function() return e.db.dispatch.permission end,function(v) TEF.Runtime:SetPermission(v) end)

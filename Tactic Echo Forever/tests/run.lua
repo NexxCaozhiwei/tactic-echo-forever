@@ -239,11 +239,13 @@ test("two_profiles_independent_and_save_resets",function()
     T.Profiles:Select(e,"single"); eq(e.completed,false); eq(e.steps[1].spellID,116)
 end)
 test("profile_reload_whitelist_no_active_or_foreign_data",function()
-    local e=engine(); T.Profiles:Select(e,"multi"); e:Start(); e.db.hud={scale=1.2,locked=true,preview=false}
+    local e=engine(); eq(e.db.hud.commandGlow,true); eq(e.db.hud.commandPress,true)
+    T.Profiles:Select(e,"multi"); e:Start(); e.db.hud={scale=1.2,locked=true,preview=false,commandGlow=false,commandPress=false}
     e.db.profiles.multi[1].foreign=secret; e.db.tekEnabled=true
     local reloaded=engine(T.Config,e.db)
     eq(reloaded.scene,"multi"); eq(reloaded.running,false); eq(reloaded.db.hud.scale,1.2)
-    eq(reloaded.db.hud.preview,false); eq(reloaded.db.profiles.multi[1].foreign,nil); eq(reloaded.db.tekEnabled,nil)
+    eq(reloaded.db.hud.preview,false); eq(reloaded.db.hud.commandGlow,false); eq(reloaded.db.hud.commandPress,false)
+    eq(reloaded.db.profiles.multi[1].foreign,nil); eq(reloaded.db.tekEnabled,nil)
     T.Profiles:Select(reloaded,reloaded.scene); eq(reloaded.steps[1].spellID,118)
 end)
 test("profile_parser_explicit_ids_pending_and_limits",function()

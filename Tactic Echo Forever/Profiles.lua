@@ -206,8 +206,11 @@ function P:Initialize(e, old)
     local locked = hud and S.Field(hud,"locked","boolean")
     local preview = hud and S.Field(hud,"preview","boolean")
     local mode = hud and S.Field(hud,"mode","string")
+    local commandGlow = hud and S.Field(hud,"commandGlow","boolean")
+    local commandPress = hud and S.Field(hud,"commandPress","boolean")
     e.db.hud = {scale=scale and scale>=0.6 and scale<=1.8 and scale or 1,
-        locked=locked==true, preview=preview~=false, mode=(mode=="mini" or mode=="minimal") and mode or "standard"}
+        locked=locked==true, preview=preview~=false, mode=(mode=="mini" or mode=="minimal") and mode or "standard",
+        commandGlow=commandGlow~=false, commandPress=commandPress~=false}
     e.db.hud.geometry=TEF.HudStyles.CleanGeometry(hud and S.Field(hud,"geometry","table"))
     e.db.hud.styles=TEF.HudStyles.Clean(hud and S.Field(hud,"styles","table"))
     e.db.hud.opacity=TEF.HudStyles.CleanOpacity(hud and S.Field(hud,"opacity","table"))

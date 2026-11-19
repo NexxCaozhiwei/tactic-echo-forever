@@ -126,6 +126,68 @@ test("hud_studio_visual_tick_does_not_poll_cast_or_resolve_bindings",function()
  eq(reads,0); T.Dispatch.Resolve=resolver
 end)
 
+test("hud_tek_request_indicator_distinguishes_ordinary_and_early_queue",function()
+ local e=setup(); local generation,index,serial=e.generation,e.index,e.receiptSerial
+ T.Runtime.intent=true; e.running=true
+ H:RefreshState(); local baselineOverlay={unpack(H.cards[1].overlay.color)}
+ T.Dispatch.pending={generation=generation,index=index,request=41,binding={key="F8"}}
+ H.cards[1].key:SetText("F8"); H:RefreshState()
+ eq(H.commandGlow.shown,true); eq(H.commandMarker,nil); eq(H.commandMarkerText,nil)
+ eq(H.roundSurfaces[H.chrome].border[1].color[1],H.commandColors.ordinary[1])
+ eq(H.roundSurfaces[H.commandGlow].border[1].color[1],H.commandColors.ordinary[1])
+ eq(H.roundSurfaces[H.cards[1].border].border[1].color[2],H.commandColors.ordinary[2])
+ for i=1,4 do eq(H.cards[1].overlay.color[i],baselineOverlay[i]) end
+ eq(H.cards[1].key.point[5],-2); eq(H.cards[1].icon.point[5],1)
+ T.Dispatch.pending.request=42; T.Dispatch.pending.castQueue={nextIndex=2}; H:RefreshState()
+ eq(H.roundSurfaces[H.chrome].border[1].color[3],H.commandColors.queue[3])
+ assert(H:SetMode("mini")); eq(H.commandGlow.shown,true)
+ assert(H:SetMode("minimal")); eq(H.commandGlow.shown,true)
+ assert(H.commandGlow.frameLevel>H.cards[1].textParent.frameLevel)
+ eq(H.commandGlow.point[4],-2); eq(H.commandGlow.point[5],2)
+ eq(H.chrome.shown,false); eq(H.roundSurfaces[H.cards[1].border].border[1].color[1],H.commandColors.queue[1])
+ eq(e.generation,generation); eq(e.index,index); eq(e.receiptSerial,serial)
+ T.Dispatch.pending=nil; T.Runtime.intent=false; GetTime=function() return 11 end; H:PaintCommandVisual()
+ eq(H.commandGlow.shown,false); eq(H.cards[1].icon.point[5],3)
+end)
+
+test("hud_tek_request_edge_is_visually_latched_without_claiming_input",function()
+ local e=setup(); local now=10; GetTime=function() return now end
+ T.Runtime.intent=true; e.running=true
+ T.Dispatch.pending={generation=e.generation,index=e.index,request=51,binding={key="F8"},earlyDispatch=true}
+ H:RefreshState(); eq(H.commandGlow.shown,true)
+ eq(H.roundSurfaces[H.commandGlow].border[1].color[3],H.commandColors.queue[3])
+ T.Dispatch.pending=nil; now=10.23; H:PaintCommandVisual(); eq(H.commandGlow.shown,true)
+ now=10.25; H:PaintCommandVisual(); eq(H.commandGlow.shown,false)
+ eq(H.badge.shown,true); eq(H.cards[1].key.point[5],0)
+ T.Runtime.intent=false
+end)
+
+test("hud_tek_request_glow_and_press_end_together_while_request_remains",function()
+ local e=setup(); local now=20; GetTime=function() return now end
+ T.Runtime.intent=true; e.running=true
+ T.Dispatch.pending={generation=e.generation,index=e.index,request=56,binding={key="F8"}}
+ H:RefreshState(); eq(H.commandGlow.shown,true); eq(H.cards[1].icon.point[5],1)
+ now=20.23; H:PaintCommandVisual(); eq(H.commandGlow.shown,true); eq(H.cards[1].icon.point[5],1)
+ now=20.25; H:PaintCommandVisual(); eq(H.commandGlow.shown,false); eq(H.cards[1].icon.point[5],3)
+ eq(H.commandVisualRequest,56)
+ now=20.30; H:PaintCommandVisual(); eq(H.commandGlow.shown,false); eq(H.cards[1].icon.point[5],3)
+ T.Dispatch.pending=nil; H:PaintCommandVisual(); eq(H.commandVisualRequest,nil)
+ T.Runtime.intent=false
+end)
+
+test("hud_tek_request_glow_and_press_can_be_disabled_independently",function()
+ local e=setup(); T.Runtime.intent=true; e.running=true
+ T.Dispatch.pending={generation=e.generation,index=e.index,request=61,binding={key="F8"},earlyDispatch=true}
+ H:RefreshState(); eq(H.commandGlow.shown,true); eq(H.cards[1].icon.point[5],1)
+ e.db.hud.commandGlow=false; H:PaintCommandVisual(true)
+ eq(H.commandGlow.shown,false); eq(H.cards[1].icon.point[5],1)
+ eq(H.roundSurfaces[H.chrome].border[1].color[1],.30)
+ eq(H.roundSurfaces[H.cards[1].border].border[1].color[2],.8)
+ e.db.hud.commandGlow=true; e.db.hud.commandPress=false; H:PaintCommandVisual(true)
+ eq(H.commandGlow.shown,true); eq(H.cards[1].icon.point[5],3); eq(H.cards[1].key.point[5],0)
+ T.Dispatch.pending=nil; T.Runtime.intent=false
+end)
+
 test("hud_frame_interpolation_and_centered_keycap_preserve_dispatch",function()
  local e=setup(); UnitCastingInfo=function() return "寒冰箭",nil,nil,9500,12000 end
  H:RefreshState(); H.elapsed=0
