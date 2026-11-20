@@ -46,6 +46,8 @@ class StatusWindow:
         self._settings_vars: dict[str, tk.Variable] = {}
         self._notebook: ttk.Notebook | None = None
         self._tabs: dict[str, ttk.Frame] = {}
+        self._tab_contents: dict[str, ttk.Frame] = {}
+        self._tab_canvases: dict[str, tk.Canvas] = {}
         self._status_dot: tk.Canvas | None = None
         self._ui_button: ttk.Button | None = None
         self._pause_button: ttk.Button | None = None
@@ -93,7 +95,7 @@ class StatusWindow:
         # The status/diagnostics pages intentionally remain usable on high-DPI
         # displays.  The user may resize the tray host within a bounded range;
         # no layout decision depends on a fixed desktop resolution.
-        root.minsize(450, 900)
+        root.minsize(450, 640)
         root.maxsize(900, 2000)
         root.resizable(True, True)
         self._restore_saved_window_geometry()
@@ -206,7 +208,7 @@ class StatusWindow:
             return
         # Ignore Tk's transient 1x1 geometry while a root is being created or
         # torn down. The last stable rectangle remains intact.
-        if width < 450 or height < 900:
+        if width < 450 or height < 640:
             return
         geometry = (width, height, x, y)
         if not force and geometry == self._last_saved_window_geometry:
@@ -258,15 +260,100 @@ class StatusWindow:
         self._notebook = notebook
 
         for key, title in (("status", "状态"), ("general", "常规"), ("connection", "连接"), ("intervention", "连发介入"), ("diagnostics", "诊断")):
-            tab = ttk.Frame(notebook, padding=10)
-            notebook.add(tab, text=title)
-            self._tabs[key] = tab
+            self._build_scrollable_tab(notebook, key, title)
 
-        self._build_status_tab(self._tabs["status"])
-        self._build_general_tab(self._tabs["general"])
-        self._build_connection_tab(self._tabs["connection"])
-        self._build_intervention_tab(self._tabs["intervention"])
-        self._build_diagnostics_tab(self._tabs["diagnostics"])
+        self._build_status_tab(self._tab_contents["status"])
+        self._build_general_tab(self._tab_contents["general"])
+        self._build_connection_tab(self._tab_contents["connection"])
+        self._build_intervention_tab(self._tab_contents["intervention"])
+        self._build_diagnostics_tab(self._tab_contents["diagnostics"])
+        root.bind("<MouseWheel>", self._on_tab_mousewheel, add="+")
+
+    def _build_scrollable_tab(self, notebook: ttk.Notebook, key: str, title: str) -> None:
+        """Create one vertically scrollable notebook page.
+
+        The notebook child remains separate from the content frame so tab
+        selection keeps using the direct child while every settings page can
+        remain reachable on a short or high-DPI display.
+        """
+        tab = ttk.Frame(notebook)
+        notebook.add(tab, text=title)
+        self._tabs[key] = tab
+
+        container = ttk.Frame(tab)
+        container.pack(fill="both", expand=True)
+        background = ttk.Style(notebook).lookup("TFrame", "background") or "SystemButtonFace"
+        canvas = tk.Canvas(container, highlightthickness=0, borderwidth=0, background=background)
+        scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        content = ttk.Frame(canvas, padding=10)
+        content_window = canvas.create_window((0, 0), window=content, anchor="nw")
+        content.bind(
+            "<Configure>",
+            lambda _event, page_canvas=canvas: page_canvas.configure(scrollregion=page_canvas.bbox("all")),
+            add="+",
+        )
+        canvas.bind(
+            "<Configure>",
+            lambda event, page_canvas=canvas, item=content_window, page_content=content: self._resize_tab_content(
+                page_canvas, item, page_content, event.width
+            ),
+            add="+",
+        )
+        self._tab_contents[key] = content
+        self._tab_canvases[key] = canvas
+
+    def _resize_tab_content(self, canvas: tk.Canvas, content_window: int, content: ttk.Frame, width: int) -> None:
+        canvas.itemconfigure(content_window, width=max(1, width))
+        self._refresh_wrapped_labels(content, max(240, width - 32))
+
+    def _refresh_wrapped_labels(self, parent: tk.Misc, available_width: int) -> None:
+        """Keep existing label wrap limits while shrinking them with the page."""
+        for child in parent.winfo_children():
+            if child.winfo_class() in {"Label", "TLabel"}:
+                limit = getattr(child, "_tef_wrap_limit", None)
+                if limit is None:
+                    try:
+                        limit = child.winfo_pixels(child.cget("wraplength"))
+                    except (tk.TclError, TypeError, ValueError):
+                        limit = 0
+                    child._tef_wrap_limit = limit
+                if limit > 0:
+                    child.configure(wraplength=min(limit, available_width))
+            self._refresh_wrapped_labels(child, available_width)
+
+    def _on_tab_mousewheel(self, event: tk.Event) -> str | None:
+        """Scroll only the active page and preserve native editor scrolling."""
+        if self.root is None or self._notebook is None or not event.delta:
+            return None
+        selected = self._notebook.select()
+        key = next((name for name, tab in self._tabs.items() if str(tab) == selected), None)
+        canvas = self._tab_canvases.get(key or "")
+        if canvas is None:
+            return None
+        try:
+            target = self.root.winfo_containing(event.x_root, event.y_root)
+        except tk.TclError:
+            return None
+        current = target
+        inside_page = False
+        while current is not None:
+            if current.winfo_class() in {"Text", "Spinbox", "TSpinbox", "TCombobox", "Listbox"}:
+                return None
+            if current is canvas:
+                inside_page = True
+                break
+            current = current.master
+        if not inside_page:
+            return None
+        region = canvas.bbox("all")
+        if not region or region[3] <= canvas.winfo_height():
+            return None
+        canvas.yview_scroll(-1 if event.delta > 0 else 1, "units")
+        return "break"
 
 
     def _build_intervention_tab(self, frame: ttk.Frame) -> None:
@@ -698,7 +785,6 @@ class StatusWindow:
     def _build_diagnostics_tab(self, frame: ttk.Frame) -> None:
         settings = self.settings_store.load()
         self._settings_vars["log_level"] = tk.StringVar(value=settings.log_level)
-        self._settings_vars["wow_savedvariables_path"] = tk.StringVar(value=settings.wow_savedvariables_path)
         ttk.Label(frame, text="日志级别").pack(anchor="w")
         ttk.Combobox(frame, textvariable=self._settings_vars["log_level"], values=("DEBUG", "INFO", "WARNING", "ERROR"), state="readonly").pack(
             anchor="w", pady=(2, 8)
@@ -713,18 +799,12 @@ class StatusWindow:
         for key in ("log_size", "foreground_diagnostics", "signal_diagnostics", "physical_input_diagnostics"):
             ttk.Label(frame, textvariable=self.values[key], foreground="#666666", wraplength=620, justify="left").pack(fill="x")
 
-        ttk.Label(frame, text="映射快照（可选）").pack(anchor="w", pady=(8, 0))
-        source_row = ttk.Frame(frame)
-        source_row.pack(fill="x", pady=(2, 8))
-        ttk.Entry(source_row, textvariable=self._settings_vars["wow_savedvariables_path"], width=52, state="disabled").pack(side="left", fill="x", expand=True)
-        ttk.Button(source_row, text="TEF不读取其他插件保存变量", state="disabled").pack(side="left", padx=(5, 0))
-
         ttk.Label(frame, text="最近原因计数").pack(anchor="w")
         self.values["reason_counts"] = tk.StringVar(value="-")
         ttk.Label(frame, textvariable=self.values["reason_counts"], foreground="#666666", wraplength=620).pack(fill="x", pady=(2, 6))
         ttk.Label(frame, text="最近事件（最多 20 条）").pack(anchor="w")
         self._events_text = tk.Text(frame, height=7, width=72, state="disabled", wrap="none", font=("Consolas", 8))
-        self._events_text.pack(fill="both", expand=True, pady=(2, 8))
+        self._events_text.pack(fill="x", pady=(2, 8))
         actions = ttk.Frame(frame)
         actions.pack(fill="x")
         ttk.Button(actions, text="生成诊断包", command=self._create_diagnostic_bundle).grid(row=0, column=0, padx=(0, 5), pady=3, sticky="ew")
@@ -735,7 +815,7 @@ class StatusWindow:
         ttk.Button(actions, text="导入设置", command=self._import_settings).grid(row=2, column=1, padx=(0, 5), pady=3, sticky="ew")
         for col in range(2):
             actions.columnconfigure(col, weight=1)
-        ttk.Label(frame, text="诊断包包含设置、状态、近期 trace 和可选映射快照；不会复制完整 SavedVariables 或宏正文。", foreground="#666666", wraplength=620).pack(
+        ttk.Label(frame, text="诊断包仅包含 TEF TEK 自身的设置、状态、近期 trace 和运行日志；不会读取其他插件 SavedVariables。", foreground="#666666", wraplength=620).pack(
             fill="x", pady=(8, 6)
         )
         ttk.Button(frame, text="保存诊断设置", command=self._save_diagnostics).pack(anchor="e")
@@ -907,25 +987,14 @@ class StatusWindow:
         self.settings_store.save(updated)
         messagebox.showinfo("TEK", "已保存。连接、Profile、采样与连发频率设置将在停止后重新启动 TEK 时生效。")
 
-    def _choose_savedvariables(self) -> None:
-        selected = filedialog.askopenfilename(
-            title="选择 WoW 的 TacticEcho.lua",
-            filetypes=(("Lua 保存变量", "TacticEcho.lua"), ("Lua 文件", "*.lua"), ("所有文件", "*.*")),
-        )
-        if selected:
-            self._settings_vars["wow_savedvariables_path"].set(selected)
-
     def _create_diagnostic_bundle(self) -> None:
-        # Persist the optional mapping source before packaging so one click is
-        # repeatable on later support runs.
         self._save_diagnostics(show_message=False)
         try:
-            path, manifest = self.worker.create_diagnostic_bundle()
+            path, _ = self.worker.create_diagnostic_bundle()
         except OSError as error:
             messagebox.showerror("TEK", f"生成诊断包失败：{error}")
             return
-        mapping_note = "已包含映射快照" if manifest.get("mappingExportIncluded") else "TEF仅导出自身TEK诊断，不读取其他插件保存变量"
-        messagebox.showinfo("TEK", f"诊断包已生成：\n{path}\n{mapping_note}")
+        messagebox.showinfo("TEK", f"诊断包已生成：\n{path}\n仅包含 TEF TEK 自身诊断数据。")
 
     def _copy_diagnostic_summary(self) -> None:
         """Generate the redacted bundle and copy its human summary to clipboard."""
@@ -948,7 +1017,6 @@ class StatusWindow:
         self.settings_store.save(AppSettings.from_dict({
             **settings.to_dict(),
             "log_level": self._settings_vars["log_level"].get(),
-            "wow_savedvariables_path": self._settings_vars["wow_savedvariables_path"].get(),
         }))
         if show_message:
             messagebox.showinfo("TEK", "已保存诊断设置。")

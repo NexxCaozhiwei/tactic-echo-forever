@@ -141,6 +141,8 @@ function U:CreateStudio()
  for _,panel in pairs(self.pageFrames) do self:Paint(panel,"SetParent",self.studioPageSurface) end
  self.studioPageTitle=self:Text(self.studioPageSurface,16,-12,560)
  self:ApplyControlFont(self.studioPageTitle,false,self.theme.fontPage)
+ self.studioInspectorShield=self:Frame("Frame",self.settings)
+ self:Paint(self.studioInspectorShield,"EnableMouse",true); self:Paint(self.studioInspectorShield,"Hide")
  self.studioInspector=self:CreateStudioPanel(self.settings); self:Paint(self.studioInspector,"EnableMouse",true)
  self.studioBottom=self:CreateStudioPanel(self.settings)
  self.studioStatus=self:Text(self.settings,12,-800,1200,"GameFontHighlightSmall"); self:Paint(self.studioStatus,"SetWordWrap",false)
@@ -211,8 +213,8 @@ function U:CreateStudio()
   if not self:CommitCustomNumbers() then return end
   self.studioSelected=nil; self.studioInspectorRequested=false; self.studioPlanOpen=false; self:Paint(self.strategyPanel,"Hide"); self:Paint(self.groupPanel,"Hide"); self:LayoutSettings()
  end)
- self:Paint(self.strategyPanel,"SetParent",self.studioInspector); self:Paint(self.strategyPanel,"SetFrameStrata","MEDIUM")
- self:Paint(self.groupPanel,"SetParent",self.studioInspector); self:Paint(self.groupPanel,"SetFrameStrata","MEDIUM")
+ self:Paint(self.strategyPanel,"SetParent",self.studioInspector)
+ self:Paint(self.groupPanel,"SetParent",self.studioInspector)
  self:Paint(self.groupListBox,"Hide"); self:Paint(self.groupIDLabel,"Hide")
  self:CreateHintText(self.groupPanel,"在左侧编辑组内步骤；选择技能行后在此编辑策略。\n返回父列表会先暂存，保存方案才持久化。",16,-176,390)
  self.groupAlignRanks=self:CreateActionButton(self.groupPanel,"按技能条校准等级",16,-224,144,function() self:DetectPlanBarRanks() end)
@@ -231,7 +233,7 @@ function U:CreateStudio()
  for i,w in ipairs(self.sequenceRows) do self:BindStudioDrag(w,i,"manual") end
  for i,w in ipairs(self.customWidgets) do self:BindStudioDrag(w,i,"apl") end
  for i,w in ipairs(self.groupWidgets) do self:BindStudioDrag(w,i,"group") end
- self:CreateStudioTools(); self.settingsLayoutSignature=nil
+ self:CreateStudioTools(); self:SyncSettingsLayers(); self.settingsLayoutSignature=nil
 end
 function U:RefreshStudio()
  if not self.studio or self.studioRefreshing or self.refreshingPage then return end
@@ -306,7 +308,7 @@ function U:RefreshStudioContent()
  self.studioRefreshing=false
  self:LayoutSettings()
 end
-function U:SyncStudioVisibility(listPage,source,inspect,workspace,selected,w)
+function U:SyncStudioVisibility(listPage,source,inspect,workspace,selected,w,overlay)
  local function show(object,value) self:Paint(object,value and "Show" or "Hide") end
  show(self.studioWorkspace,workspace>0 or self.studioWorkspaceOpen)
  show(self.studioEditor,listPage)
@@ -318,7 +320,7 @@ function U:SyncStudioVisibility(listPage,source,inspect,workspace,selected,w)
  local footer=source=="manual" and self.pageFooters[self.pages.profiles] or source=="apl" and self.pageFooters[self.pages.customapl] or self.studioGroupFooter
  show(self.studioGroupFooter,listPage and source=="group")
  if listPage and footer then show(footer,true) end
- show(self.studioBottom,listPage); show(self.studioInspector,inspect)
+ show(self.studioBottom,listPage); show(self.studioInspector,inspect); show(self.studioInspectorShield,inspect and overlay)
  for _,button in ipairs({self.strategySaveButton,self.manualSave,self.customSave,self.groupSaveButton}) do show(button,false) end
  show(self.studioInspectorClose,inspect)
  local plan=listPage and self.studioPlanOpen and not self.groupEditing
@@ -332,7 +334,7 @@ function U:SyncStudioVisibility(listPage,source,inspect,workspace,selected,w)
  if not self.groupEditing then show(self.groupPanel,false) end
  local empty=not (selected or self.studioPlanOpen or self.groupEditing)
  show(self.studioInspectTitle,empty); show(self.studioInspectBody,empty)
- show(self.studioContext,w>=1200); show(self.studioLibrary,self.studioLibraryOpen)
+ show(self.studioContext,w>=960); show(self.studioLibrary,self.studioLibraryOpen)
 end
 function U:CenterStudioWindows(inspect,sideSpan)
  self:Paint(self.settings,"ClearAllPoints")
@@ -349,7 +351,7 @@ function U:KeepStudioWindowsOnScreen()
  width=S.Public(width,"number"); left=S.Public(left,"number"); right=S.Public(right,"number")
  if not (parentScale and frameScale and width and left and right) then return end
  local ok,shown=self:Invoke(self.studioInspector,"IsShown")
- local inspect=ok and S.Public(shown,"boolean")==true
+ local inspect=ok and S.Public(shown,"boolean")==true and not self.editorOverlay
  local sideSpan=448+12
  if left<0 or (right+(inspect and sideSpan or 0))*frameScale>width*parentScale then
   self:CenterStudioWindows(inspect,sideSpan)
@@ -359,7 +361,8 @@ function U:LayoutStudioSettings(width,height)
  return self:WithUpdateFlag("studioLayoutBusy",self.LayoutStudioSettingsContent,width,height)
 end
 function U:LayoutStudioSettingsContent(width,height)
- local scale=math.min(1,(width-32)/680); local w=math.min(mainWindowMaxWidth,(width-32)/scale); local h=math.min(920,(height-32)/scale)
+ local minScale=.85
+ local scale=math.max(minScale,math.min(1,(width-32)/680)); local w=math.min(mainWindowMaxWidth,(width-32)/scale); local h=math.min(920,(height-32)/scale)
  local workspace=w>=workspaceDockWidth and 184 or 0
  local left=80+workspace; local editorWidth=w-left-16
  local bottom=self.studioBottomExpanded and math.max(64,math.min(164,h-504)) or 36
@@ -374,24 +377,28 @@ function U:LayoutStudioSettingsContent(width,height)
   or (groupOK and S.Public(groupShown,"boolean")==true)) or false
  local sideWidth=448
  local sideGap=12
- local combinedWidth=w+(inspect and sideWidth+sideGap or 0)
- scale=math.min(scale,(width-32)/combinedWidth)
- local signature=table.concat({w,h,scale,tostring(self.page),tostring(source),tostring(inspect),tostring(self.studioPlanOpen),tostring(self.studioLibraryOpen),tostring(self.studioWorkspaceOpen),tostring(selected~=nil),tostring(bottom)},":")
- self.studioWidth=w; self.settingsHeight=h; self.settingsFitScale=scale; self.editorOverlay=false
+ -- 详情空间不足时覆盖主窗并用遮罩拦截底层点击，不再继续缩小文字与控件。
+ local sideInspector=inspect and (w+sideWidth+sideGap)*minScale<=width-32
+ local overlay=inspect and not sideInspector
+ local combinedWidth=w+(sideInspector and sideWidth+sideGap or 0)
+ scale=math.max(minScale,math.min(scale,(width-32)/combinedWidth))
+ local signature=table.concat({w,h,scale,tostring(self.page),tostring(source),tostring(inspect),tostring(overlay),tostring(self.studioPlanOpen),tostring(self.studioLibraryOpen),tostring(self.studioWorkspaceOpen),tostring(selected~=nil),tostring(bottom)},":")
+ self.studioWidth=w; self.settingsHeight=h; self.settingsFitScale=scale; self.editorOverlay=overlay
  self.studioEditorWidth=editorWidth; self.studioRowPitch=editorWidth-48>=760 and 52 or 76; self.studioListHeight=math.max(32,editorHeight-120-bottom-96)
  -- 可见性始终同步，只有几何签名变化才重排所有控件。
- self:SyncStudioVisibility(listPage,source,inspect,workspace,selected,w)
+ self:SyncStudioVisibility(listPage,source,inspect,workspace,selected,w,overlay)
+ self:SyncSettingsLayers()
  if self.settingsLayoutSignature==signature then self.studioLayoutBusy=false; return end
  self.settingsLayoutSignature=signature
  self:Paint(self.settings,"SetScale",scale); self:Paint(self.settings,"SetSize",w,h)
  local placement=table.concat({width,height,scale,combinedWidth},":")
  if self.studioPlacement~=placement then
   self.studioPlacement=placement
-  self:CenterStudioWindows(inspect,sideWidth+sideGap)
+  self:CenterStudioWindows(sideInspector,sideWidth+sideGap)
  end
  self:StudioAnchor(self.studioActivity,self.settings,0,-64,64,bodyHeight)
  self:StudioAnchor(self.studioWorkspace,self.settings,64,-64,184,bodyHeight)
- self:Paint(self.studioWorkspace,"SetFrameLevel",self.studioWorkspaceOpen and 30 or 2); self:Paint(self.studioWorkspace,"EnableMouse",true)
+ self:LayerAbove(self.studioWorkspace,self.settings,self.studioWorkspaceOpen and 6 or 2); self:Paint(self.studioWorkspace,"EnableMouse",true)
  self:StudioAnchor(self.studioEditor,self.settings,left,-76,editorWidth,editorHeight)
  self:StudioAnchor(self.studioTab,self.settings,left,-68,180,32); self:StudioAnchor(self.studioSequenceTab,self.settings,left+188,-68,204,32)
  self:StudioAnchor(self.studioGroupTab,self.settings,left+400,-68,math.max(160,editorWidth-400),32)
@@ -442,10 +449,10 @@ function U:LayoutStudioSettingsContent(width,height)
  end
  self:StudioAnchor(self.studioBottom,self.settings,left,-h+bottom+28,editorWidth,bottom)
  self:LayoutStudioBottom(editorWidth,bottom)
+ self:StudioAnchor(self.studioInspectorShield,self.settings,0,0,w,h)
  self:Paint(self.studioInspector,"ClearAllPoints")
- self:Paint(self.studioInspector,"SetPoint","TOPLEFT",self.settings,"TOPRIGHT",sideGap,0)
+ self:Paint(self.studioInspector,"SetPoint",overlay and "CENTER" or "TOPLEFT",self.settings,overlay and "CENTER" or "TOPRIGHT",overlay and 0 or sideGap,0)
  self:Paint(self.studioInspector,"SetSize",sideWidth,h)
- self:Paint(self.studioInspector,"SetFrameLevel",4)
  self:Paint(self.studioInspectorClose,"ClearAllPoints"); self:Paint(self.studioInspectorClose,"SetPoint","BOTTOMLEFT",self.studioInspector,"BOTTOMLEFT",16,12)
  for _,panel in ipairs({self.strategyPanel,self.groupPanel}) do self:StudioAnchor(panel,self.studioInspector,0,0,448,h-48) end
  self:StudioAnchor(self.studioPlanScroll,self.studioInspector,0,0,410,h-48)
@@ -454,7 +461,7 @@ function U:LayoutStudioSettingsContent(width,height)
  self:StudioAnchor(self.studioStatus,self.settings,12,-h+20,w-24)
  self:StudioAnchor(self.studioRun,self.settings,w-340,-16,112,self.controlHeight); self:StudioAnchor(self.studioSave,self.settings,w-220,-16,112,self.controlHeight)
  self:Paint(self.studioClose,"ClearAllPoints"); self:Paint(self.studioClose,"SetPoint","TOPRIGHT",self.settings,"TOPRIGHT",-16,-16)
- self:Paint(self.studioContext,"SetWidth",w-720)
+ self:Paint(self.studioContext,"SetWidth",math.max(120,w-720))
  self:LayoutStudioLibrary(left,h)
  self:Call(self.confirmationBody,"SetScale",scale)
  self.studioLayoutBusy=false

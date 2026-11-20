@@ -517,7 +517,7 @@ function U:RefreshStrategyForm()
 end
 function U:CreateStrategyPanel()
  local panel=self:Frame("Frame",self.settings,"BackdropTemplate","TEF_StrategySettings"); self.strategyPanel=panel
- self:Paint(panel,"SetFrameStrata","DIALOG"); self:Paint(panel,"EnableMouse",true)
+ self:LayerAbove(panel,self.settings,12); self:Paint(panel,"EnableMouse",true)
  self:Paint(panel,"SetPoint","TOPLEFT",self.settings,"TOPRIGHT",8,0); self:Paint(panel,"SetSize",448,720)
  self:Paint(panel,"SetBackdrop",{bgFile="Interface\\Buttons\\WHITE8X8",edgeFile="Interface\\Buttons\\WHITE8X8",edgeSize=2})
  self:Paint(panel,"SetBackdropColor",.025,.035,.055,.98); self:Paint(panel,"SetBackdropBorderColor",.25,.45,.60,1)
@@ -558,7 +558,7 @@ function U:CreateStrategyPanel()
  self:Paint(self.strategyExportButton,"ClearAllPoints"); self:Paint(self.strategyExportButton,"SetPoint","BOTTOMRIGHT",panel,"BOTTOMRIGHT",-16,56)
  self.strategyMessage=self:Text(panel,16,-611,398); self:Paint(self.strategyMessage,"ClearAllPoints"); self:Paint(self.strategyMessage,"SetPoint","BOTTOMLEFT",panel,"BOTTOMLEFT",16,104)
  local menu=self:Frame("Frame",panel,"BackdropTemplate"); self.strategyKindMenu=menu
- self:Paint(menu,"SetSize",220,248); self:Paint(menu,"SetFrameStrata","DIALOG"); self:Paint(menu,"SetClampedToScreen",true)
+ self:Paint(menu,"SetSize",220,248); self:LayerAbove(menu,panel,20); self:Paint(menu,"SetClampedToScreen",true)
  local scroll=self:Frame("ScrollFrame",menu,"UIPanelScrollFrameTemplate")
  self:Paint(scroll,"SetPoint","TOPLEFT",menu,"TOPLEFT",4,-4); self:Paint(scroll,"SetSize",190,240)
  local child=self:Frame("Frame",scroll); self.strategyKindChild=child; self.strategyKindButtons={}; self:Paint(child,"SetSize",187,#strategyKinds*40); self:Paint(scroll,"SetScrollChild",child)

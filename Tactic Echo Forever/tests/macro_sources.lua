@@ -90,6 +90,8 @@ end)
 test("settings_raise_only_on_open_refresh_does_not_reclaim_front",function()
     F.deliveryFixture(); T.UI:OpenSettings()
     local f=T.UI.settings; eq(f.toplevel,true); eq(f.strata,"MEDIUM"); eq(f.raises,1)
+    eq(T.UI.studioInspector.strata,f.strata); assert(T.UI.studioInspector:GetFrameLevel()>f:GetFrameLevel())
+    eq(T.UI.studioLibrary.strata,f.strata); assert(T.UI.studioLibrary:GetFrameLevel()>T.UI.studioInspector:GetFrameLevel())
     for i=1,5 do T.UI:Refresh(); T.Runtime:Reconcile() end
     eq(f.raises,1)
     T.UI:CloseSettings(); T.UI:OpenSettings(); eq(f.raises,2)

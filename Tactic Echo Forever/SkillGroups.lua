@@ -102,8 +102,11 @@ function G:ObserveStart(e,event,unit,id,guid)
  if runtime.e~=e or T.engine~=e or not runtime.intent or generation~=e.generation or index~=e.index or serial~=(e.receiptSerial or 0) then return false end
  return self:Begin(e,row,source,guid)
 end
-function G:Refresh(e)
+function G:Refresh(e,phase)
  if e.maintenanceActive or T.UI.settingsOpen then return end
+ -- 协调心跳分为“推进已有组”和“接纳新组”两段；默认调用仍保留完整行为。
+ if phase=="progress" and not e.groupRun then return end
+ if phase=="admit" and e.groupRun then return end
  local identity=target()
  if e.groupConsumedSerial~=(e.usageTargetSerial or 0) then e.groupConsumed={}; e.groupConsumedSerial=e.usageTargetSerial or 0 end
  if identity and identity~=e.groupConsumedTarget then e.groupConsumed={}; e.groupConsumedTarget=identity end
@@ -134,6 +137,7 @@ function G:Refresh(e)
   end
   return
  end
+ if phase=="progress" then return end
  if T.Recommendation:BaseSource(e)=="manual" then
   local row=e.steps and e.steps[e.index]
   if row and row.group then

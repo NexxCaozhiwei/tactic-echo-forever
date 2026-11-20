@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
 
-SETTINGS_SCHEMA_VERSION = 8
+SETTINGS_SCHEMA_VERSION = 9
 
 
 @dataclass(frozen=True)
@@ -38,9 +38,6 @@ class AppSettings:
     diagnostics_enabled: bool = False
     # Retain one JSONL row per SendInput only for focused troubleshooting.
     full_trace_debug: bool = False
-    # Optional, diagnostics-only mapping export source.  This is never used for
-    # physical-input classification or runtime dispatch decisions.
-    wow_savedvariables_path: str = ""
     auto_dispatch_exempt_keys: tuple[str, ...] = ("W", "A", "S", "D", "SPACE")
     manual_priority_mode: str = "balanced"
     manual_priority_custom_recovery_ms: int = 30
@@ -49,7 +46,7 @@ class AppSettings:
     # The status host is tray-first. Persist its last non-minimized rectangle so
     # startup and tray restore return to the user's established workspace.
     window_width: int = 600
-    window_height: int = 1000
+    window_height: int = 800
     window_x: int | None = None
     window_y: int | None = None
     last_boot_marker: str | None = None
@@ -90,7 +87,9 @@ class AppSettings:
             stored_schema = int(data.get("schema_version", data.get("schemaVersion", 1)))
         except (TypeError, ValueError, OverflowError):
             stored_schema = 1
-        if stored_schema < SETTINGS_SCHEMA_VERSION:
+        # This value migration belongs specifically to the schema-8 rollout;
+        # later schema bumps must not rewrite an intentional custom triplet.
+        if stored_schema < 8:
             try:
                 is_legacy_triplet = (
                     str(normalized.get("manual_priority_mode", "balanced")).strip().lower() == "custom"
@@ -129,7 +128,7 @@ class AppSettings:
         manual_priority_custom_freshness_frames = max(1, min(2, int(self.manual_priority_custom_freshness_frames)))
         manual_priority_custom_replay_guard_ms = max(0, min(1500, int(self.manual_priority_custom_replay_guard_ms)))
         window_width = max(450, min(900, int(self.window_width)))
-        window_height = max(900, min(2000, int(self.window_height)))
+        window_height = max(640, min(2000, int(self.window_height)))
         window_x = _normalize_window_coordinate(self.window_x)
         window_y = _normalize_window_coordinate(self.window_y)
         signal_layout_cache = _normalize_signal_layout_cache(self.signal_layout_cache)
@@ -168,7 +167,6 @@ class AppSettings:
             exit_confirmation=bool(self.exit_confirmation),
             diagnostics_enabled=bool(self.diagnostics_enabled),
             full_trace_debug=bool(self.full_trace_debug),
-            wow_savedvariables_path=str(self.wow_savedvariables_path or "").strip(),
             auto_dispatch_exempt_keys=auto_dispatch_exempt_keys,
             manual_priority_mode=manual_priority_mode,
             manual_priority_custom_recovery_ms=manual_priority_custom_recovery_ms,

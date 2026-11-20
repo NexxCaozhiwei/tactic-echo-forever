@@ -130,7 +130,7 @@ function U:CloseSkillGroup(force,nextAction)
 end
 function U:CreateSkillGroupEditor()
  local panel=self:Frame("Frame",self.settings,"BackdropTemplate","TEF_SkillGroupEditor"); self.groupPanel=panel
- self:Paint(panel,"SetFrameStrata","DIALOG"); self:Paint(panel,"EnableMouse",true)
+ self:LayerAbove(panel,self.settings,12); self:Paint(panel,"EnableMouse",true)
  self:Paint(panel,"SetPoint","TOPLEFT",self.settings,"TOPRIGHT",8,0); self:Paint(panel,"SetSize",430,720)
  self:Paint(panel,"SetBackdrop",{bgFile="Interface\\Buttons\\WHITE8X8",edgeFile="Interface\\Buttons\\WHITE8X8",edgeSize=2})
  self:Paint(panel,"SetBackdropColor",.025,.035,.055,.98); self:Paint(panel,"SetBackdropBorderColor",.25,.45,.60,1)

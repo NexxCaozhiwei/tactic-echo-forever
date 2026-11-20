@@ -450,6 +450,7 @@ local function object(name)
             elseif method=="SetFrameLevel" then self.frameLevel=(...)
             elseif method=="GetFrameLevel" then return rawget(self,"frameLevel") or 1
             elseif method=="SetFrameStrata" then self.strata=(...)
+            elseif method=="GetFrameStrata" then return rawget(self,"strata") or "MEDIUM"
             elseif method=="SetToplevel" then self.toplevel=(...)
             elseif method=="Raise" then self.raises=(rawget(self,"raises") or 0)+1
             elseif method=="GetPoint" then return "CENTER",UIParent,"CENTER",12,34 end
@@ -1096,6 +1097,27 @@ test("settings_close_reconciles_without_restoring_old_pending",function()
     T.Dispatch:TickContinuous(); assert(T.Dispatch.pending and T.Dispatch.pending~=old)
     assert(T.Dispatch.pending.generation~=old.generation)
 end)
+test("settings_combat_close_bypasses_blocked_validation_and_restores_draft_session",function()
+    deliveryFixture(); T.Runtime:SetIntent(true); T.UI:OpenSettings(); T.UI:ShowPage("profiles")
+    local before=T.engine.db.profiles.single[1].repeatCount
+    local count=T.UI.sequenceRows[1].count; count:SetText("无效输入")
+    T.UI:ConfirmAction("测试确认层",function() end)
+    local sequenceCommit,customCommit=T.UI.CommitSequenceCounts,T.UI.CommitCustomNumbers
+    local calls=0
+    T.UI.CommitSequenceCounts=function() calls=calls+1; return false end
+    T.UI.CommitCustomNumbers=function() calls=calls+1; return false end
+    InCombatLockdown=function() return true end
+    local events=allFrames.TEF_EventFrame; events.scripts.OnEvent(events,"PLAYER_REGEN_DISABLED")
+    T.UI.studioClose.scripts.OnClick()
+    eq(calls,0); eq(T.UI.settingsOpen,false); eq(T.UI.settings.shown,false)
+    eq(T.UI.confirmationShield.shown,false); eq(T.Runtime.intent,true)
+    eq(T.engine.db.profiles.single[1].repeatCount,before)
+    InCombatLockdown=function() return false end
+    T.UI:OpenSettings()
+    eq(T.UI.settingsOpen,true); eq(count.text,"无效输入")
+    T.UI.CommitSequenceCounts,T.UI.CommitCustomNumbers=sequenceCommit,customCommit
+    count:SetText(tostring(before)); T.UI:CloseSettings(); eq(T.UI.settingsOpen,false)
+end)
 test("temporary_block_does_not_disable_intent",function()
     for _,which in ipairs({"focus","target","combat","range","moving","usable"}) do
         deliveryFixture(); T.Runtime:SetIntent(true); T.Dispatch:TickContinuous()
@@ -1289,10 +1311,11 @@ test("geometry_number_input_validates_range_integer_and_applies",function()
     box.text="40.5"; box.scripts.OnEditFocusLost(); eq(value,80)
     slider.scripts.OnValueChanged(nil,48); eq(value,48)
 end)
-test("hidden_auxiliary_pages_and_manual_loop_parent",function()
+test("retired_scene_page_and_manual_loop_parent",function()
     deliveryFixture()
     T.UI:ShowPage("profiles")
-    eq(T.UI.navigation.scene.shown,false); assert(T.UI.studioActivities.diagnostics.shown~=false)
+    eq(T.UI.navigation.scene,nil); eq(T.UI.pages.scene,nil); assert(T.UI.studioActivities.diagnostics.shown~=false)
+    T.UI:ShowPage("scene"); eq(T.UI.page,"diagnostics")
     eq(T.UI.testReset.parent,T.UI.manualLoopPanel)
     eq(T.UI.loopModeControls.normal.parent,T.UI.manualLoopPanel)
     eq(T.UI.sourceSelect.manual.parent,T.UI.pages.overview)

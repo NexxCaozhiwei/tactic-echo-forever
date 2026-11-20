@@ -36,6 +36,7 @@ class SettingsStoreTests(unittest.TestCase):
         self.assertEqual(settings.sampling_interval_ms, 50)
         self.assertEqual(settings.signal_sampler_backend, "pillow")
         self.assertEqual(settings.profile_id, "laptop")
+        self.assertEqual((settings.window_width, settings.window_height), (600, 800))
         self.assertEqual(WorkerOptions(mode="Dry-run").interval_seconds, 0.05)
         self.assertEqual(settings.auto_dispatch_exempt_keys, ("W", "A", "S", "D", "SPACE"))
 
@@ -96,7 +97,30 @@ class SettingsStoreTests(unittest.TestCase):
         self.assertEqual(settings.manual_priority_custom_recovery_ms, 30)
         self.assertEqual(settings.manual_priority_custom_freshness_frames, 2)
         self.assertEqual(settings.manual_priority_custom_replay_guard_ms, 150)
-        self.assertEqual(settings.schema_version, 8)
+        self.assertEqual(settings.schema_version, 9)
+
+    def test_schema_8_custom_manual_recovery_triplet_is_preserved(self):
+        settings = AppSettings.from_dict({
+            "schema_version": 8,
+            "manual_priority_mode": "custom",
+            "manual_priority_custom_recovery_ms": 80,
+            "manual_priority_custom_freshness_frames": 2,
+            "manual_priority_custom_replay_guard_ms": 1000,
+        })
+        self.assertEqual(settings.manual_priority_custom_recovery_ms, 80)
+        self.assertEqual(settings.manual_priority_custom_freshness_frames, 2)
+        self.assertEqual(settings.manual_priority_custom_replay_guard_ms, 1000)
+
+    def test_legacy_mapping_snapshot_path_is_ignored(self):
+        settings = AppSettings.from_dict({
+            "schema_version": 8,
+            "fixed_signal_x": -1920,
+            "fixed_signal_y": -100,
+            "wow_savedvariables_path": r"C:\\Games\\WoW\\WTF\\Account\\x\\SavedVariables\\TacticEcho.lua",
+        })
+        self.assertEqual(settings.fixed_signal_x, -1920)
+        self.assertEqual(settings.fixed_signal_y, -100)
+        self.assertNotIn("wow_savedvariables_path", settings.to_dict())
 
     def test_intervention_whitelist_normalizes_and_persists(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -132,10 +156,10 @@ class SettingsStoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             store = SettingsStore(Path(directory) / "settings.json")
             saved = store.save_window_geometry(width=2000, height=200, x=-1920, y=88)
-            self.assertEqual((saved.window_width, saved.window_height), (900, 900))
+            self.assertEqual((saved.window_width, saved.window_height), (900, 640))
             self.assertEqual((saved.window_x, saved.window_y), (-1920, 88))
             loaded = store.load()
-            self.assertEqual((loaded.window_width, loaded.window_height, loaded.window_x, loaded.window_y), (900, 900, -1920, 88))
+            self.assertEqual((loaded.window_width, loaded.window_height, loaded.window_x, loaded.window_y), (900, 640, -1920, 88))
 
     def test_window_geometry_requires_both_coordinates_or_restores_size_only(self):
         settings = AppSettings.from_dict({"window_width": 650, "window_height": 1100, "window_x": 240})
@@ -233,13 +257,3 @@ class SamplerBackendSettingsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-    def test_virtual_desktop_coordinates_and_mapping_path_are_preserved(self):
-        settings = AppSettings.from_dict({
-            "fixed_signal_x": -1920,
-            "fixed_signal_y": -100,
-            "wow_savedvariables_path": r"C:\\Games\\WoW\\WTF\\Account\\x\\SavedVariables\\TacticEcho.lua",
-        })
-        self.assertEqual(settings.fixed_signal_x, -1920)
-        self.assertEqual(settings.fixed_signal_y, -100)
-        self.assertTrue(settings.wow_savedvariables_path.endswith("TacticEcho.lua"))

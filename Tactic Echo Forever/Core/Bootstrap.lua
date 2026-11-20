@@ -217,7 +217,7 @@ SlashCmdList.TEF=function(raw)
     elseif command=="explain" then printSafe(TEF.APL.Custom:Explain(engine))
     elseif command=="check" then
         local rows=TEF.Recommendation:BaseSource(engine)=="manual" and engine.db.profiles[engine.scene] or TEF.APL.Custom:Rows(engine,engine.scene)
-        local valid,errors,warnings=TEF.APL.Custom:Audit(rows,engine)
+        local valid,errors,warnings=TEF.APL.Custom:Audit(rows,engine,TEF.Recommendation:BaseSource(engine)=="apl")
         printSafe((valid and "配置体检未发现可证明的矛盾。" or errors) .. "\n" .. warnings)
     elseif command=="timeline" then printSafe(TEF.APL.Custom:Timeline(engine))
     elseif command=="skip" or command=="endgroup" or command=="restartgroup" or command=="recheck" or command=="recover" then

@@ -352,13 +352,13 @@ test("strategy_pool_is_bounded_after_warmup",function()
  eq(made,first); eq(#T.UI.controls,syncs); eq(T.UI.strategyPoolActive,false)
  CreateFrame=create
 end)
-test("settings_fit_small_viewport_and_use_side_editor_when_room_exists",function()
+test("settings_fit_small_viewport_uses_overlay_and_side_editor_when_room_exists",function()
  local combat=InCombatLockdown; InCombatLockdown=function() return false end
  local parent=UIParent; UIParent={GetWidth=function() return 1000 end,GetHeight=function() return 600 end}
  T.UI.strategyPanel.IsShown=function() return true end; T.UI.groupPanel.IsShown=function() return false end
- T.UI:LayoutSettings(); local smallScale=T.UI.settingsFitScale; assert(smallScale<1); eq(T.UI.settingsHeight,568); eq(T.UI.editorOverlay,false)
+ T.UI:LayoutSettings(); local smallScale=T.UI.settingsFitScale; assert(smallScale>=.85); eq(T.UI.settingsHeight,568); eq(T.UI.editorOverlay,true)
  UIParent.GetWidth=function() return 1920 end; UIParent.GetHeight=function() return 1080 end
- T.UI:LayoutSettings(); assert(T.UI.settingsFitScale>smallScale); eq(T.UI.editorOverlay,false)
+ T.UI:LayoutSettings(); assert(T.UI.settingsFitScale>=smallScale); eq(T.UI.editorOverlay,false)
  UIParent=parent; T.UI.strategyPanel.IsShown=nil; T.UI.groupPanel.IsShown=nil
  InCombatLockdown=combat
 end)
@@ -521,7 +521,7 @@ end)
 
 test("strategy_viewport_preserves_border_and_scrollbar_gutter",function()
  local combat=InCombatLockdown; InCombatLockdown=function() return false end
- F.runtime(); InCombatLockdown=function() return false end; T.UI:ShowPage("customapl"); T.UI:AddCustomSpell(143)
+ F.runtime(); InCombatLockdown=function() return false end; T.UI:ShowPage("customapl"); T.UI:AddCustomSpell(143); assert(T.UI:SelectStudioRule("apl",1))
  local viewport,form,panel=T.UI.strategyScroll,T.UI.strategyForm,T.UI.strategyPanel
  assert(viewport.width>=form.width+4)
  local left=viewport.point[4]; assert(left>=16)
@@ -532,7 +532,7 @@ test("strategy_viewport_preserves_border_and_scrollbar_gutter",function()
  UIParent.GetHeight=function() return 1000 end
  for _,width in ipairs({960,1296,1920}) do
   UIParent.GetWidth=function() return width end
-  T.UI.settingsLayoutSignature=nil; T.UI:LayoutSettings(); eq(T.UI.editorOverlay,false)
+  T.UI.settingsLayoutSignature=nil; T.UI:LayoutSettings(); eq(T.UI.editorOverlay,width<1920)
  end
  UIParent.GetWidth,UIParent.GetHeight=oldWidth,oldHeight
  panel.GetWidth,T.UI.groupPanel.GetWidth=oldStrategyWidth,oldGroupWidth

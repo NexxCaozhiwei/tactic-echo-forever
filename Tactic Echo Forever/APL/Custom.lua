@@ -2,6 +2,8 @@ local _,T=...
 local A,S=T.APL,T.Safety
 local C={PolicyIdentities=setmetatable({}, {__mode="k"})}; A.Custom=C
 C.InternalCooldownMax=86400
+C.StrategyRadiusLimit=4
+C.StrategyKnownLimit=16
 -- 自定义增益技能独立授权，不改变内置伤害规则或技能等级选择。
 C.AdditionalActions={arcane_intellect=true}
 function C:SupportsName(name,id)
@@ -199,7 +201,7 @@ end
 function C:Save(e,rows,scene,class)
  if class~=e.classToken or not self:ClassSupported(class) or (scene~="single" and scene~="multi" and scene~="third") then return false,"CUSTOM_PROFILE_UNKNOWN" end
  local clean=C.CleanRows(rows)
- local valid,errors=self:Audit(clean); if not valid then return false,errors end
+ local valid,errors=self:Audit(clean,nil,true); if not valid then return false,errors end
  for _,r in ipairs(clean) do if r.invalid then return false,r.invalid end end
  e:Reset(); e.db.apl.custom[class]=e.db.apl.custom[class] or {}
  e.db.apl.custom[class][scene]=clean; e.db.apl.template="custom"
@@ -249,17 +251,17 @@ function C:SampleStrategies(state,rows,e)
  state.engine=e
  local requests={}; local countNeeded=false; local distanceNeeded=false
  state.classToken=e.classToken
- state.otherKnown={}; state.succeeded={}; state.nearbyEnemies={}
+ state.otherKnown={}; state.otherKnownReasons={}; state.succeeded={}; state.nearbyEnemies={}
  local radiusCount=0
  local function probe(radius)
   if state.nearbyEnemies[radius] then return end
-  if radiusCount>=4 then state.nearbyEnemies[radius]={state="PROBE_CAPACITY"}; return end
+  if radiusCount>=C.StrategyRadiusLimit then state.nearbyEnemies[radius]={state="PROBE_CAPACITY"}; return end
   radiusCount=radiusCount+1; state.nearbyEnemies[radius]=T.Research:ProbeVisibleYards(radius)
  end
  local watched,knownMeasured={},{}; local budget=0
  local function watch(id)
   if watched[id] then return true end
-  if budget>=16 then return false end
+  if budget>=C.StrategyKnownLimit then state.otherKnownReasons[id]="KNOWN_PROBE_CAPACITY"; return false end
   watched[id]=true; budget=budget+1; return true
  end
  local targetNeeded=false; local activeMeasured={}
@@ -738,16 +740,21 @@ function C:ConditionView(state,row,index,c)
  if result==nil and state then
   local record=c.kind=="cdmBuff" or c.kind=="cdmCooldown"
   local probe=record and a.strategyCDM and a.strategyCDM[(c.kind=="cdmCooldown" and "cooldown:" or "buff:") .. (c.spellID or row.spellID)]
-  local code=probe and probe.reason or c.kind=="distance" and state.distanceReason or c.kind=="cooldown" and a.cooldownProbe and a.cooldownProbe.activeReason
-  local explanations={SECRET="客户端限制了该值",UNAVAILABLE="当前客户端未提供接口",CALL_FAILED="接口调用失败",NO_DATA="接口没有返回数据",CDM_FRAME_MISSING="请确认对应技能已加入CDM并可见",CDM_VIEWER_UNAVAILABLE="CDM面板不可用",CDM_CONFLICT="CDM存在相互冲突的结果",CDM_HIDDEN_OR_UNKNOWN="CDM隐藏或可见性未知",ITEM_RANGE_UNKNOWN="距离探针没有公开结果"}
+  local nearby=(c.kind=="nearbyEnemies" or c.kind=="rangedEnemies") and state.nearbyEnemies and state.nearbyEnemies[c.radius or 10]
+  local knownID=c.kind=="learned" and (c.spellID or row.spellID)
+  local code=probe and probe.reason or c.kind=="distance" and state.distanceReason
+   or c.kind=="cooldown" and a.cooldownProbe and a.cooldownProbe.activeReason
+   or knownID and state.otherKnownReasons and state.otherKnownReasons[knownID]
+   or nearby and nearby.state
+  local explanations={SECRET="客户端限制了该值",UNAVAILABLE="当前客户端未提供接口",CALL_FAILED="接口调用失败",NO_DATA="接口没有返回数据",CDM_FRAME_MISSING="请确认对应技能已加入CDM并可见",CDM_VIEWER_UNAVAILABLE="CDM面板不可用",CDM_CONFLICT="CDM存在相互冲突的结果",CDM_HIDDEN_OR_UNKNOWN="CDM隐藏或可见性未知",ITEM_RANGE_UNKNOWN="距离探针没有公开结果",KNOWN_PROBE_CAPACITY="同次采样最多检查" .. C.StrategyKnownLimit .. "个独立的已学技能ID，请减少条件数量",PROBE_CAPACITY="同次采样最多检查" .. C.StrategyRadiusLimit .. "种人数半径，请减少不同半径"}
   why="；" .. (explanations[code] or (c.kind=="comboPoints" and state.classToken~="ROGUE" and "当前职业不支持此条件" or "缺少可确认的公开结果，请检查观察对象及对应条件"))
  end
  return (conditionLabels[c.kind] or c.kind) .. "：要求 " .. expected .. "；采样 " .. publicText(value) .. "；" .. (result==nil and "未知，阻断" or result and "满足" or "不满足") .. why
 end
 -- 体检只检查可证明的配置问题，不用瞬时资源或未知API拒绝保存。
-function C:Audit(rows,e)
+function C:Audit(rows,e,sharedSampling)
  local errors,warnings={},{}
- local sharedRadii={}
+ local sharedRadii,sharedKnown={},{}
  local function radii(row)
   local found,count={},0
   if row.enabled~=false and not row.invalid then
@@ -762,10 +769,25 @@ function C:Audit(rows,e)
   end
   return found,count
  end
+ local function learned(row)
+  local found,count={},0
+  if row.enabled~=false and not row.invalid then
+   for _,strategy in ipairs(row.strategies or {}) do
+    for _,condition in ipairs(strategy.conditions or {}) do if condition.kind=="learned" then
+     local id=condition.spellID or row.spellID
+     if id and not found[id] then found[id]=true; count=count+1 end
+    end end
+   end
+  end
+  return found,count
+ end
  local checked,budget={},0
+ local rowRadiusExceeded,rowKnownExceeded=false,false
  local function inspect(row,path)
   local _,radiusCount=radii(row)
-  if radiusCount>4 then errors[#errors+1]=path .. "：人数条件超过4种半径，超出部分无法采样；请减少不同半径。" end
+  if radiusCount>C.StrategyRadiusLimit then rowRadiusExceeded=true; errors[#errors+1]=path .. "：人数条件超过" .. C.StrategyRadiusLimit .. "种半径，超出部分无法采样；请减少不同半径。" end
+  local _,knownCount=learned(row)
+  if knownCount>C.StrategyKnownLimit then rowKnownExceeded=true; errors[#errors+1]=path .. "：已学技能条件超过" .. C.StrategyKnownLimit .. "个独立ID，超出部分无法采样；请减少条件数量。" end
   local combined={}
   if e and row.spellID and not row.group and not checked[row.spellID] and budget<64 then
    checked[row.spellID]=true; budget=budget+1
@@ -805,11 +827,18 @@ function C:Audit(rows,e)
  for i,row in ipairs(rows or {}) do
   local found=radii(row)
   for radius in pairs(found) do sharedRadii[radius]=true end
+  local known=learned(row)
+  for id in pairs(known) do sharedKnown[id]=true end
   inspect(row,"第" .. i .. "项")
   if row.enabled~=false and not row.group and #(row.strategies or {})==0 then warnings[#warnings+1]="第" .. i .. "项无策略条件，可能优先遮蔽后续条目；仍受技能资格限制。" end
  end
  local radiusCount=0; for _ in pairs(sharedRadii) do radiusCount=radiusCount+1 end
- if radiusCount>4 then warnings[#warnings+1]="这些条目合计使用超过4种人数半径：若在优先级推荐中同次采样，后续半径会未知；列表逐步执行不共享此预算。" end
+ if radiusCount>C.StrategyRadiusLimit and not rowRadiusExceeded then
+  local message="这些条目合计使用超过" .. C.StrategyRadiusLimit .. "种人数半径：同次采样时超出部分无法确认；请减少不同半径。"
+  if sharedSampling then errors[#errors+1]=message else warnings[#warnings+1]=message .. "列表逐步执行不共享此预算。" end
+ end
+ local knownCount=0; for _ in pairs(sharedKnown) do knownCount=knownCount+1 end
+ if sharedSampling and knownCount>C.StrategyKnownLimit and not rowKnownExceeded then errors[#errors+1]="这些条目合计使用超过" .. C.StrategyKnownLimit .. "个独立的已学技能ID：同次采样时超出部分无法确认；请减少条件数量。" end
  return #errors==0,table.concat(errors,"\n"),table.concat(warnings,"\n")
 end
 function C:Explain(e)
@@ -849,7 +878,7 @@ function C:Explain(e)
    for _,condition in ipairs(strategy.conditions) do lines[#lines+1]=self:ConditionView(matching and state or nil,row,i,condition) end
   end
  end
- local _,errors,warnings=self:Audit(rows,e)
+ local _,errors,warnings=self:Audit(rows,e,source=="apl" or e.maintenanceActive==true)
  lines[#lines+1]="配置体检：" .. (errors~="" and errors or "未发现可证明的条件矛盾。")
  if warnings~="" then lines[#lines+1]=warnings end
  return table.concat(lines,"\n")

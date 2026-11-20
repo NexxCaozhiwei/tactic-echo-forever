@@ -219,19 +219,11 @@ class WorkerController:
         return layout, source.diagnostics()
 
     def create_diagnostic_bundle(self, destination: str | Path | None = None) -> tuple[Path, dict]:
-        """Create a local support ZIP without stopping the current worker.
-
-        A configured TacticEcho.lua path is optional.  When present only the
-        addon's sanitized mapping-export snapshot is included; the raw
-        SavedVariables file is never copied to the bundle.
-        """
-        settings = self.settings_store.load()
-        saved_variables_path = None  # TEF never imports another AddOn database.
+        """Create a TEF-only local support ZIP without stopping the worker."""
         return create_diagnostic_bundle(
             paths=self.paths,
             settings_store=self.settings_store,
             status_snapshot=self.snapshot,
-            saved_variables_path=saved_variables_path,
             destination=destination,
             recent_trace_records=self._recent_trace_records_copy(),
         )

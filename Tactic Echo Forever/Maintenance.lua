@@ -86,7 +86,7 @@ function M:Restore(e,reason)
 end
 function M:ValidateRows(rows)
  local clean=A.Custom.CleanRows(rows); local seen={}
- local valid,errors=A.Custom:Audit(clean); if not valid then return nil,errors end
+ local valid,errors=A.Custom:Audit(clean,nil,true); if not valid then return nil,errors end
  for _,row in ipairs(clean) do
   if row.group or row.invalid or not self:BuffSpell(row.spellID) or seen[row.spellID] then return nil,"仅接受可确认的增益或已支持的解控法术，且精确技能ID不得重复。" end
   seen[row.spellID]=true

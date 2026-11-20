@@ -259,7 +259,7 @@ function U:RefreshStudioBottom()
  if mode=="problems" then
   local fingerprint=rows and self:StudioFingerprint(rows,source) or ""
   if self.studioAuditFingerprint~=fingerprint or self.studioAuditEngine~=self.engine or self.studioAuditRevision~=T.APL.State.revision then
-   local valid,errors,warnings=C:Audit(rows or {},self.engine)
+   local valid,errors,warnings=C:Audit(rows or {},self.engine,source=="apl")
    self.studioAuditText=(errors~="" and ("错误\n" .. errors) or "未发现可证明的条件矛盾。") .. (warnings~="" and ("\n提示\n" .. warnings) or "")
    self.studioAuditFingerprint=fingerprint; self.studioAuditEngine=self.engine; self.studioAuditRevision=T.APL.State.revision
   end
@@ -301,8 +301,7 @@ function U:LayoutStudioLibrary(left,height)
   self:Paint(self.studioLibrary,"SetPoint","TOPRIGHT",self.settings,"TOPRIGHT",-12,-72)
  end
  self:Paint(self.studioLibrary,"SetSize",360,h)
- self:Paint(self.studioLibrary,"SetFrameStrata","DIALOG")
- self:Paint(self.studioLibrary,"SetFrameLevel",60)
+ self:LayerAbove(self.studioLibrary,self.settings,20)
  self:Paint(self.studioLibrary,self.studioLibraryOpen and "Show" or "Hide")
 end
 function U:CreateStudioTools()

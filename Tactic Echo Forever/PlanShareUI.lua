@@ -87,7 +87,7 @@ function U:OpenPlanShare(mode)
   code,reason=X:Export(self.engine.classToken,source,self:SharePlanName(source,slot),rows)
   if not code then self:StudioMessage("无法导出："..reason); return false end
  end
- self:CreatePlanShare()
+ self:CreatePlanShare(); self:SyncSettingsLayers()
  self.shareContext={engine=self.engine,class=self.engine.classToken,source=source,mode=mode}
  self.shareTarget=slot; self.shareParsed=nil; self.shareParsedText=nil
  self:Paint(self.shareTitle,"SetText",mode=="export" and "导出方案 · 当前编辑草稿" or "导入方案 · 解析后替换目标草稿")
@@ -114,7 +114,7 @@ function U:OpenPolicyShare(mode)
   code,reason=X:ExportPolicy(self.engine.classToken,row.strategies)
   if not code then self:CustomMessage("无法导出策略："..reason); return false end
  end
- self:CreatePlanShare()
+ self:CreatePlanShare(); self:SyncSettingsLayers()
  self.shareContext={kind="policy",mode=mode,engine=self.engine,class=self.engine.classToken,page=self.page,source=self.strategySource,row=row,
   index=self.strategySource=="manual" and self.sequencePolicyIndex or self.strategySource=="groupStep" and self.groupSelected or self.customSelected}
  self.shareParsed=nil; self.shareParsedText=nil
@@ -166,7 +166,7 @@ function U:OpenBundleShare(mode)
   code,reason=X:ExportBundle(self:BundleDraft())
   if not code then self:StudioMessage("无法导出整包："..reason); return false end
  end
- self:CreatePlanShare()
+ self:CreatePlanShare(); self:SyncSettingsLayers()
  self.shareContext={kind="bundle",mode=mode,engine=self.engine,class=self.engine.classToken,source=source}
  self.shareParsed=nil; self.shareParsedText=nil
  self:Paint(self.shareTitle,"SetText",mode=="export" and "导出全部方案 · 当前职业六套方案及增益与紧急草稿" or "导入全部方案 · 当前职业六套方案及增益与紧急草稿")
@@ -230,7 +230,7 @@ end
 function U:CreatePlanShare()
  if self.shareShield then return end
  local shield=self:Frame("Frame",self.settings,"BackdropTemplate"); self.shareShield=shield
- self:Paint(shield,"SetAllPoints",UIParent); self:Paint(shield,"SetFrameStrata","DIALOG"); self:Paint(shield,"EnableMouse",true)
+ self:Paint(shield,"SetAllPoints",UIParent); self:LayerAbove(shield,self.settings,30); self:Paint(shield,"EnableMouse",true)
  self:Paint(shield,"SetBackdrop",{bgFile="Interface\\Buttons\\WHITE8X8"}); self:Paint(shield,"SetBackdropColor",0,0,0,.65)
  local panel=self:CreateStudioPanel(shield); self.sharePanel=panel
  self:Paint(panel,"SetSize",620,620); self:Paint(panel,"SetPoint","CENTER",self.settings,"CENTER",0,0)

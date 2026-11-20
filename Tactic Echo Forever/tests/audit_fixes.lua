@@ -37,7 +37,7 @@ test("audit_small_viewport_cache_updates_window_and_confirmation_scale",function
  U:LayoutStudioSettings(640,1080); local first=U.settingsLayoutSignature
  U:LayoutStudioSettings(600,1080)
  assert(U.settingsLayoutSignature~=first)
- eq(U.settings.scale,568/680); eq(U.confirmationBody.scale,568/680)
+ eq(U.settings.scale,.85); eq(U.confirmationBody.scale,.85)
 end)
 test("audit_live_trace_uses_real_heartbeat_even_when_hud_and_signal_hidden",function()
  local e=setup(); T.Transport:SetEnabled(false); U:Paint(H.frame,"Hide")

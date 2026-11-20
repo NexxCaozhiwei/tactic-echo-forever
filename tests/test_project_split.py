@@ -43,7 +43,8 @@ def test_settings_migration_preserves_legacy_and_is_idempotent():
         assert migrated.sampling_interval_ms == 77
         assert not migrated.auto_start_ui_linked
         assert migrated.signal_layout_cache is None
-        assert migrated.wow_savedvariables_path == ""
+        assert "wow_savedvariables_path" not in migrated.to_dict()
+        assert "wow_savedvariables_path" not in json.loads(paths.settings_json.read_text(encoding="utf-8"))
         assert (legacy / "config/settings.json").read_bytes() == original
         assert (paths.config / "legacy-settings-before-split.json").read_bytes() == original
         assert (paths.profiles / "custom.json").is_file()

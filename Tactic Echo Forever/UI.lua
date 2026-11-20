@@ -67,6 +67,27 @@ function UI:Backdrop(frame)
     self:Paint(frame,"SetBackdropColor",0.04,0.06,0.09,0.94)
     self:Paint(frame,"SetClampedToScreen",true)
 end
+-- 插件内浮层跟随设置主窗的自然层级；不使用跨界面的固定高Strata。
+function UI:LayerAbove(object,parent,offset)
+    if not object or not parent then return end
+    local strataOK,rawStrata=self:Invoke(parent,"GetFrameStrata")
+    local levelOK,rawLevel=self:Invoke(parent,"GetFrameLevel")
+    local strata=strataOK and S.Public(rawStrata,"string") or "MEDIUM"
+    local level=levelOK and S.Public(rawLevel,"number") or 1
+    self:Paint(object,"SetFrameStrata",strata)
+    self:Paint(object,"SetFrameLevel",level+(offset or 1))
+end
+function UI:SyncSettingsLayers()
+    if not self.settings then return end
+    self:LayerAbove(self.studioInspectorShield,self.settings,8)
+    self:LayerAbove(self.studioInspector,self.settings,10)
+    local detail=self.studioInspector or self.settings
+    self:LayerAbove(self.strategyPanel,detail,2)
+    self:LayerAbove(self.groupPanel,detail,2)
+    self:LayerAbove(self.studioLibrary,self.settings,20)
+    self:LayerAbove(self.strategyKindMenu,self.strategyPanel or detail,20)
+    self:LayerAbove(self.shareShield,self.settings,30)
+end
 function UI:Combat()
     local ok,raw=S.Call("InCombatLockdown")
     if not ok then return nil end
@@ -123,12 +144,27 @@ function UI:OpenSettings()
     self.settingsOpen=true
     TEF.Runtime:Suspend("RUNTIME_SETTINGS_STANDBY","standby")
     if not self.settings then self:CreateSettings() end
-    self:Paint(self.settings,"Show"); self:Paint(self.settings,"Raise"); self:ShowPage(self.page or "overview"); self:LayoutSettings()
+    self:Paint(self.settings,"Show"); self:Paint(self.settings,"Raise"); self:SyncSettingsLayers()
+    if self.settingsResumeDraft then
+        -- 战斗中关闭只隐藏现有编辑会话，不读取Secret或受阻的输入框；脱战后原样恢复一次。
+        self.settingsResumeDraft=nil
+        self:LayoutSettings()
+    else
+        self:ShowPage(self.page or "overview"); self:LayoutSettings()
+    end
 end
 function UI:CloseSettings()
-    if not self:CommitSequenceCounts() then return end
-    if self.groupEditing and not self:CloseSkillGroup(false,function() self:CloseSettings() end) then return end
-    if not self:CommitCustomNumbers() then return end
+    local combat=self:Combat()
+    if combat==false then
+        if not self:CommitSequenceCounts() then return end
+        if self.groupEditing and not self:CloseSkillGroup(false,function() self:CloseSettings() end) then return end
+        if not self:CommitCustomNumbers() then return end
+        self.settingsResumeDraft=nil
+    else
+        -- 隐藏外壳本身始终安全；战斗中或锁定状态未知时保留内存控件与草稿，
+        -- 校验继续由显式保存及编辑操作负责。
+        self.settingsResumeDraft=true
+    end
     self:CancelConfirmation()
     if self.ClosePlanShare then self:ClosePlanShare() end
     self:HideStudioInsertion(); self.studioDragging=nil
@@ -147,7 +183,7 @@ function UI:ShowPage(key)
     end
     if self.customEngine~=self.engine then self.strategyInputs={} end
     if not self:CommitCustomNumbers() then return end
-    key=({looping="overview",labels="hud",apl="customapl"})[key] or key
+    key=({looping="overview",labels="hud",apl="customapl",scene="diagnostics"})[key] or key
     self.drafts=self.drafts or {}
     if self.page=="profiles" and self.loadedScene and self.editor then
         self.sequenceDrafts=self.sequenceDrafts or {}
@@ -205,11 +241,6 @@ function UI:RefreshPageContent()
 
     elseif self.page=="customapl" or self.page=="maintenance" then
         self:RefreshCustomAPL()
-    elseif self.page=="scene" then
-        self:Paint(self.readouts.scene,"SetText","切换重置并暂停；自动判定仅旁路观察。\n可见敌方≥3建议多目标，≤1单体，2保持。\n1秒内两次不同采样；未知撤回。计数不等于命中。\n以下是采样时结果，不代表当前状态。\n\n" .. TEF.Research:View())
-    elseif self.page=="hud" then
-        -- 这些信息已有对应控件，旧摘要会覆盖标签设置卡片。
-        self:Paint(self.readouts.hud,"SetText",""); self:Paint(self.readouts.hud,"Hide")
     elseif self.page=="tek" then
         local client=TEF.Dispatch:ClientQueueWindow()
         self:Paint(self.readouts.tek,"SetText","TEAP v3 · 输出：" .. (TEF.Transport.enabled and "开启" or "关闭")
@@ -228,7 +259,7 @@ function UI:RefreshPageContent()
         local report=self.diagnosticMode=="explain" and (self.diagnosticReport or "点击策略解释进行只读现场采样。") or TEF.APL.Custom:Timeline(e)
         if self.diagnosticMode=="audit" then
             local rows=TEF.Recommendation:BaseSource(e)=="manual" and e.db.profiles[e.scene] or TEF.APL.Custom:Rows(e,e.scene)
-            local valid,errors,warnings=TEF.APL.Custom:Audit(rows,e)
+            local valid,errors,warnings=TEF.APL.Custom:Audit(rows,e,TEF.Recommendation:BaseSource(e)=="apl")
             report="当前已保存方案体检\n" .. (valid and "未发现可证明的矛盾。" or errors) .. "\n" .. warnings
         end
         self:Paint(self.readouts.diagnostics,"SetText",table.concat(lines,"\n") .. "\n\n" .. report)
@@ -259,21 +290,17 @@ function UI:CreateSettings()
     end)
     self.navigation={}; self.pageTitles={}; self.pageFrames={}; self.pageScrolls={}
     self.pageHeading=self:Text(f,192,-80,592,"GameFontNormalLarge")
-    local tabs={{"overview","设置"},{"profiles","列表循环"},{"customapl","优先级推荐"},{"maintenance","增益与紧急"},{"scene","场景与验证"},{"hud","HUD外观"},{"tek","TEK 与施法接续"},{"diagnostics","诊断/测试"}}
+    local tabs={{"overview","设置"},{"profiles","列表循环"},{"customapl","优先级推荐"},{"maintenance","增益与紧急"},{"hud","HUD外观"},{"tek","TEK 与施法接续"},{"diagnostics","诊断/测试"}}
     self.pageWidthLayouts={}
-    local visibleIndex=0
     for i,tab in ipairs(tabs) do
         local key=tab[1]
         self.pageTitles[key]=tab[2]
-        local hidden=key=="scene"
-        if not hidden then visibleIndex=visibleIndex+1 end
-        self.navigation[key]=self:Button(f,tab[2],24,-80-(visibleIndex-1)*44,144,function() self:ShowPage(key) end)
-        if hidden then self:Paint(self.navigation[key],"Hide") end
+        self.navigation[key]=self:Button(f,tab[2],24,-80-(i-1)*44,144,function() self:ShowPage(key) end)
         local panel=self:Frame("Frame",f)
         self.pages[key]=panel
         self:Paint(panel,"SetSize",610,590); self:Paint(panel,"SetPoint","TOPLEFT",f,"TOPLEFT",192,-116)
         self.pageFrames[key]=panel
-        if key=="overview" or key=="hud" or key=="profiles" or key=="customapl" or key=="tek" or key=="scene" or key=="diagnostics" then
+        if key=="overview" or key=="hud" or key=="profiles" or key=="customapl" or key=="tek" or key=="diagnostics" then
             local scroll=self:Frame("ScrollFrame",panel,"UIPanelScrollFrameTemplate")
             self.pageScrolls[key]=scroll
             self:Paint(scroll,"SetSize",580,575); self:Paint(scroll,"SetPoint","TOPLEFT",panel,"TOPLEFT",0,0)
@@ -285,7 +312,7 @@ function UI:CreateSettings()
             self.pages[key]=content; panel=content
             content.tefResponsivePage=key=="overview" or key=="hud" or key=="tek"
         end
-        self.readouts[key]=self:Text(panel,4,-4,580)
+        if key~="hud" then self.readouts[key]=self:Text(panel,4,-4,580) end
     end
     self:Paint(self.pageFrames.maintenance,"Hide")
     self.pageFrames.maintenance=self.pageFrames.customapl; self.pages.maintenance=self.pages.customapl; self.readouts.maintenance=self.readouts.customapl
@@ -337,8 +364,6 @@ function UI:CreateSettings()
         self:Paint(self.editorMessage,"SetText",saved and "方案已保存；旧派发已停止并重置。" or ("未保存：" .. reason))
         self:Paint(editor,"ClearFocus")
     end)
-    button("scene","切换单体",4,-345,115,function() TEF.Profiles:Select(e,"single") end)
-    button("scene","切换多目标",129,-345,115,function() TEF.Profiles:Select(e,"multi") end)
     self:CreateSectionCard(self.pages.overview,"派发状态",0,0,580,84)
     self.overviewBadge=self:CreateStatusBadge(self.pages.overview,16,-40,548)
     self:CreateSectionCard(self.pages.overview,"运行模式",0,-96,580,148)
@@ -369,8 +394,6 @@ function UI:CreateSettings()
             local ok,reason=TEF.Profiles:UsePlan(e,value,e.db.selectedPlans[value])
             self:Paint(self.sourceMessage,"SetText",ok and "来源已切换并停止；关闭设置后主动开启。" or ("来源未切换：" .. reason))
         end)
-    self:Paint(self.readouts.hud,"SetText","")
-    self:Paint(self.readouts.hud,"Hide")
     self:CreateSectionCard(self.pages.hud,"标签样式",0,0,580,512)
     local labelPanel=self:Frame("Frame",self.pages.hud); self.labelStylePanel=labelPanel
     self:Paint(labelPanel,"SetSize",548,440); self:Paint(labelPanel,"SetPoint","TOPLEFT",self.pages.hud,"TOPLEFT",16,-48)

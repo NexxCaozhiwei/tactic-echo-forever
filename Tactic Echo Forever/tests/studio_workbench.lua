@@ -148,9 +148,9 @@ test("技能库缓存不在普通刷新中反复扫描",function()
  eq(calls,0); C_SpellBook.GetNumSpellBookSkillLines=fn
 end)
 
-test("HUD页旧摘要隐藏且技能库与条目背景分层",function()
+test("HUD页不再创建旧摘要且技能库与条目背景分层",function()
  setup(); U:ShowPage("hud"); U:RefreshPage()
- eq(U.readouts.hud.text,""); eq(U.readouts.hud.shown,false)
+ eq(U.readouts.hud,nil)
  eq(U.studioLibrary.backdropColor[4],1)
  assert(U.studioLibrary.backdropColor[1]~=U.theme.panel[1])
  assert(U.studioLibraryWidgets[1].frame.backdropColor[1]~=U.studioLibrary.backdropColor[1])
@@ -237,14 +237,14 @@ test("不同窗口下列表底部与固定保存区不重叠",function()
  end
  UIParent=parent
 end)
-test("窄屏副窗停靠主窗右侧且关闭不丢草稿",function()
+test("窄屏详情覆盖主窗且关闭不丢草稿",function()
  setup(); local parent=UIParent; UIParent={GetWidth=function() return 1000 end,GetHeight=function() return 720 end}
- U:SelectStudioRule("apl",1); U:LayoutSettings(); eq(U.editorOverlay,false); eq(U.studioInspector.shown,true)
- eq(U.studioInspector.point[2],U.settings); eq(U.studioInspector.point[3],"TOPRIGHT")
- assert(U.studioInspector.point[4]>0)
- assert((U.studioWidth+U.studioInspector.point[4]+U.studioInspector.width)*U.settingsFitScale<=1000)
+ U:SelectStudioRule("apl",1); U:LayoutSettings(); eq(U.editorOverlay,true); eq(U.studioInspector.shown,true)
+ eq(U.studioInspector.point[2],U.settings); eq(U.studioInspector.point[1],"CENTER"); eq(U.studioInspector.point[3],"CENTER")
+ eq(U.studioInspectorShield.shown,true); assert(U.settingsFitScale>=.85)
+ eq(U.studioContext.shown,true)
  eq(U.customScroll.shown,true); eq(U.studioSave.parent,U.settings)
- U:StudioAction(U.studioInspectorClose); eq(U.studioInspector.shown,false); eq(#U.customDraft,2)
+ U:StudioAction(U.studioInspectorClose); eq(U.studioInspector.shown,false); eq(U.studioInspectorShield.shown,false); eq(#U.customDraft,2)
  UIParent=parent
 end)
 test("预热后连续切换Inspector与诊断不增加Frame或同步注册",function()
@@ -432,6 +432,7 @@ test("优先级技能组编辑按钮与状态和组摘要分列",function()
 end)
 test("优先级相邻向下和向上拖动确实改变位置",function()
  setup(); U:AddCustomSpell(143); U:AddCustomSpell(205)
+ local diagnostics=#U.engine.db.diagnostics
  local over=MouseIsOver
  MouseIsOver=function(frame) return frame==U.customWidgets[2].frame end
  U.customWidgets[1].frame.scripts.OnDragStart(); U.customWidgets[1].frame.scripts.OnDragStop()
@@ -439,6 +440,7 @@ test("优先级相邻向下和向上拖动确实改变位置",function()
  MouseIsOver=function(frame) return frame==U.customWidgets[1].frame end
  U.customWidgets[2].frame.scripts.OnDragStart(); U.customWidgets[2].frame.scripts.OnDragStop()
  eq(U.customDraft[1].spellID,143); eq(U.customDraft[2].spellID,205)
+ eq(#U.engine.db.diagnostics,diagnostics)
  MouseIsOver=over
 end)
 test("鼠标悬停为假时仍按缩放坐标识别可见拖动落点",function()

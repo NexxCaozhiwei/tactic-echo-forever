@@ -36,4 +36,4 @@ TEK 的输入链路必须同时满足：TEAP CRC/协议/目录校验、已武装
 
 ## 诊断
 
-TEK 可生成脱敏诊断包，包含设置、状态、近期 trace、运行日志、显示/DPI 信息、映射快照和 `SUMMARY.md`。它不复制完整 SavedVariables，也不导出宏正文。
+TEK 可生成脱敏诊断包，包含自身设置、状态、近期 trace、运行日志、显示/DPI 信息和 `SUMMARY.md`。它不读取其他插件 SavedVariables，也不导出宏正文。

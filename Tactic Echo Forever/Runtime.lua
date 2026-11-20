@@ -395,11 +395,11 @@ function C:ReconcileCore()
         TEF.APL:Invalidate()
     end
     TEF.APL.Custom:ReconcilePolicyProgress(e)
-    TEF.SkillGroups:Refresh(e)
+    TEF.SkillGroups:Refresh(e,"progress")
     TEF.Maintenance:Refresh(e)
     if e.identitySaturated then self:Fault("RUNTIME_IDENTITY_CAPACITY_RELOAD_REQUIRED"); return end
     if TEF.APL:IsActive(e) and not TEF.UI.settingsOpen then TEF.APL:Refresh(e) end
-    TEF.SkillGroups:Refresh(e)
+    TEF.SkillGroups:Refresh(e,"admit")
     local generation,index,serial=e.generation,e.index,e.receiptSerial or 0
     local function current() return self.intent and self.e==e and TEF.engine==e and generation==e.generation and index==e.index and serial==(e.receiptSerial or 0) end
     if e.completed and e.groupRun then

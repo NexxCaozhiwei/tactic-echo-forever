@@ -186,7 +186,6 @@ function U:BindStudioDrag(w,index,source)
   if not self:CommitSequenceCounts() or not self:CommitCustomNumbers() then return end
   if source=="group" and not self:CommitGroupFields() then return end
   self.studioDragging={source=source,index=index,frame=frame}; self:Paint(frame,"SetAlpha",.5)
-  self.engine:Log("display","STUDIO_DRAG_STARTED",nil,nil,nil,source .. ":" .. index)
  end) end)
  self:Paint(frame,"SetScript","OnDragStop",function() self:Guard(function()
   local drag=self.studioDragging; self.studioDragging=nil; self:Paint(frame,"SetAlpha",1); self:HideStudioInsertion()
@@ -199,10 +198,8 @@ function U:BindStudioDrag(w,index,source)
    if source=="manual" then self:ReorderSequenceRow(index,target) elseif source=="group" then self:GroupMove(index,target) else self:ReorderCustomRule(index,target) end
    self.studioSelected={source=source,index=target}
    self:StudioMessage(target==index and "落点仍是原位置，顺序未变化。" or "已调整草稿顺序，保存后生效。")
-   self.engine:Log("display","STUDIO_DRAG_DROPPED",nil,nil,nil,source .. ":" .. index .. ":" .. target)
   else
    if source=="manual" then self:SequenceMessage("已取消拖动，草稿顺序保持。") else self:CustomMessage("已取消拖动，草稿顺序保持。") end
-   self.engine:Log("display","STUDIO_DRAG_NO_TARGET")
   end
   self:RefreshStudio()
  end) end)
@@ -222,7 +219,7 @@ function U:BindStudioDrag(w,index,source)
   self:HideControlTooltip(frame); self:HideStudioInsertion()
   self:Paint(frame,"SetAlpha",1)
   if self.studioDragging and self.studioDragging.frame==frame then
-   self.studioDragging=nil; self.engine:Log("display","STUDIO_DRAG_HIDDEN_CANCELLED")
+   self.studioDragging=nil
   end
  end)
 end

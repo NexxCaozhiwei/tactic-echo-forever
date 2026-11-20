@@ -68,8 +68,9 @@ class AppPaths:
             if not isinstance(data, dict):
                 return
             shutil.copy2(settings, self.config / "legacy-settings-before-split.json")
+            data.pop("wow_savedvariables_path", None)
             data.update(auto_start_ui_linked=False, show_window_on_boot=True,
-                        signal_layout_cache=None, wow_savedvariables_path="")
+                        signal_layout_cache=None)
             self.settings_json.write_text(json.dumps(data, indent=2), encoding="utf-8")
             for source in (legacy / "profiles").glob("*.json"):
                 destination = self.profiles / source.name

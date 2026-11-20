@@ -422,9 +422,13 @@ function U:CreateSegmentedControl(parent,choices,x,y,width,getter,setter)
     local out={}; local cell=math.floor((width-(#choices-1)*8)/#choices/4)*4; local needed=64
     for _,choice in ipairs(choices) do local n=0; for ch in choice[2]:gmatch("[%z\1-\127\194-\244][\128-\191]*") do n=n+(#ch>1 and 14 or 7) end; needed=math.max(needed,n+32) end
     if cell<needed then
-        local menu; local toggle=self:CreateActionButton(parent,"选择",x,y,width,function() local ok,shown=self:Invoke(menu,"IsShown"); self:Paint(menu,ok and S.Public(shown,"boolean")==true and "Hide" or "Show") end)
+        local menu; local toggle=self:CreateActionButton(parent,"选择",x,y,width,function()
+            local ok,shown=self:Invoke(menu,"IsShown")
+            if not (ok and S.Public(shown,"boolean")==true) then self:LayerAbove(menu,toggle,20) end
+            self:Paint(menu,ok and S.Public(shown,"boolean")==true and "Hide" or "Show")
+        end)
         menu=self:Frame("Frame",toggle,"BackdropTemplate"); self:Paint(menu,"SetPoint","TOPLEFT",toggle,"BOTTOMLEFT",0,-8)
-        self:Paint(menu,"SetSize",width,math.min(248,#choices*40+8)); self:Backdrop(menu); self:Paint(menu,"SetFrameStrata","DIALOG"); self:Paint(menu,"SetClampedToScreen",true); self:Paint(menu,"EnableMouse",true)
+        self:Paint(menu,"SetSize",width,math.min(248,#choices*40+8)); self:Backdrop(menu); self:LayerAbove(menu,toggle,20); self:Paint(menu,"SetClampedToScreen",true); self:Paint(menu,"EnableMouse",true)
         local scroll=self:Frame("ScrollFrame",menu,"UIPanelScrollFrameTemplate"); self:Paint(scroll,"SetSize",width-32,math.min(240,#choices*40)); self:Paint(scroll,"SetPoint","TOPLEFT",menu,"TOPLEFT",8,-8)
         local child=self:Frame("Frame",scroll); self:Paint(child,"SetSize",width-32,#choices*40); self:Paint(scroll,"SetScrollChild",child); self:Paint(child,"SetPoint","TOPLEFT",scroll,"TOPLEFT",0,0)
         self:Paint(toggle,"SetScript","OnHide",function() self:Paint(menu,"Hide"); self:HideControlTooltip(toggle) end)
