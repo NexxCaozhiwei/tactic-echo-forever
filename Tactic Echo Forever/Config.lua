@@ -1,4 +1,6 @@
 local _, TEF = ...
+-- 所有动态条件及状态快照共用的采样周期；底层仍复用 Transport 心跳。
+TEF.ConditionSampleInterval = 0.05
 -- Explicitly observed IDs only. Names are user labels, not rank equivalence.
 -- Edit this bounded list out of game, copy Config.lua to the TEF folder, reload.
 TEF.StandardConfig = {

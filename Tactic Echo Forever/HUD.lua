@@ -624,8 +624,8 @@ function H:Create(e)
         local elapsed=S.Public(rawElapsed,"number")
         if not elapsed or elapsed<0 then return end
         self.traceElapsed=(self.traceElapsed or 0)+elapsed
-        if self.traceElapsed>=.05 then
-            self.traceElapsed=self.traceElapsed%.05
+        if self.traceElapsed>=TEF.ConditionSampleInterval then
+            self.traceElapsed=self.traceElapsed%TEF.ConditionSampleInterval
             if U.settingsOpen and U.studioTraceLive then U:Guard(U.MaybeStudioLiveProbe,U) end
         end
         local ok,shown=U:Invoke(self.frame,"IsVisible")

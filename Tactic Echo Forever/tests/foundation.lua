@@ -77,17 +77,31 @@ test("apl_current_initiation_not_replaced_until_receipt",function()
  F.receipt("UNIT_SPELLCAST_SUCCEEDED",143,"foundation-lock"); eq(e.receiptSerial,1)
  eq(T.Runtime:ReplaceRecommendation({{name="Frostbolt",spellID=205,matchIDs={205}}}),true)
 end)
-test("apl_dirty_refresh_under_250ms_and_cached_static_providers",function()
+test("apl_condition_sampling_refreshes_every_50ms_and_keeps_static_cache",function()
+ eq(T.ConditionSampleInterval,.05)
  local e=F.runtime(); local time=10; GetTime=function() return time end; T.Runtime:SetIntent(true)
  local bookCalls,talentCalls=0,0; local book=C_SpellBook.GetNumSpellBookSkillLines; local talent=A.TalentState.Read
  C_SpellBook.GetNumSpellBookSkillLines=function(...) bookCalls=bookCalls+1; return book(...) end
  A.TalentState.Read=function(...) talentCalls=talentCalls+1; return talent(...) end
  local old=e.aplSnapshot; time=10.02; A:Invalidate(); A:Refresh(e); eq(e.aplSnapshot,old)
  time=10.06; A:Refresh(e); eq(e.aplSnapshot.sampledAt,10.06)
- old=e.aplSnapshot; time=10.19; A:Refresh(e); eq(e.aplSnapshot,old)
- time=10.27; A:Refresh(e); eq(e.aplSnapshot.sampledAt,10.27)
+ old=e.aplSnapshot; time=10.08; A:Refresh(e); eq(e.aplSnapshot,old)
+ time=10.12; A:Refresh(e); eq(e.aplSnapshot.sampledAt,10.12)
+ old=e.aplSnapshot; time=10.14; A:Refresh(e); eq(e.aplSnapshot,old)
+ time=10.18; A:Refresh(e); eq(e.aplSnapshot.sampledAt,10.18)
  eq(bookCalls,0); eq(talentCalls,0)
  C_SpellBook.GetNumSpellBookSkillLines=book; A.TalentState.Read=talent
+end)
+test("apl_locked_preview_resamples_every_50ms",function()
+ local e=F.runtime(); assert(T.Recommendation:SetSource(e,"apl")); local time=30; GetTime=function() return time end
+ e.RecommendationLocked=function() return true end; e.aplPreviewSnapshot={sampledAt=30}
+ local sample,calls=A.State.Sample,0
+ A.State.Sample=function(self,engine) calls=calls+1; return sample(self,engine) end
+ time=30.04; A:Refresh(e); eq(calls,0)
+ time=30.06; A:Refresh(e); eq(calls,1); eq(e.aplPreviewSnapshot.sampledAt,30.06)
+ time=30.08; A:Refresh(e); eq(calls,1)
+ time=30.12; A:Refresh(e); eq(calls,2); eq(e.aplPreviewSnapshot.sampledAt,30.12)
+ A.State.Sample=sample
 end)
 test("apl_direct_sent_association_locks_without_continuous_marker",function()
  local e=F.runtime(); T.Runtime:SetIntent(true); T.Dispatch.initiation=nil

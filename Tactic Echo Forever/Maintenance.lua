@@ -118,7 +118,7 @@ function M:Refresh(e)
  end
  local now=A.State.Time(); local old=e.maintenanceSnapshot
  local state
- if old and now and old.sampledAt and now>=old.sampledAt and now-old.sampledAt<(A.State.dirty and .05 or .20)
+ if old and now and old.sampledAt and now>=old.sampledAt and now-old.sampledAt<T.ConditionSampleInterval
   and old.revision==(A.State.revision or 0) and old.generation==e.generation and old.receiptSerial==(e.receiptSerial or 0) then state=old
  else
   state={sampledAt=now,generation=e.generation,receiptSerial=e.receiptSerial or 0,revision=A.State.revision or 0,scene=e.scene,

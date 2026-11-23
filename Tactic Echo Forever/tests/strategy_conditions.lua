@@ -429,10 +429,11 @@ test("resource_probe_paused_sampling_dedup_frequency_and_target_combo",function(
  UnitPower=function(_,id) calls=calls+1; return id==3 and energy or 3 end; UnitPowerMax=function(_,id) return id==3 and 100 or 5 end
  GetComboPoints=function() return 3 end
  A.State.SampleResources(e); eq(#e.db.resourceDiagnostics,1); eq(e.db.resourceDiagnostics[1].resources.energy.value,70); eq(e.db.resourceDiagnostics[1].resources.targetComboPoints.value,3)
- now=20.1; A.State.SampleResources(e); eq(calls,2)
- now=20.3; A.State.SampleResources(e); eq(#e.db.resourceDiagnostics,1); eq(e.db.resourceProbeSummary.samples,2)
- energy=20; now=20.6; A.State.SampleResources(e); eq(#e.db.resourceDiagnostics,2)
- UnitExists=function() return F.secret end; now=20.9; A.State.SampleResources(e); eq(e.db.resourceProbeSummary.latest.resources.targetComboPoints.reason,"TARGET_UNKNOWN")
+ now=20.04; A.State.SampleResources(e); eq(calls,2); eq(e.db.resourceProbeSummary.samples,1)
+ now=20.06; A.State.SampleResources(e); eq(#e.db.resourceDiagnostics,1); eq(e.db.resourceProbeSummary.samples,2)
+ now=20.12; A.State.SampleResources(e); eq(e.db.resourceProbeSummary.samples,3)
+ energy=20; now=20.18; A.State.SampleResources(e); eq(#e.db.resourceDiagnostics,2)
+ UnitExists=function() return F.secret end; now=20.24; A.State.SampleResources(e); eq(e.db.resourceProbeSummary.latest.resources.targetComboPoints.reason,"TARGET_UNKNOWN")
  eq(T.Runtime.intent,false); eq(T.Dispatch:Packet(),nil)
  Enum.PowerType,UnitPower,UnitPowerMax,GetComboPoints,GetTime,UnitExists=enum,power,maximum,combo,time,exists
 end)

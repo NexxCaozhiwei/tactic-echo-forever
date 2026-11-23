@@ -147,7 +147,7 @@ APL自动检查每个技能的公开失控冷却状态，失控或未知时不�
 
 ## 1.1.11怒气、能量和连击点探测
 
-战士／盗贼执行/reload后，保持派发信号开启，派发意图可以关闭。探针每0.20秒采样，变化时记录到TEF_DB.resourceDiagnostics；最新状态和采样次数在resourceProbeSummary。分别测试脱战、进战、获得及消耗资源，盗贼同时测试换目标，再/reload或正常退出落盘。PUBLIC与SECRET分别标记当前值和最大值；探针不参与派发资格。
+战士／盗贼执行/reload后，保持派发信号开启，派发意图可以关闭。探针每0.05秒采样，变化时记录到TEF_DB.resourceDiagnostics；最新状态和采样次数在resourceProbeSummary。分别测试脱战、进战、获得及消耗资源，盗贼同时测试换目标，再/reload或正常退出落盘。PUBLIC与SECRET分别标记当前值和最大值；探针不参与派发资格。
 
 ## 1.1.12盗贼连击点条件
 

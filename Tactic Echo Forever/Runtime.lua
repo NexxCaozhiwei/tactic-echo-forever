@@ -363,7 +363,7 @@ function C:ObserveMovement()
     if not e or not e.db.dispatch.movementReevaluate then return end
     local now=TEF.APL.State.Time(); if not now then return end
     local old=self.movementSample
-    if old and old.engine==e and now>=old.time and now-old.time<.1 then return end
+    if old and old.engine==e and now>=old.time and now-old.time<TEF.ConditionSampleInterval then return end
     local value=TEF.APL.State.Boolean("IsPlayerMoving")
     self.movementSample={engine=e,time=now,value=value}
     if old and old.engine==e and old.value~=value and self.intent and TEF.APL:IsActive(e) then
@@ -480,7 +480,7 @@ function C:ReconcileCore()
             elseif not skipped then
                 local now=TEF.APL.State.Time()
                 local sample=self.policyRecovery
-                local recover=now and (not sample or sample.engine~=e or now<sample.at or now-sample.at>=.20)
+                local recover=now and (not sample or sample.engine~=e or now<sample.at or now-sample.at>=TEF.ConditionSampleInterval)
                 if recover then
                     self.policyRecovery={engine=e,at=now}
                     for candidate,other in ipairs(e.steps) do

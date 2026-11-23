@@ -283,7 +283,7 @@ test("实时采样复用心跳并在输入焦点占用时暂停",function()
  U.settingsOpen=true; U.studioTraceLive=true; U.studioLastProbeTime=nil
  GetTime=function() return 100 end; GetCurrentKeyBoardFocus=function() return nil end
  U:MaybeStudioLiveProbe(); U:MaybeStudioLiveProbe(); eq(calls,1)
- GetTime=function() return 100.21 end; U:MaybeStudioLiveProbe(); eq(calls,2)
+ GetTime=function() return 100.06 end; U:MaybeStudioLiveProbe(); eq(calls,2)
  GetCurrentKeyBoardFocus=function() return {} end; GetTime=function() return 101 end; U:MaybeStudioLiveProbe(); eq(calls,2)
  GetCurrentKeyBoardFocus=function() return F.secret end; U:MaybeStudioLiveProbe(); eq(calls,2)
  U.StudioProbeRows=sample; U.studioTraceLive=false; U.settingsOpen=false; GetTime=clock; GetCurrentKeyBoardFocus=focus

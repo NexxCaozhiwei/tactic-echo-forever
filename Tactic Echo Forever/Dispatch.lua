@@ -193,7 +193,7 @@ function D:ManualPolicy(e,step,live,groupEntry,readOnly)
     local now=TEF.APL.State.Time(); local revision=TEF.APL.State.revision or 0
     local cached=self.manualPolicySnapshot
     if not readOnly and not live and cached and cached.engine==e and cached.step==step and cached.state.generation==e.generation and cached.state.receiptSerial==(e.receiptSerial or 0)
-        and cached.state.revision==revision and now and cached.state.sampledAt and now>=cached.state.sampledAt and now-cached.state.sampledAt<.05 then
+        and cached.state.revision==revision and now and cached.state.sampledAt and now>=cached.state.sampledAt and now-cached.state.sampledAt<TEF.ConditionSampleInterval then
         return cached.allowed,cached.reason
     end
     local row={spellID=step.spellID,enabled=true,moving="any",activity="any",distanceOp="any",cdmKind="none",strategies=step.strategies,targetMode=step.targetMode,behavior=step.behavior}
@@ -467,7 +467,7 @@ function D:PrepareHandoff()
   local preview=e.aplPreviewSnapshot
   if not preview or preview.generation~=e.generation or preview.receiptSerial~=(e.receiptSerial or 0)
    or preview.revision~=(TEF.APL.State.revision or 0) or not preview.sampledAt
-   or now<preview.sampledAt or now-preview.sampledAt>.2 then preview=nil end
+   or now<preview.sampledAt or now-preview.sampledAt>TEF.ConditionSampleInterval then preview=nil end
   local candidate,snapshot,row=TEF.APL:PrepareQueueCandidate(e,preview)
   if candidate and target and target==TEF.APL:QueueTargetIdentity(e) then
    e.aplPreviewSnapshot=snapshot
@@ -508,8 +508,8 @@ function D:PreparedAPLState(e)
  local h=self.handoff; local p=h and h.apl; local now=TEF.APL.State.Time()
  if not h or not h.channel or not p or h.engine~=e or h.generation~=e.generation or h.index~=e.index
   or h.serial~=(e.receiptSerial or 0) or h.targetSerial~=(e.usageTargetSerial or 0)
-  or not now or now<h.preparedAt or now-h.preparedAt>.2 or p.snapshot.revision~=(TEF.APL.State.revision or 0)
-  or not p.snapshot.sampledAt or now<p.snapshot.sampledAt or now-p.snapshot.sampledAt>.2
+  or not now or now<h.preparedAt or now-h.preparedAt>TEF.ConditionSampleInterval or p.snapshot.revision~=(TEF.APL.State.revision or 0)
+  or not p.snapshot.sampledAt or now<p.snapshot.sampledAt or now-p.snapshot.sampledAt>TEF.ConditionSampleInterval
   or p.targetIdentity~=TEF.APL:QueueTargetIdentity(e) then return end
  h.apl=nil; p.snapshot.readOnly=nil
  return p.snapshot
@@ -588,7 +588,7 @@ function D:CastQueueWindow()
             and self.aplQueuePreparation.generation==generation and self.aplQueuePreparation.receiptSerial==serial
             and self.aplQueuePreparation.originGUID==initiation.guid
             and self.aplQueuePreparation.snapshot.sampledAt and now>=self.aplQueuePreparation.snapshot.sampledAt
-            and now-self.aplQueuePreparation.snapshot.sampledAt<=.2
+            and now-self.aplQueuePreparation.snapshot.sampledAt<=TEF.ConditionSampleInterval
             and self.aplQueuePreparation.snapshot.revision==(TEF.APL.State.revision or 0) then preparation=self.aplQueuePreparation
         else
             self.queueWindowReason="APL_QUEUE_TARGET_OR_CANDIDATE_UNKNOWN"

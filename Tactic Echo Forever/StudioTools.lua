@@ -227,7 +227,7 @@ function U:MaybeStudioLiveProbe()
  local _,why=S.Public(focus,"table")
  if not ok or why~="NO_DATA" then return end
  local now=T.APL.State.Time(); if not now then return end
- if self.studioLastProbeTime and now>=self.studioLastProbeTime and now-self.studioLastProbeTime<.20 then return end
+ if self.studioLastProbeTime and now>=self.studioLastProbeTime and now-self.studioLastProbeTime<T.ConditionSampleInterval then return end
  self.studioLastProbeTime=now
  self.studioLiveSampling=true; local ok,result=pcall(self.StudioProbeRows,self); self.studioLiveSampling=false
  if not ok then error(result) end
@@ -399,7 +399,7 @@ function U:CreateStudioTools()
   self.studioTraceLive=not self.studioTraceLive; self:Paint(self.studioLiveButton,"SetText",self.studioTraceLive and "实时：开" or "实时：关")
   if self.studioTraceLive then self:StudioProbeRows() end
  end); self:CompactControl(self.studioLiveButton,80)
- self:BindControlTooltip(self.studioLiveButton,"只读实时追踪","复用现有心跳，最多每0.20秒采样一次；输入框有焦点或焦点未知时暂停，不改变运行候选和额度。")
+ self:BindControlTooltip(self.studioLiveButton,"只读实时追踪","复用现有心跳，最多每0.05秒采样一次；输入框有焦点或焦点未知时暂停，不改变运行候选和额度。")
  self.studioTraceHeader=self:Text(self.studioBottom,12,-40,800,"GameFontHighlightSmall")
  self.studioTraceScroll=self:Frame("ScrollFrame",self.studioBottom,"UIPanelScrollFrameTemplate"); self:StudioAnchor(self.studioTraceScroll,self.studioBottom,12,-64,540,80)
  self.studioTraceChild=self:Frame("Frame",self.studioTraceScroll); self:Paint(self.studioTraceScroll,"SetScrollChild",self.studioTraceChild)

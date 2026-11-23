@@ -114,14 +114,14 @@ function A:Refresh(e)
  -- A current public initiation owns its exact identity until success/failure.
  if e:RecommendationLocked() then
   local now=self.State.Time(); local last=e.aplPreviewSnapshot and e.aplPreviewSnapshot.sampledAt
-  if now and (not last or now<last or now-last>=.20) then
+  if now and (not last or now<last or now-last>=TEF.ConditionSampleInterval) then
    local state=self.State:Sample(e)
    if state then e.aplPreviewSnapshot=state; if TEF.HUD and TEF.HUD.engine==e then TEF.HUD:Refresh() end end
   end
   return
  end
  local now=self.State.Time(); local last=self.State.last
- if now and last and now>=last and now-last<(self.State.dirty and .05 or .20) and e.aplSnapshot
+ if now and last and now>=last and now-last<TEF.ConditionSampleInterval and e.aplSnapshot
   and e.aplSnapshot.generation==e.generation and e.aplSnapshot.receiptSerial==(e.receiptSerial or 0) then return end
  local state=TEF.Dispatch:PreparedAPLState(e)
  local reason
@@ -148,7 +148,7 @@ function A:Refresh(e)
   e.aplCandidate=nil; e.aplSnapshot=nil; return
  end
  state.generation=e.generation; state.receiptSerial=e.receiptSerial or 0
- e.aplSnapshot=state; self.State.last=state.sampledAt; self.State.dirty=false
+ e.aplSnapshot=state; self.State.last=state.sampledAt
  e.aplPreviewSnapshot=state
  self.Trace:Record(e,trace,why,candidate,state)
  if TEF.HUD and TEF.HUD.engine==e then TEF.HUD:Refresh() end

@@ -154,7 +154,7 @@ function G:Refresh(e,phase)
 end
 function G:KeepAllowed(e,run)
  local now=T.APL.State.Time(); local old=e.groupKeepSnapshot
- if old and now and old.sampledAt and now>=old.sampledAt and now-old.sampledAt<(T.APL.State.dirty and .05 or .20)
+ if old and now and old.sampledAt and now>=old.sampledAt and now-old.sampledAt< T.ConditionSampleInterval
   and old.generation==e.generation and old.receiptSerial==(e.receiptSerial or 0) and old.revision==(T.APL.State.revision or 0) then return old.result end
  local row={spellID=run.row.spellID,enabled=true,strategies=run.row.strategies,moving="any",activity="any",cdmKind="none"}
  local state={sampledAt=now,generation=e.generation,receiptSerial=e.receiptSerial or 0,revision=T.APL.State.revision or 0,

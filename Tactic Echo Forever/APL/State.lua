@@ -14,7 +14,7 @@ local function int(value,max)
  local v=S.Public(value,"number"); if v and v>=0 and v<=max and v%1==0 then return v end
 end
 function P:Invalidate(static,cause)
- self.revision=(self.revision or 0)+1; self.dirty=true
+ self.revision=(self.revision or 0)+1
  self.invalidationCause=S.Public(cause,"string")
  if static then self.learned=nil; self.talents=nil; self.build=nil end
 end
@@ -339,7 +339,7 @@ end
 function P.SampleResources(e)
  if e.classToken~="WARRIOR" and e.classToken~="ROGUE" then return end
  local now=P.Time(); if not now then return end
- if e.resourceProbeAt and now>=e.resourceProbeAt and now-e.resourceProbeAt<.20 then return end
+ if e.resourceProbeAt and now>=e.resourceProbeAt and now-e.resourceProbeAt<TEF.ConditionSampleInterval then return end
  local generation,class=e.generation,e.classToken
  local row={class=class,time=now,session=e.session,combat=P.Boolean("InCombatLockdown"),targetExists=P.Boolean("UnitExists","target"),resources={}}
  if TEF.Runtime and TEF.Runtime.e==e then row.cycle=TEF.Runtime.cycle end

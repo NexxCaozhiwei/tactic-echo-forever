@@ -1,6 +1,6 @@
 # 当前契约 — TEF 1.0.1
 
-当前契约见 [APL_FOUNDATION_FIX_1.0.1.md](APL_FOUNDATION_FIX_1.0.1.md)：默认不读取 ready；职业配置 CLASS:base；auto 策略依据关键天赋，无法确认则手选；50ms dirty / 200ms fallback；候选变化使用内部 ReplaceRecommendation。GCD 不查询。源规则仍只执行已闭合子集。
+当前契约见 [APL_FOUNDATION_FIX_1.0.1.md](APL_FOUNDATION_FIX_1.0.1.md)：默认不读取 ready；职业配置 CLASS:base；auto 策略依据关键天赋，无法确认则手选；条件采样统一为50ms；候选变化使用内部 ReplaceRecommendation。GCD 不查询。源规则仍只执行已闭合子集。
 
 # 历史说明
 

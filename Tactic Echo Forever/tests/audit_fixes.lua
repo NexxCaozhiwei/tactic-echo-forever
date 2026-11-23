@@ -48,7 +48,7 @@ test("audit_live_trace_uses_real_heartbeat_even_when_hud_and_signal_hidden",func
  local generation,index,serial,intent=e.generation,e.index,e.receiptSerial,T.Runtime.intent
  local tick=H.heartbeat:GetScript("OnUpdate")
  for i=1,30 do clock=100+i*.05; tick(H.heartbeat,.05) end
- assert(calls>=4 and calls<=8); local before=calls
+ assert(calls>=15 and calls<=30); local before=calls
  GetCurrentKeyBoardFocus=function() return F.secret end
  for i=1,10 do clock=102+i*.05; tick(H.heartbeat,.05) end
  eq(calls,before); eq(e.generation,generation); eq(e.index,index); eq(e.receiptSerial,serial); eq(T.Runtime.intent,intent); eq(T.Dispatch.pending,nil)

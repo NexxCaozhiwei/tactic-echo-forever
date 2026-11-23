@@ -98,8 +98,8 @@ function T:SetEnabled(value)
             local elapsed=S.Public(rawElapsed,"number")
             if not elapsed or elapsed<0 then self:SetEnabled(false); return end
             self.elapsed=(self.elapsed or 0)+elapsed
-            if self.elapsed>=0.05 or (TEF.Dispatch and TEF.Dispatch:HandoffWakeDue()) then
-                self.elapsed=self.elapsed%0.05
+            if self.elapsed>=TEF.ConditionSampleInterval or (TEF.Dispatch and TEF.Dispatch:HandoffWakeDue()) then
+                self.elapsed=self.elapsed%TEF.ConditionSampleInterval
                 if not self:Pulse() then return end
             end
         end)
