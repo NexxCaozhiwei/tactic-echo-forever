@@ -59,10 +59,13 @@ echo   7. 查看分支并切换
 echo   8. 新建分支
 echo   9. 取消暂存（保留文件修改）
 echo.
+echo   D. 部署到本地游戏
+echo.
 echo   0. 退出
 echo.
-choice /c 1234567890 /n /m "请选择操作："
+choice /c 1234567890D /n /m "请选择操作："
 if errorlevel 255 exit /b 1
+if errorlevel 11 goto deploy
 if errorlevel 10 exit /b 0
 if errorlevel 9 goto unstage
 if errorlevel 8 goto new_branch
@@ -272,4 +275,29 @@ if not errorlevel 2 goto menu
 if errorlevel 3 goto sync
 git restore --staged -- .
 if errorlevel 1 (echo 取消暂存失败。) else (echo 已取消暂存，文件修改已保留。)
+goto done
+
+:deploy
+where python >nul 2>nul
+if errorlevel 1 (
+    echo [错误] 未找到 Python，请先安装 Python 并加入 PATH。
+    goto done
+)
+set "DEPLOY_TARGET=E:\World of Warcraft\_forever_\Interface\AddOns\Tactic Echo Forever"
+echo 部署当前本地代码，脚本将备份原插件并核对文件哈希。
+echo 默认目标：!DEPLOY_TARGET!
+set "DEPLOY_CUSTOM="
+set /p "DEPLOY_CUSTOM=输入其他完整插件目录，直接回车使用默认目标："
+if defined DEPLOY_CUSTOM set "DEPLOY_TARGET=!DEPLOY_CUSTOM!"
+echo 部署目标：!DEPLOY_TARGET!
+choice /c NY /n /m "确认部署？[N/Y] "
+if errorlevel 3 goto done
+if not errorlevel 2 goto menu
+python "Tactic Echo Forever\scripts\deliver.py" --deploy --target "!DEPLOY_TARGET!"
+if errorlevel 1 (
+    echo [错误] 部署失败，请查看上方输出。
+) else (
+    echo 部署完成，备份与哈希回执保存在 dist\tef。
+    echo 游戏中输入 /reload 加载更新。
+)
 goto done
