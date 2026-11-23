@@ -34,7 +34,7 @@ from tek.src.screen_sampler import (
     locate_te_signal_layout_progressive_in_region,
     runtime_pixel_sampler,
 )
-from tek.src.safety_gate import SafetyContext
+from tek.src.safety_gate import SafetyContext, StopRequestHistory
 from tek.src.trace import (
     DEFAULT_TRACE_BACKUP_COUNT,
     DEFAULT_TRACE_MAX_BYTES,
@@ -90,6 +90,7 @@ class WorkerController:
         self._lock = threading.RLock()
         self._thread: threading.Thread | None = None
         self._runner: TEKRunner | None = None
+        self._stop_request_history = StopRequestHistory()
         self._active_dispatcher = None
         self._physical_input_guard = None
         self._physical_input_monitor = None
@@ -286,6 +287,7 @@ class WorkerController:
             if callable(reset_guard):
                 reset_guard()
             self._runner.context = SafetyContext(
+                stop_history=self._stop_request_history,
                 dispatch_budget=None,
                 require_start_toggle=False,
                 allow_initial_armed_dispatch=True,
@@ -378,6 +380,8 @@ class WorkerController:
         try:
             runner = self._build_runner(options)
             with self._lock:
+                if isinstance(getattr(runner, "context", None), SafetyContext):
+                    runner.context.stop_history = self._stop_request_history
                 self._runner = runner
             config = RunnerConfig(
                 interval_seconds=options.interval_seconds,

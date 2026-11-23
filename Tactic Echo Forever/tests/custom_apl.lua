@@ -582,5 +582,132 @@ n=n+assert(loadfile((arg and arg[1] or ".") .. "/tests/public_conditions.lua"))(
 n=n+assert(loadfile((arg and arg[1] or ".") .. "/tests/strategy_lifecycle.lua"))("TEF",T,F)
 n=n+assert(loadfile((arg and arg[1] or ".") .. "/tests/studio_workbench.lua"))("TEF",T,F)
 n=n+assert(loadfile((arg and arg[1] or ".") .. "/tests/plan_share.lua"))("TEF",T,F)
+test("preemption_macro_and_two_phase_handoff",function()
+ for _,mode in ipairs({"normal","macro","channel","timeout","condition","edge","edgeChannel"}) do
+ local mutateMacro=mode=="macro"
+ local e=F.runtime()
+ local c=row(205); c.behavior={trigger="continuous",scope="entry",preempt=true}
+ local edge=mode=="edge" or mode=="edgeChannel"
+ if edge then
+  c.behavior.trigger="edge"
+  c.strategies={{mode="use",conditions={{kind="combat",value=true}}}}
+ end
+ assert(C:Save(e,{c,row(143)},"single","MAGE"))
+ if edge then C:PolicyRecord(e,C:Rows(e)[1],true).consumed=true end
+ e.db.dispatch.mode="manual"; e.db.dispatch.stopMacroSlot=2
+ local ready=false; local clock=10
+ GetTime=function() return clock end
+ C_Spell.IsSpellUsable=function(id) return id~=205 or ready,false end
+ MAX_ACCOUNT_MACROS=120; GetNumMacros=function() return 1,0 end
+ local body="/stopcasting"
+ GetMacroInfo=function() return "停止施法",123,body end
+ GetActionInfo=function(slot) if slot==2 then return "macro",1 end; return "spell",slot==3 and 205 or 143 end
+ GetBindingKey=function(command) return command=="ACTIONBUTTON2" and "Q" or command=="ACTIONBUTTON3" and "3" or "1" end
+ local old1,old2,old3=ActionButton1,ActionButton2,ActionButton3
+ ActionButton1={GetAttribute=function() return 1 end}
+ ActionButton2={GetAttribute=function() return 2 end}
+ ActionButton3={GetAttribute=function() return 3 end}
+ T.Dispatch:ClearBindingCache()
+ assert(T.Runtime:SetIntent(true)); T.Dispatch:TickContinuous()
+ local firstToken=T.Dispatch:Packet(); assert(firstToken)
+ T.Dispatch:ObservePublishedFrame(10,10,firstToken)
+ local generation=e.generation
+ A:Invalidate(false,"SPELL_UPDATE_COOLDOWN")
+ eq(T.Dispatch:Packet(),nil)
+ eq(e.generation,generation); eq(e.running,true); eq(T.Dispatch.continuous,true)
+ F.receipt("UNIT_SPELLCAST_SENT",143,"preempt-B")
+ eq(T.Dispatch.initiation.dispatched,true)
+ UnitCastingInfo=function() return "B",nil,nil,10000,13000,nil,nil,false,143 end
+ eq(T.Dispatch:PreemptTick(),false)
+ ready=true; clock=10.1; A:Invalidate()
+ local initiation=T.Dispatch.initiation
+ initiation.dispatched=false; eq(T.Dispatch:PreemptTick(),false); initiation.dispatched=true
+ local baseline=0
+ if mode=="channel" then
+  UnitCastingInfo=function() return nil end
+  UnitChannelInfo=function() return "B",nil,nil,10000,13000,nil,false,143 end
+  F.receipt("UNIT_SPELLCAST_CHANNEL_START",143,"preempt-B")
+  F.receipt("UNIT_SPELLCAST_SUCCEEDED",143,"preempt-B")
+  baseline=1
+  eq(T.Dispatch:PreemptTick(),false)
+  C:Rows(e)[1].behavior.preemptChannel=true
+ end
+ if edge then
+  eq(T.Dispatch:PreemptTick(),false)
+  InCombatLockdown=function() return false end
+  clock=10.2; A:Invalidate(); T.Runtime:Reconcile()
+  eq(C:PolicyRecord(e,C:Rows(e)[1],false).consumed,nil)
+  InCombatLockdown=function() return true end
+  clock=10.3; A:Invalidate()
+ end
+ local nextStop=(T.Transport.stopSerial or 0)+1
+ T.Transport.sequence=65535
+ T.Runtime:Reconcile()
+ assert(T.Dispatch.preemption); eq(T.Runtime.reason,"PREEMPT_WAIT_STOP")
+ local token,_,sequence=T.Dispatch:Packet(); assert(token); assert(sequence)
+ eq(sequence,nextStop)
+ local again,__,same=T.Dispatch:Packet(); eq(again,token); eq(same,sequence)
+ if mutateMacro then
+  body="/stopcasting\n/cast spell:205"
+  eq(T.Dispatch:Packet(),nil); eq(T.Dispatch.preemption,nil)
+  body="/stopcasting"
+  eq(T.Dispatch:PreemptTick(),false)
+ elseif mode=="condition" then
+  ready=false; eq(T.Dispatch:Packet(),nil); eq(T.Dispatch.preemption,nil)
+  ready=true; eq(T.Dispatch:PreemptTick(),false)
+ elseif mode=="timeout" then
+  clock=10.61; eq(T.Dispatch:Packet(),nil); eq(T.Dispatch.preemption,nil)
+  eq(T.Dispatch:PreemptTick(),false)
+ end
+ UnitCastingInfo=function() return nil end
+ UnitChannelInfo=function() return nil end
+ if mode=="channel" then F.receipt("UNIT_SPELLCAST_CHANNEL_STOP",143,"preempt-B")
+ else F.receipt("UNIT_SPELLCAST_INTERRUPTED",143,"preempt-B") end
+ clock=clock+.3; A:Invalidate(); T.Runtime:Reconcile(); T.Dispatch:TickContinuous()
+ assert(T.Dispatch.pending); eq(T.Dispatch.pending.binding.spellID,205)
+ assert(T.Dispatch:Packet())
+ F.receipt("UNIT_SPELLCAST_SENT",205,"preempt-C")
+ if edge then
+  assert(T.Dispatch.preemptProtected)
+  C:Rows(e)[2].behavior={trigger="continuous",scope="entry",preempt=true}
+  InCombatLockdown=function() return false end
+  if mode=="edgeChannel" then
+   UnitChannelInfo=function() return "C",nil,nil,10000,13000,nil,false,205 end
+   F.receipt("UNIT_SPELLCAST_CHANNEL_START",205,"preempt-C")
+  else UnitCastingInfo=function() return "C",nil,nil,10000,13000,nil,nil,false,205 end end
+  A:Invalidate(); T.Runtime:Reconcile()
+  eq(T.Dispatch:PreemptTick(),false); eq(T.Dispatch.initiation.guid,"preempt-C")
+ end
+ F.receipt("UNIT_SPELLCAST_SUCCEEDED",205,"preempt-C")
+ if mode=="edgeChannel" then
+  assert(T.Dispatch.preemptProtected)
+  eq(T.Dispatch:PreemptOrigin(),nil)
+  UnitChannelInfo=function() return nil end
+  F.receipt("UNIT_SPELLCAST_CHANNEL_STOP",205,"preempt-C")
+ end
+ if edge then eq(T.Dispatch.preemptProtected,nil) end
+ eq(e.receiptSerial,baseline+1)
+ F.receipt("UNIT_SPELLCAST_SUCCEEDED",143,"preempt-B"); eq(e.receiptSerial,baseline+1)
+ T.Runtime:Stop()
+ ActionButton1,ActionButton2,ActionButton3=old1,old2,old3
+ end
+end)
+test("preemption_channel_identity_must_keep_original_start",function()
+ local e=F.runtime()
+ local d=T.Dispatch
+ local oldChannel,oldTime=UnitChannelInfo,GetTime
+ GetTime=function() return 20.1 end
+ UnitChannelInfo=function() return "新引导",nil,nil,20000,23000,nil,false,143 end
+ d.channelInputLock=true
+ d.channelStart={engine=e,generation=e.generation,guid="old-channel",spellID=143,startMS=10000,dispatched=true}
+ local origin=d:PreemptOrigin(); eq(origin.startMS,10000)
+ eq(d:PreemptCast(origin),false)
+ d:Event("UNIT_SPELLCAST_CHANNEL_STOP","player",143,nil)
+ eq(d.channelStart,nil)
+ d:Event("UNIT_SPELLCAST_CHANNEL_START","player",143,nil)
+ eq(d.channelStart,nil); eq(d:PreemptOrigin(),nil)
+ d.channelInputLock=nil
+ UnitChannelInfo,GetTime=oldChannel,oldTime
+end)
 TEF_CUSTOM_APL_TEST_COUNT=n
 return n

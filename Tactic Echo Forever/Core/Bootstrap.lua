@@ -102,7 +102,10 @@ local function onEvent(_,event,...)
             -- Deliberately ignore target (argument 2), including its Secret value.
             unit,ignoredTarget,guid,id=...
         else unit,guid,id=... end
-        if event=="UNIT_SPELLCAST_SUCCEEDED" then engine:ObserveArcaneBlast(unit,guid,id) end
+        if event=="UNIT_SPELLCAST_SUCCEEDED" then
+            engine:ObserveArcaneBlast(unit,guid,id)
+            engine:ObserveInternalCooldownSuccess(unit,guid,id)
+        end
         local consumed=TEF.Dispatch:Event(event,unit,id,guid)
         if not consumed then engine:Handle(engine.generation,event,unit,guid,id) end
         -- Events invalidate research evidence, never manufacture cast=false.

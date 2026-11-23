@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from tek.src.action_catalog import ActionCatalog, RETRIBUTION_V2
 from tek.src.profile_resolver import Profile
@@ -8,6 +8,14 @@ from tek.src.binding_tokens import decode_binding_token, BindingTokenError
 
 NON_DISPATCH_PAUSE_STATES = frozenset({"paused", "manual_hold", "channeling", "empowering"})
 NON_DISPATCH_WAITING_STATES = frozenset({"waiting"})
+STOP_ACTION_CODE = 255
+STOP_CATALOG_FINGERPRINT = 0x6486
+
+
+@dataclass
+class StopRequestHistory:
+    epoch: int | None = None
+    attempts: set[int] = field(default_factory=set)
 
 
 @dataclass(frozen=True)
@@ -50,6 +58,19 @@ class SafetyContext:
     start_toggle_seen_disarmed: bool = False
     start_toggle_released: bool = False
     expected_protocol_version: int | None = None
+    stop_history: StopRequestHistory = field(default_factory=StopRequestHistory)
+
+    @property
+    def stop_epoch(self) -> int | None:
+        return self.stop_history.epoch
+
+    @stop_epoch.setter
+    def stop_epoch(self, value: int | None) -> None:
+        self.stop_history.epoch = value
+
+    @property
+    def stop_attempts(self) -> set[int]:
+        return self.stop_history.attempts
 
 
 class SafetyGate:
@@ -150,7 +171,9 @@ class SafetyGate:
         if frame.catalog_version != self.catalog.version:
             context.state = "Blocked"
             return False, f"catalog_version_mismatch:{frame.catalog_version}:{self.catalog.version}"
-        if frame.catalog_fingerprint != self.catalog.fingerprint16:
+        stop_request = frame.action_code == STOP_ACTION_CODE
+        expected_fingerprint = STOP_CATALOG_FINGERPRINT if stop_request else self.catalog.fingerprint16
+        if frame.catalog_fingerprint != expected_fingerprint:
             context.state = "Blocked"
             return False, f"catalog_fingerprint_mismatch:{frame.catalog_fingerprint}:{self.catalog.fingerprint16}"
 
@@ -215,6 +238,20 @@ class SafetyGate:
                 return False, "old_frame_freshness"
         context.last_frame_freshness_counter = frame.frame_freshness_counter
 
+        if stop_request:
+            if not 1 <= frame.sequence <= 4096:
+                context.state = "Blocked"
+                return False, "stop_request_identity_invalid"
+            if context.stop_epoch != frame.session_epoch:
+                context.stop_epoch = frame.session_epoch
+                context.stop_attempts.clear()
+            if frame.sequence in context.stop_attempts:
+                context.state = "Waiting"
+                return False, "stop_request_already_attempted"
+            if len(context.stop_attempts) >= 4096:
+                context.state = "Blocked"
+                return False, "stop_request_capacity_reload_required"
+
         if (
             getattr(frame, "dispatch_origin", "official") == "reaction"
             and context.last_reaction_dispatch_sequence == frame.sequence
@@ -222,7 +259,7 @@ class SafetyGate:
             context.state = "Waiting"
             return False, "reaction_candidate_already_dispatched"
 
-        if context.last_action_sequence is not None:
+        if not stop_request and context.last_action_sequence is not None:
             delta = sequence_delta(frame.sequence, context.last_action_sequence)
             if delta > 32768:
                 context.state = "Blocked"
@@ -250,7 +287,8 @@ class SafetyGate:
 
     def mark_dispatched(self, frame, context: SafetyContext, *, sent: bool, attempted: bool = False) -> None:
         context.last_sequence = frame.sequence
-        context.last_action_sequence = frame.sequence
+        if frame.action_code != STOP_ACTION_CODE:
+            context.last_action_sequence = frame.sequence
         # "attempted" is intentionally broader than native sent=True. Keep a
         # diagnostic record for Burst candidates, but do not suppress future
         # fresh frames: the shared dispatch-rate limiter governs repetition for

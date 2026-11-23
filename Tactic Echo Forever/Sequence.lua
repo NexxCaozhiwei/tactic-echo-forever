@@ -441,7 +441,7 @@ function Engine:Handle(generation, event, unitRaw, guidRaw, spellRaw)
     self.seen[guid], self.seenCount = true, self.seenCount+1
     self.receiptSerial=(self.receiptSerial or 0)+1
     if TEF.Dispatch then TEF.Dispatch:ObserveChannelSuccess(self,spellID,guid) end
-    self:MarkStrategySuccess(spellID)
+    self:MarkStrategySuccess(spellID,guid)
     if self.groupRun and not self.maintenanceActive then self.groupRun.successful=true end
     self.associations[guid]=nil; self.associationCount=self.associationCount-1
     if TEF.APL and TEF.APL:IsActive(self) then

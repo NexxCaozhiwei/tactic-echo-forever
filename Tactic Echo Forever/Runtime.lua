@@ -18,7 +18,7 @@ function C.Clean(raw)
     local groupMax=S.Field(raw,"groupLatencyAllowanceMax","number")
     local groupNetwork,groupNetworkReason=S.Field(raw,"groupLatencyCompensation","boolean")
     local ordinary,ordinaryReason=S.Field(raw,"ordinaryContinuous","boolean")
-    return {groupQueue=S.Field(raw,"groupQueue","boolean")==true,
+    return {stopMacroSlot=S.ID(S.Field(raw,"stopMacroSlot","number")),groupQueue=S.Field(raw,"groupQueue","boolean")==true,
         groupQueueLead=math.max(0,math.min(.5,groupLead or lead or .2)),
         queueWindowMode=S.Field(raw,"queueWindowMode","string")=="client" and "client" or "custom",
         groupQueueWindowMode=S.Field(raw,"groupQueueWindowMode","string")=="client" and "client" or "custom",
@@ -90,6 +90,9 @@ function C:ReplaceRecommendation(rows)
     return result
 end
 function C:Initialize(e)
+    TEF.Dispatch.preemption=nil; TEF.Dispatch.preemptedGUID=nil
+    TEF.Dispatch.preemptProtected=nil; TEF.Dispatch.preemptCapacityLogged=nil
+    TEF.Dispatch.publishedAttempt=nil
     self.retryWait=nil; self.movementSample=nil; self.timingFingerprint=nil; self.targetChangePending=nil
     self.maintenanceManual=false
     self.e=e; self.intent=false; self.worldSeen=false; self.state="paused"
@@ -100,6 +103,7 @@ end
 function C:Invalidated(e)
     -- Explicit edits/reset and the retained developer Engine API stop intent.
     if e==self.e and not self.internal then
+        TEF.Dispatch.preemption=nil; TEF.Dispatch.preemptProtected=nil
             self.retryWait=nil
         self.maintenanceManual=false
         if e.maintenanceActive then TEF.Maintenance:Restore(e,"MAINTENANCE_INVALIDATED") end
@@ -109,6 +113,8 @@ function C:Invalidated(e)
     end
 end
 function C:Stop(reason,state)
+    TEF.Dispatch.preemption=nil
+    TEF.Dispatch.preemptProtected=nil
     TEF.Dispatch.handoff=nil
     self.targetChangePending=nil; self.e.finishOldTargetReceipt=nil
     self.retryWait=nil
@@ -507,6 +513,7 @@ function C:ReconcileCore()
     if not current() then return end
     -- Keep the already initiated receipt while showing a cast block. Pausing
     -- the Engine here would erase its initiation and lose SUCCEEDED (S61).
+    if TEF.Dispatch:PreemptTick() then self:Changed("blocked","PREEMPT_WAIT_STOP"); return end
     local idle=TEF.Dispatch:TransportCastAllowed(true)
     if not current() then return end
     if not idle then
@@ -560,7 +567,12 @@ function C:ReconcileCore()
             e.skipStreak=0
         end
     end
-    if not allowed then self:Suspend(reason); return end
+    if not allowed then
+        if reason=="APL_STALE_OR_UNKNOWN" then
+            TEF.Dispatch:Block(reason); self:Changed("blocked",reason)
+        else self:Suspend(reason) end
+        return
+    end
     if TEF.Dispatch.bindingCache[e.steps[e.index].spellID]==false then self:Suspend("TEK_EXACT_DIRECT_BINDING_UNAVAILABLE"); return end
     if not e.running and not self:EngineCall("Resume") then return end
     if not TEF.Dispatch.enabled then TEF.Dispatch:SetEnabled(true) end

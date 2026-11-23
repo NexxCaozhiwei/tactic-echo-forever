@@ -505,7 +505,17 @@ function UI:CreateSettings()
     self:CreateToggleRow(self.pages.tek,"移动变化重新判断APL",16,-1610,548,
         function() return e.db.dispatch.movementReevaluate end,
         function(v) e.db.dispatch.movementReevaluate=v; TEF.Runtime.movementSample=nil; TEF.APL:Invalidate() end)
-    self:Paint(self.pages.tek,"SetHeight",1706)
+    self:CreateSectionCard(self.pages.tek,"抢占施法 · 独立停止宏",0,-1706,580,180)
+    self.stopMacroStatus=self:CreateHintText(self.pages.tek,(e.db.dispatch.stopMacroSlot and ("当前停止宏槽位 "..e.db.dispatch.stopMacroSlot.."。") or "").."将仅含 /stopcasting 的宏放到动作栏并绑定按键，再检测。抢占需要新版 TEK。",16,-1746,548)
+    self:CreateActionButton(self.pages.tek,"检测／切换停止宏",16,-1802,180,function()
+        local _,message=TEF.Dispatch:DetectStopMacro()
+        self:Paint(self.stopMacroStatus,"SetText",message)
+    end)
+    self:CreateActionButton(self.pages.tek,"清除停止宏",204,-1802,140,function()
+        TEF.Runtime:Stop("PREEMPT_MACRO_CHANGED"); e.db.dispatch.stopMacroSlot=nil
+        self:Paint(self.stopMacroStatus,"SetText","已清除停止宏配置，抢占停止。")
+    end)
+    self:Paint(self.pages.tek,"SetHeight",1910)
     for _,panel in pairs(self.pageFrames or self.pages) do self:Paint(panel,"Hide") end
     self:CreateStudio()
     self.settingsLayoutSignature=nil

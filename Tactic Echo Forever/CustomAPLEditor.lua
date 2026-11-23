@@ -366,6 +366,13 @@ function U:RefreshStrategyForm()
     behavior().scope=v
    end); y=y-60
   self:CreateHintText(form,"成功后消耗，未知不重新武装；条件重触发仅本条目。",0,y,390); y=y-36
+  if self.strategySource=="apl" and not row.group then
+   self:CreateToggleRow(form,"允许打断当前读条并优先释放",0,y,390,function() return row.behavior and row.behavior.preempt or false end,
+    function(v) local b=behavior(); b.preempt=v; if not v then b.preemptChannel=false end end); y=y-36
+   self:CreateToggleRow(form,"同时允许打断当前引导",0,y,390,function() return row.behavior and row.behavior.preemptChannel or false end,
+    function(v) local b=behavior(); b.preemptChannel=v; if v then b.preempt=true end end); y=y-36
+   self:CreateHintText(form,"须在 TEK 页配置停止施法宏；按列表优先级和全部条件抢占。",0,y,390); y=y-40
+  end
   if row.group then self:CreateHintText(form,"原组触发：完成后等待重新触发。",0,y,390); y=y-24 end
   if self.strategySource=="maintenance" then
    self.strategyEmergencyToggle=self:CreateToggleRow(form,"紧急规则（优先于普通维护，等待施法结束）",0,y,390,function() return row.behavior and row.behavior.emergency or false end,function(v) behavior().emergency=v end); y=y-36

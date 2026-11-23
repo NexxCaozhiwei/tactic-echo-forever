@@ -369,6 +369,22 @@ test("cast_queue_evidence_has_exact_event_identity_and_bounded_reload_history",f
     eq(#reload.db.queueDiagnostics,512)
     eq(reload.db.queueDiagnostics[512].reason,"BOUNDED_RECORD")
 end)
+test("snapshot_rejection_preserves_origin_and_published_queue_receipts",function()
+    fixture(); now=12.31; tick()
+    local token=T.Dispatch:Packet(); assert(token)
+    T.Dispatch:ObservePublishedFrame(10,10,token)
+    local e=T.engine
+    local generation,origin,queue=e.generation,T.Dispatch.initiation,T.Dispatch.castQueue
+    assert(queue)
+    T.Dispatch:Block("APL_STALE_OR_UNKNOWN")
+    eq(e.generation,generation); eq(e.running,true)
+    eq(T.Dispatch.initiation,origin); eq(T.Dispatch.castQueue,queue)
+    eq(T.Dispatch.pending,nil)
+    receipt("UNIT_SPELLCAST_SENT",205,"published-next")
+    receipt("UNIT_SPELLCAST_SUCCEEDED",116,"queue-A")
+    eq(T.Dispatch.initiation.guid,"published-next")
+    eq(T.Dispatch.initiation.dispatched,true)
+end)
 test("cast_queue_adjustable_lead_zero_half_second_and_client_cap",function()
     fixture(); T.engine.db.dispatch.castQueueLead=0; now=12.49
     eq(T.Dispatch:CastQueueWindow(),nil)

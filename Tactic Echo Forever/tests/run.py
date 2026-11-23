@@ -103,6 +103,11 @@ def main():
     # Existing TE uses ActionCode=0 for uncatalogued bound spells. Verify
     # this transport envelope with the existing engine and DRY RUN only.
     example = ROOT.parent / "examples/profiles/laptop.json"
+    stop_fields = tef.Transport.Encode(91, 10, 11, 1, encode_binding_token("Q"), True, True)
+    stop_frame = decode_fields(tuple(stop_fields[i] for i in range(1, 21)))
+    assert stop_frame.action_code == 255 and stop_frame.catalog_fingerprint == 25734
+    stop_engine = TEKEngine(RETRIBUTION_V2, ProfileResolver.from_file(example))
+    assert stop_engine.process_frame(stop_frame, SafetyContext(bootstrapped=True)).accepted
     for binding in ["1","SHIFT-1","CTRL-Q"]:
         token=encode_binding_token(binding)
         fields=tef.Transport.Encode(91,10,11,1,token)

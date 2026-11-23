@@ -116,7 +116,10 @@ function A:Refresh(e)
   local now=self.State.Time(); local last=e.aplPreviewSnapshot and e.aplPreviewSnapshot.sampledAt
   if now and (not last or now<last or now-last>=TEF.ConditionSampleInterval) then
    local state=self.State:Sample(e)
-   if state then e.aplPreviewSnapshot=state; if TEF.HUD and TEF.HUD.engine==e then TEF.HUD:Refresh() end end
+   if state then
+    self.Custom:ObservePreemptPolicies(e,state)
+    e.aplPreviewSnapshot=state; if TEF.HUD and TEF.HUD.engine==e then TEF.HUD:Refresh() end
+   end
   end
   return
  end

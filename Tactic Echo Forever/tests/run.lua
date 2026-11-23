@@ -2135,6 +2135,20 @@ test("bootstrap_build_updates_allowed_but_version_interface_unknown_blocked",fun
  end
  GetBuildInfo=old
 end)
+test("bootstrap_manual_success_updates_only_internal_cooldown",function()
+    deliveryFixture()
+    local e=T.engine
+    assert(T.APL.Custom:Save(e,{{spellID=143,strategies={{mode="use",conditions={{kind="internalCooldown",threshold=30}}}}}},"single","MAGE"))
+    TEF_DB=e.db
+    load("Core/Bootstrap.lua")
+    allFrames.TEF_EventFrame.scripts.OnEvent(nil,"ADDON_LOADED","Tactic Echo Forever")
+    e=T.engine
+    local generation,index,serial=e.generation,e.index,e.receiptSerial
+    allFrames.TEF_EventFrame.scripts.OnEvent(nil,"UNIT_SPELLCAST_SUCCEEDED","player","manual-hook",143)
+    eq(e:InternalCooldownReady(143,30),false)
+    eq(e:StrategySucceeded(143),false); eq(e.running,false)
+    eq(e.generation,generation); eq(e.index,index); eq(e.receiptSerial,serial)
+end)
 assert(loadfile(root .. "/tests/hud_studio.lua"))(T,{deliveryFixture=deliveryFixture,test=test,eq=eq,secret=secret})
 assert(loadfile(root .. "/tests/audit_fixes.lua"))(T,{deliveryFixture=deliveryFixture,test=test,eq=eq,secret=secret})
 assert(loadfile(root .. "/tests/dispatch_pacing.lua"))(T,{runtimeFixture=runtimeFixture,deliveryFixture=deliveryFixture,receipt=receipt,test=test,eq=eq,secret=secret})

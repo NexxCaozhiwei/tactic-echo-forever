@@ -8,7 +8,7 @@ from tek.src.binding_tokens import decode_binding_token
 from tek.src.dispatch_rate_limiter import DispatchRateLimiter
 from tek.src.dispatch_failure_tracker import DispatchFailureTracker
 from tek.src.profile_resolver import ProfileResolver
-from tek.src.safety_gate import SafetyContext, SafetyGate
+from tek.src.safety_gate import SafetyContext, SafetyGate, STOP_ACTION_CODE
 from tek.src.teap import TEAPFrame
 
 
@@ -141,7 +141,8 @@ class TEKEngine:
         # to the player. A recovery phase must therefore observe new TEAP
         # freshness rather than dispatch a frame seen during manual input.
         context.last_frame_freshness_counter = frame.frame_freshness_counter
-        context.last_action_sequence = frame.sequence
+        if frame.action_code != STOP_ACTION_CODE:
+            context.last_action_sequence = frame.sequence
         context.state = "Paused"
         return self._trace(
             frame,
@@ -316,6 +317,9 @@ class TEKEngine:
             # the foreground process.
             self._commit_rate_slot(reservation)
             dispatch_started = True
+            # 停止键一旦尝试即封存，异常或部分输入也不能重发。
+            if frame.action_code == STOP_ACTION_CODE:
+                context.stop_attempts.add(frame.sequence)
             dispatch_clock = time.perf_counter()
             self._delivery_timing["dispatchStartedAt"] = datetime.now(timezone.utc).isoformat()
             dispatch_result = self.input_dispatcher.dispatch(input_plan)

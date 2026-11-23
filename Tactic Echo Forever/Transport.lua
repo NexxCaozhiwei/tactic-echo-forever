@@ -18,10 +18,10 @@ local function xor(a,b)
     end
     return value
 end
-function T.Encode(session,sequence,freshness,state,token,inCombat)
+function T.Encode(session,sequence,freshness,state,token,inCombat,stop)
     local fields={84,69,3,state,session%256,math.floor(session/256),sequence%256,
         math.floor(sequence/256),freshness%256,math.floor(freshness/256),
-        0,token and 2 or 0,token and 132 or 0,token and 100 or 0,
+        stop and 255 or 0,token and 2 or 0,token and (stop and 134 or 132) or 0,token and 100 or 0,
         token and token%256 or 0,token and math.floor(token/256) or 0,
         token and (inCombat and 1 or 0) or (state==2 and 0 or 2)}
     local crc=65535
@@ -39,9 +39,9 @@ end
 function T:Paint()
     local e=self.engine
     self.sequence=(self.sequence+1)%65536; self.freshness=(self.freshness+1)%65536
-    local token,inCombat
-    if TEF.Dispatch then token,inCombat=TEF.Dispatch:Packet() end
-    self.fields=T.Encode(e.session%65536,self.sequence,self.freshness,token and 1 or (e.running and 0 or 2),token,inCombat)
+    local token,inCombat,stopSequence
+    if TEF.Dispatch then token,inCombat,stopSequence=TEF.Dispatch:Packet() end
+    self.fields=T.Encode(e.session%65536,stopSequence or self.sequence,self.freshness,token and 1 or (e.running and 0 or 2),token,inCombat,stopSequence~=nil)
     for i,value in ipairs(self.fields) do
         if not TEF.UI:Call(self.blocks[i],"SetColorTexture",value/255,1-value/255,17/255,1) then
             -- A partial strip is not retained as a verified signal.
@@ -70,7 +70,7 @@ function T:Pulse(reason)
     return result
 end
 function T:Initialize(engine)
-    self.engine=engine; self.enabled=false
+    self.engine=engine; self.enabled=false; self.stopSerial=0
 end
 function T:SetEnabled(value)
     if not value then

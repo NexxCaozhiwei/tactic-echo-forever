@@ -58,6 +58,42 @@ class FakeRunner:
 
 
 class AppRuntimeTests(unittest.TestCase):
+    def test_worker_restart_preserves_stop_request_history(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = AppPaths.from_root(directory)
+            paths.ensure()
+            runners = []
+            ready = threading.Event()
+
+            class ContextRunner(FakeRunner):
+                def __init__(self):
+                    super().__init__([make_record()])
+                    self.context = SafetyContext()
+
+                def tick(self, config):
+                    ready.set()
+                    return super().tick(config)
+
+            def factory(_):
+                runner = ContextRunner()
+                runners.append(runner)
+                return runner
+
+            worker = WorkerController(paths=paths, status_store=StatusStore(paths.status_json),
+                                      runner_factory=factory)
+            try:
+                self.assertTrue(worker.start_dry_run())
+                self.assertTrue(ready.wait(2))
+                runners[0].context.stop_epoch = 42
+                runners[0].context.stop_attempts.add(7)
+                self.assertTrue(worker.stop())
+                ready.clear()
+                self.assertTrue(worker.start_dry_run())
+                self.assertTrue(ready.wait(2))
+                self.assertEqual(runners[1].context.stop_epoch, 42)
+                self.assertEqual(runners[1].context.stop_attempts, {7})
+            finally:
+                worker.stop()
     def test_trace_record_maps_to_snapshot_and_green_color(self):
         snapshot = trace_record_to_snapshot(
             make_record(inputSent=True, reason="input_sent", dispatcher_backend="windows_sendinput"),
@@ -254,7 +290,12 @@ class AppRuntimeTests(unittest.TestCase):
             worker._thread = threading.current_thread()
             worker._set_snapshot(replace(worker.snapshot, process_state="ErrorLocked", safety_state="ErrorLocked"))
 
+            runner.context.stop_history = worker._stop_request_history
+            runner.context.stop_epoch = 42
+            runner.context.stop_attempts.add(9)
             self.assertTrue(worker.recover_error())
+            self.assertEqual(runner.context.stop_epoch, 42)
+            self.assertEqual(runner.context.stop_attempts, {9})
             self.assertEqual(worker.snapshot.process_state, "Waiting")
             self.assertEqual(failures.snapshot()["recent_failures"], 0)
             self.assertEqual(limiter.snapshot()["used_global"], 0)

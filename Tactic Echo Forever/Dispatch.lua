@@ -6,6 +6,8 @@ function D:ObservePublishedFrame(sequence,freshness,token)
  local p,e=self.pending,TEF.engine
  local now=TEF.APL.State.Time()
  if not p or not now or p.generation~=e.generation or token~=p.binding.token then return end
+ self.publishedAttempt={generation=e.generation,index=p.index,request=p.request,spellID=p.binding.spellID,time=now}
+ if p.castQueue then p.castQueue.published=true end
  local row=p.deliveryRow
  if not row or sequence~=(row.lastSequence+1)%65536 or freshness~=(row.lastFreshness+1)%65536
   or (sequence-row.firstSequence)%65536>=4096 then
@@ -104,6 +106,12 @@ function D:ContinuousStatus(reason)
     end
 end
 function D:Block(reason)
+    if reason=="APL_STALE_OR_UNKNOWN" then
+        self:Cancel(reason)
+        TEF.APL:Invalidate(false,"DISPATCH_SNAPSHOT_RECHECK")
+        self:ContinuousStatus(reason)
+        return
+    end
     self:StopContinuous(reason); self:Cancel(reason)
     if TEF.Runtime and TEF.Runtime.e==TEF.engine and TEF.Runtime.intent then TEF.Runtime:Suspend(reason) end
 end
@@ -682,7 +690,7 @@ function D:SequenceSucceeded(guid)
     self:Cancel("CAST_QUEUE_CURRENT_SUCCESS")
     local a=q.guid and e.associations[q.guid]
     if a and not a.failed and not e.seen[q.guid] then
-        self.initiation={generation=e.generation,index=e.index,spellID=q.spellID,guid=q.guid}
+        self.initiation={generation=e.generation,index=e.index,spellID=q.spellID,guid=q.guid,dispatched=q.published==true}
         self.waitReceipt=e.receiptSerial; self.continuousBinding=q.binding
         e:Log("transport","CAST_QUEUE_PROMOTED",q.spellID)
     else self.waitReceipt=nil; self.initiation=nil end
@@ -960,6 +968,7 @@ function D:BindingsChanged()
     if not self:VerifyCurrent(self.pending.binding) then self:Cancel("TEK_BINDING_CHANGED") end
 end
 function D:Packet()
+    if self.preemption then return self:PreemptPacket() end
     local p,e=self.pending,TEF.engine
     if not p then return nil end
     if not p.castQueue and self:HasCurrentInitiation() then self:Cancel("CONTINUOUS_WAIT_CURRENT_RECEIPT"); return nil end
@@ -1031,19 +1040,34 @@ function D:Event(event,unit,id,guidRaw)
         self.channelInputLock=true
         local channelGUID=guid
         if not channelGUID and self:HasCurrentInitiation() and self.initiation.spellID==spellValue then channelGUID=self.initiation.guid end
+        self.channelStart=nil
         local fn=S.Resolve("UnitChannelInfo")
         if fn and channelGUID then
             local ok,_,__,___,startRaw,____,_____,______,channelID=pcall(fn,"player")
             local startMS=S.Public(startRaw,"number")
             if ok and startMS and S.ID(channelID)==spellValue then
-                self.channelStart={engine=e,generation=e.generation,guid=channelGUID,spellID=spellValue,startMS=startMS}
+                self.channelStart={engine=e,generation=e.generation,guid=channelGUID,spellID=spellValue,startMS=startMS,
+                    dispatched=self.initiation and self.initiation.guid==channelGUID and self.initiation.dispatched==true}
                 local receipt=self.channelReceipt
                 if receipt and receipt.engine==e and receipt.guid==channelGUID and receipt.serial==(e.receiptSerial or 0) then receipt.startMS=startMS end
             end
         end
         self:Cancel("CHANNEL_ACTIVE_INPUT_LOCK")
     elseif unitValue=="player" and event=="UNIT_SPELLCAST_CHANNEL_STOP" then
+        local protected=self.preemptProtected
+        local channel=self.channelStart
+        if protected and protected.spellID==spellValue
+            and (protected.guid==guid or (not guid and channel and channel.guid==protected.guid)) then self.preemptProtected=nil end
         self.channelInputLock=nil -- 只撤销事件锁，派发仍复核实时引导接口。
+        self.channelStart=nil
+    end
+    local protected=self.preemptProtected
+    if protected and unitValue=="player" and guid==protected.guid and spellValue==protected.spellID then
+        local channel=self.channelStart
+        if failure or event=="UNIT_SPELLCAST_STOP"
+            or (event=="UNIT_SPELLCAST_SUCCEEDED" and not (self.channelInputLock and channel and channel.guid==guid)) then
+            self.preemptProtected=nil
+        end
     end
     if unitValue=="player" then self:TraceQueue("GAME_EVENT",event,spellValue,guid) end
     if owned and (runtime.e~=e or TEF.engine~=e or e.generation~=eventGeneration or e.index~=eventIndex) then return true end
@@ -1116,7 +1140,19 @@ function D:Event(event,unit,id,guidRaw)
         local step=e.steps[e.index]
         if event=="UNIT_SPELLCAST_SENT" or event=="UNIT_SPELLCAST_START" then
             if step.matches[spellValue] and guid and not e.seen[guid] then
-                self.initiation={generation=e.generation,index=e.index,spellID=spellValue,guid=guid}
+                local previous=self.initiation
+                local published=self.pending and self.pending.binding.spellID==spellValue and self.pending.diagnosticPublished
+                local attempt,now=self.publishedAttempt,TEF.APL.State.Time()
+                if not published and attempt and now and now>=attempt.time and now-attempt.time<=.75
+                    and attempt.generation==e.generation and attempt.index==e.index
+                    and attempt.request==runtime.requestSerial and attempt.spellID==spellValue then published=true end
+                self.initiation={generation=e.generation,index=e.index,spellID=spellValue,guid=guid,
+                    dispatched=published==true or (previous and previous.guid==guid and previous.dispatched==true)}
+                local policy=TEF.APL.Custom:CurrentPolicyRow(e)
+                if self.initiation.dispatched and TEF.APL:IsActive(e) and not e.groupRun and not e.maintenanceActive
+                    and policy and policy.behavior and policy.behavior.preempt and policy.behavior.trigger=="edge" then
+                    self.preemptProtected={engine=e,guid=guid,spellID=spellValue}
+                end
             elseif not step.matches[spellValue] then
                 self:YieldCast("CONTINUOUS_FOREIGN_CAST_YIELD")
             end
@@ -1147,7 +1183,12 @@ function D:Event(event,unit,id,guidRaw)
                     end
                     local reason=moving==true and "CONTINUOUS_MOVEMENT_FAILURE_RETRY" or (moving==false and "CONTINUOUS_FAILURE_RETRY" or "CONTINUOUS_FAILURE_MOVEMENT_UNKNOWN")
                     e:Log("observed",reason,spell,nil,nil,event)
-                    runtime:Suspend(reason); runtime:DeferRetry(); return true
+                    local preempt=self.preemption
+                    local intentional=preempt and preempt.origin.guid==guid and preempt.origin.spellID==spell
+                    self.preemption=nil
+                    runtime:Suspend(intentional and "PREEMPT_ORIGIN_INTERRUPTED" or reason)
+                    if not intentional then runtime:DeferRetry() end
+                    return true
                 else
                     -- A same-ID failure without this attempt's initiation is not
                     -- proof of current failure, especially adjacent rank repeats.
@@ -1179,4 +1220,165 @@ function D:Event(event,unit,id,guidRaw)
         self:TraceQueue("DISPATCH_INITIATION_CONFIRMED",event,spell,guid)
         self:Cancel("TEK_GAME_EVENT_RECEIVED")
     end
+end
+
+-- 抢占只通过现有输入链发布独立停止宏，所有候选仍由 APL 求值。
+function D:StopMacroBindings(wanted)
+ local out={}
+ local bars={"ActionButton","MultiBarBottomLeftButton","MultiBarBottomRightButton","MultiBarRightButton","MultiBarLeftButton","MultiBar5Button","MultiBar6Button","MultiBar7Button"}
+ local commands={"ACTIONBUTTON","MULTIACTIONBAR1BUTTON","MULTIACTIONBAR2BUTTON","MULTIACTIONBAR3BUTTON","MULTIACTIONBAR4BUTTON","MULTIACTIONBAR5BUTTON","MULTIACTIONBAR6BUTTON","MULTIACTIONBAR7BUTTON"}
+ for bar,name in ipairs(bars) do for n=1,12 do
+  local button=S.Field(_G,name..n,"table")
+  if button then
+   local ok,raw=TEF.UI:Invoke(button,"GetAttribute","action")
+   local slot=ok and S.ID(raw)
+   if not slot then slot=S.ID(S.Field(button,"action","number")) end
+   if slot and (not wanted or slot==wanted) then
+    local got,kind,index
+    local fn=S.Resolve("C_ActionBar.GetActionInfo") or S.Resolve("GetActionInfo")
+    if fn then got,kind,index=pcall(fn,slot) end
+    kind=got and S.Public(kind,"string"); index=got and S.ID(index)
+    local macro=kind=="macro" and TEF.ActionSources:StopMacro(index)
+    local read,k1,k2=pcall(S.Resolve("GetBindingKey") or function() end,commands[bar]..n)
+    local token=read and (D.SkillToken(k1) or D.SkillToken(k2))
+    if macro and token then
+     out[#out+1]={slot=slot,token=token,macroID=macro.macroID,body=macro.body,name=macro.macroName}
+    end
+   end
+  end
+ end end
+ return out
+end
+function D:DetectStopMacro()
+ local rows=self:StopMacroBindings()
+ if #rows==0 then return false,"未找到带有效键位的独立 /stopcasting 宏。" end
+ local selected=1
+ for i,row in ipairs(rows) do if row.slot==TEF.engine.db.dispatch.stopMacroSlot then selected=i%#rows+1 end end
+ TEF.Runtime:Stop("PREEMPT_MACRO_CHANGED")
+ TEF.engine.db.dispatch.stopMacroSlot=rows[selected].slot
+ return true,"已使用停止宏："..rows[selected].name.."，动作栏槽位 "..rows[selected].slot.."；再次检测可切换。"
+end
+local function preemptLog(reason,id)
+ TEF.engine:Log("transport",reason,id)
+end
+function D:PreemptOrigin()
+ local e=TEF.engine
+ if self.preemptProtected and self.preemptProtected.engine==e then return end
+ if self:HasCurrentInitiation() and self.initiation.dispatched then
+  local i=self.initiation
+  return {guid=i.guid,spellID=i.spellID,channel=false,generation=e.generation}
+ end
+ local c=self.channelStart
+ if self.channelInputLock and c and c.engine==e and c.generation==e.generation and c.dispatched then
+  return {guid=c.guid,spellID=c.spellID,channel=true,generation=e.generation,startMS=c.startMS}
+ end
+end
+function D:PreemptCast(origin)
+ local path=origin.channel and "UnitChannelInfo" or "UnitCastingInfo"
+ local fn=S.Resolve(path)
+ if not fn then return false end
+ local ok,name,_,__,start,finish,___,____,channelID,castID=pcall(fn,"player")
+ name=ok and S.Public(name,"string")
+ local id
+ if origin.channel then id=S.ID(channelID) else id=S.ID(castID) end
+ local now=TEF.APL.State.Time()
+ start=S.Public(start,"number"); finish=S.Public(finish,"number")
+ local matches=name~=nil and id==origin.spellID and now~=nil and start~=nil and finish~=nil
+  and now>=start/1000 and now<finish/1000 and (not origin.startMS or start==origin.startMS)
+ if matches then origin.startMS=start end
+ return matches
+end
+function D:PreemptCandidate(origin)
+ local e,r=TEF.engine,TEF.Runtime
+ if r.e~=e or not r.intent or not e.running or not self.enabled or not TEF.Transport.enabled
+  or not e.db.dispatch.signal or TEF.UI.settingsOpen or not self:InputIdle()
+  or e.groupRun or e.maintenanceActive or e.db.apl.template~="custom" or not TEF.APL:IsActive(e)
+  or not r:CombatAllowed(e,publicBoolean("InCombatLockdown")) then return end
+ local enabled=false
+ for _,entry in ipairs(TEF.APL.Custom:Rows(e)) do
+  if entry.enabled and not entry.group and entry.behavior and entry.behavior.preempt then enabled=true; break end
+ end
+ if not enabled then return end
+ local target=TEF.APL:QueueTargetIdentity(e)
+ if not target then return end
+ local state=TEF.APL.State:Sample(e)
+ if not state then return end
+ TEF.APL.Custom:ObservePreemptPolicies(e,state)
+ state.readOnly=true
+ local candidate=TEF.APL:Evaluate(state,e.db.apl,e.classToken)
+ local row=candidate and TEF.APL.Custom:Rows(e)[candidate.customIndex]
+ if not row or row.group or not row.behavior or not row.behavior.preempt
+  or candidate.spellID==origin.spellID or (origin.channel and not row.behavior.preemptChannel)
+  or candidate.spellID==5019 or candidate.spellID==6603 or candidate.spellID==75 then return end
+ local queue={candidate=candidate,snapshot=state,targetIdentity=target}
+ if self:ContinuousEvidence(candidate.spellID,row,queue)~=true then return end
+ local binding=self:ResolveCached(candidate.spellID)
+ if not binding or not self:VerifyCurrent(binding) then return end
+ return candidate,target
+end
+function D:PreemptTick()
+ local e=TEF.engine
+ local pending=self.preemption
+ if pending then
+  local now=TEF.APL.State.Time()
+  if not now or now<pending.at or now-pending.at>=.5 or e.generation~=pending.generation
+   or TEF.APL:QueueTargetIdentity(e)~=pending.target or not self:PreemptCast(pending.origin) then
+   self.preemption=nil
+   preemptLog("PREEMPT_STOP_FINISHED_OR_EXPIRED",pending.spellID)
+   return false
+  end
+  return true
+ end
+ local origin=self:PreemptOrigin()
+ if not origin or self.preemptedGUID==origin.guid or not e.db.dispatch.stopMacroSlot or not self:PreemptCast(origin) then return false end
+ local candidate,target=self:PreemptCandidate(origin)
+ if not candidate then return false end
+ if self.castQueue then
+  if self.preemptQueueWait~=origin.guid then
+   self.preemptQueueWait=origin.guid
+   preemptLog("PREEMPT_WAIT_EXISTING_QUEUE",candidate.spellID)
+   self:TraceQueue("PREEMPT_WAIT_EXISTING_QUEUE",nil,candidate.spellID,origin.guid)
+  end
+  return false
+ end
+ local rows=self:StopMacroBindings(e.db.dispatch.stopMacroSlot)
+ if #rows~=1 then
+  if self.preemptMacroBlocked~=origin.guid then
+   self.preemptMacroBlocked=origin.guid; preemptLog("PREEMPT_STOP_MACRO_UNAVAILABLE",candidate.spellID)
+  end
+  return false
+ end
+ self.preemptMacroBlocked=nil
+ local now=TEF.APL.State.Time()
+ if not now or not self:PreemptCast(origin) or e.generation~=origin.generation or not TEF.Runtime.intent
+  or not e.running or not self.enabled or TEF.UI.settingsOpen then return false end
+ local serial=(TEF.Transport.stopSerial or 0)+1
+ if serial>4096 then
+  if not self.preemptCapacityLogged then self.preemptCapacityLogged=true; preemptLog("PREEMPT_IDENTITY_CAPACITY_RELOAD_REQUIRED",candidate.spellID) end
+  return false
+ end
+ self:Cancel("PREEMPT_WITHDRAW_OLD_REQUEST")
+ self.handoff=nil; self.aplQueuePreparation=nil
+ TEF.Transport.stopSerial=serial
+ self.preemption={origin=origin,spellID=candidate.spellID,generation=e.generation,target=target,
+  at=now,binding=rows[1],sequence=serial}
+ self.preemptedGUID=origin.guid
+ preemptLog("PREEMPT_STOP_REQUESTED",candidate.spellID)
+ self:TraceQueue("PREEMPT_STOP_REQUESTED",nil,candidate.spellID,origin.guid)
+ return true
+end
+function D:PreemptPacket()
+ local p,e=self.preemption,TEF.engine
+ local now=TEF.APL.State.Time()
+ if not p then return end
+ local candidate,target=self:PreemptCandidate(p.origin)
+ local rows=self:StopMacroBindings(e.db.dispatch.stopMacroSlot)
+ local row=rows[1]
+ if not now or now<p.at or now-p.at>=.5 or e.generation~=p.generation or not self:PreemptCast(p.origin)
+  or not candidate or candidate.spellID~=p.spellID or target~=p.target or #rows~=1
+  or row.slot~=p.binding.slot or row.token~=p.binding.token or row.macroID~=p.binding.macroID or row.body~=p.binding.body
+  or not TEF.Runtime.intent or not e.running or not self.enabled or TEF.UI.settingsOpen then
+  self.preemption=nil; preemptLog("PREEMPT_STOP_WITHDRAWN",p.spellID); return
+ end
+ return row.token,publicBoolean("InCombatLockdown"),p.sequence
 end

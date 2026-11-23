@@ -55,6 +55,23 @@ function M:ReadMacro(index,layout)
     if not id or not self:References(body,id) then return nil,"MACRO_SPELL_UNVERIFIED" end
     return {kind="macro",macroID=index,macroName=name,body=body,spellID=id},"MACRO_VERIFIED"
 end
+-- 停止宏没有代表法术，单独核对正文；不复用技能授权。
+function M:StopMacro(index)
+ local layout=self:Layout()
+ index=S.ID(index)
+ if not self:Index(index,layout) then return end
+ local ok,rawName,_,rawBody=pcall(S.Resolve("GetMacroInfo") or function() end,index)
+ local name=ok and S.Public(rawName,"string")
+ local body=ok and S.Public(rawBody,"string")
+ if not name or not body or #body>4096 then return end
+ local stops=0
+ for line in body:gmatch("[^\r\n]+") do
+  line=trim(line)
+  if line:lower()=="/stopcasting" then stops=stops+1
+  elseif line~="" and not line:lower():match("^#showtooltip") then return end
+ end
+ if stops==1 then return {macroID=index,macroName=name,body=body} end
+end
 function M:Clear() self.catalog=nil end
 function M:Catalog(layout)
     local cached=self.catalog

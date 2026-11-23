@@ -586,7 +586,7 @@ end
 function C.CleanBehavior(row)
  local raw,status=S.Field(row,"behavior","table")
  if status=="NO_DATA" then return nil end
- if status~="PUBLIC" or not onlyFields(raw,{trigger=true,scope=true,emergency=true,after=true},4) then return nil,"BEHAVIOR_INVALID" end
+ if status~="PUBLIC" or not onlyFields(raw,{trigger=true,scope=true,emergency=true,after=true,preempt=true,preemptChannel=true},6) then return nil,"BEHAVIOR_INVALID" end
  local trigger=S.Field(raw,"trigger","string") or "continuous"
  local scope=S.Field(raw,"scope","string") or "entry"
  local after=S.Field(raw,"after","string") or "resume"
@@ -595,7 +595,10 @@ function C.CleanBehavior(row)
  local _,groupType=S.Field(row,"group","table")
  if not ({continuous=true,edge=true,target=true,combat=true})[trigger] or not ({entry=true,spell=true})[scope]
   or not ({resume=true,exit=true})[after] or (why~="PUBLIC" and why~="NO_DATA") or (scope=="spell" and (trigger=="edge" or groupType~="NO_DATA")) then return nil,"BEHAVIOR_INVALID" end
- return {trigger=trigger,scope=scope,emergency=emergency==true,after=after}
+ local preempt,pr=S.Field(raw,"preempt","boolean")
+ local channel,cr=S.Field(raw,"preemptChannel","boolean")
+ if (pr~="PUBLIC" and pr~="NO_DATA") or (cr~="PUBLIC" and cr~="NO_DATA") then return nil,"BEHAVIOR_INVALID" end
+ return {trigger=trigger,scope=scope,emergency=emergency==true,after=after,preempt=preempt==true,preemptChannel=preempt==true and channel==true}
 end
 function C:CopyBehavior(from,to)
  local b,why=self.CleanBehavior(from); if why then return false,why end
@@ -628,6 +631,13 @@ function C:ObservePolicy(e,row,state,index)
  local r=self:PolicyRecord(e,row,true); if not r then return end
  -- 仅策略明确不满足重新武装；冷却、资源和范围变化不算新触发。
  if row.behavior.trigger=="edge" and self:CheckStrategies(state,row,index)==false then r.consumed=nil end
+end
+-- 运行中的边沿观察只重新武装下一次资格，当前施法仍由精确回执持有。
+function C:ObservePreemptPolicies(e,state)
+ for i,row in ipairs(self:Rows(e)) do
+  if row.enabled and not row.invalid and not row.group and row.behavior
+   and row.behavior.preempt and row.behavior.trigger=="edge" then self:ObservePolicy(e,row,state,i) end
+ end
 end
 function C:PolicyAllowed(e,row,readOnly)
  local b=row.behavior; if not b or b.trigger=="continuous" then return true end

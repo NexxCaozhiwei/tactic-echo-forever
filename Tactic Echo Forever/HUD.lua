@@ -66,6 +66,7 @@ local statusReasons={
  CONTINUOUS_RANGE_UNKNOWN_OR_BLOCKED={"距离受阻","超出技能范围或距离未知"},
  CONTINUOUS_USABLE_UNKNOWN_OR_BLOCKED={"技能受阻","技能不可用、资源不足或状态未知"},
  TEK_EXACT_DIRECT_BINDING_UNAVAILABLE={"缺少键位","未找到已核对的技能或宏按键"},
+ PREEMPT_WAIT_STOP={"抢占施法","等待当前施法停止，随后重新确认推荐"},
  APL_NO_CANDIDATE={"无符合技能","当前策略没有符合条件的技能"},
  SEQUENCE_POLICY_ALL_BLOCKED={"条件未满足","等待列表技能策略条件满足"},
  SEQUENCE_POLICY_UNKNOWN={"条件未知","无法确认策略条件，暂不派发"},

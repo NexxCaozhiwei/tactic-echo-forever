@@ -132,13 +132,65 @@ function E:PrepareUsage()
     return nil,"SEQUENCE_USAGE_SKIPPED"
 end
 
--- 仅由现有精确成功回执路径写入；暂停及候选替换不清除。
-function E:MarkStrategySuccess(id)
+-- 内置 CD 观察独立于序列推进，按精确成功身份去重，暂停及候选替换保留。
+function E:MarkInternalCooldownSuccess(id,guid)
+ if guid then
+  self.internalCooldownSeen=self.internalCooldownSeen or {}
+  if self.internalCooldownSeen[guid] then return false end
+  if (self.internalCooldownSeenCount or 0)>=4096 then
+   if self.strategySuccessTimes then self.strategySuccessTimes[id]=false end
+   self.strategySuccessTimeSaturated=true
+   return false
+  end
+  self.internalCooldownSeen[guid]=id
+  self.internalCooldownSeenCount=(self.internalCooldownSeenCount or 0)+1
+ end
  self.strategySuccessTimes=self.strategySuccessTimes or {}
  if self.strategySuccessTimes[id]~=nil or (self.strategySuccessTimeCount or 0)<128 then
   if self.strategySuccessTimes[id]==nil then self.strategySuccessTimeCount=(self.strategySuccessTimeCount or 0)+1 end
   self.strategySuccessTimes[id]=TEF.APL.State.Time() or false
  else self.strategySuccessTimeSaturated=true end
+ return true
+end
+local function rowsHaveInternalCooldown(rows,id)
+ for _,row in ipairs(rows or {}) do
+  if not row.invalid then
+   if row.spellID==id and (TEF.APL.Custom:InternalCooldownSeconds(row) or 0)>0 then return true end
+   if row.group and rowsHaveInternalCooldown(row.group.steps,id) then return true end
+  end
+ end
+ return false
+end
+function E:UsesInternalCooldown(id)
+ local custom=self.db.apl and self.db.apl.custom
+ local priority=custom and custom[self.classToken] or {}
+ for _,source in ipairs({self.db.profiles or {},priority}) do
+  for _,scene in ipairs({"single","multi","third"}) do
+   if rowsHaveInternalCooldown(source[scene],id) then return true end
+  end
+ end
+ return rowsHaveInternalCooldown(TEF.Maintenance:Rows(self),id)
+end
+function E:ObserveInternalCooldownSuccess(unit,guid,id)
+ if S.Public(unit,"string")~="player" then return end
+ id=S.ID(id)
+ if not id or not self:UsesInternalCooldown(id) then return end
+ guid=S.Identity(guid)
+ if not guid then
+  self:MarkInternalCooldownSuccess(id)
+  if self.strategySuccessTimes[id]~=nil then self.strategySuccessTimes[id]=false end
+  self:Log("unknown","INTERNAL_COOLDOWN_IDENTITY_UNKNOWN",id)
+  return
+ end
+ local association=self.associations[guid]
+ if self.seen[guid]=="retired" or (association and association.failed) then return end
+ if self:MarkInternalCooldownSuccess(id,guid) then
+  self:Log("observed","INTERNAL_COOLDOWN_SUCCESS_OBSERVED",id,nil,nil,"UNIT_SPELLCAST_SUCCEEDED")
+ end
+end
+-- “精确成功使用记录”仍只由序列正式接纳的回执更新。
+function E:MarkStrategySuccess(id,guid)
+ self:MarkInternalCooldownSuccess(id,guid)
  self.strategySuccess=self.strategySuccess or {}
  if self.strategySuccess[id] then return end
  if (self.strategySuccessCount or 0)>=128 then self.strategySuccessSaturated=true; return end

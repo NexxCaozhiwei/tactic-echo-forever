@@ -42,6 +42,87 @@ def frame_fields(state=1, action_code=1, sequence=1, frame_freshness_counter=Non
 
 
 class TEKEngineTests(unittest.TestCase):
+    def test_stop_identity_survives_transport_sequence_wrap(self):
+        engine = TEKEngine(
+            catalog=RETRIBUTION_V2,
+            profile_resolver=ProfileResolver.from_file(LAPTOP),
+            input_dispatcher=FakeInputDispatcher(),
+        )
+        context = SafetyContext(bootstrapped=True)
+        def control(identity, freshness):
+            return decode_fields(encode_fields_v3(
+                state="armed", action_code=255, sequence=identity,
+                frame_freshness_counter=freshness, catalog_fingerprint=0x6486,
+                binding_token=encode_binding_token("Q"), in_combat=True,
+            ))
+        self.assertTrue(engine.process_frame(control(1, 20), context).inputSent)
+        for sequence, freshness in ((30000, 30020), (60000, 60020), (5, 15)):
+            frame = decode_fields(frame_fields(sequence=sequence, frame_freshness_counter=freshness))
+            self.assertTrue(engine.process_frame(frame, context).inputSent)
+        self.assertTrue(engine.process_frame(control(2, 20), context).inputSent)
+        self.assertEqual(context.last_action_sequence, 5)
+        self.assertEqual(context.stop_attempts, {1, 2})
+        self.assertFalse(engine.process_frame(control(1, 21), context).inputSent)
+        old_control = replace(control(3, 22), catalog_fingerprint=0x6485)
+        self.assertFalse(engine.process_frame(old_control, context).accepted)
+
+    def test_stop_control_success_is_once_and_skill_can_follow(self):
+        engine = TEKEngine(
+            catalog=RETRIBUTION_V2,
+            profile_resolver=ProfileResolver.from_file(LAPTOP),
+            input_dispatcher=FakeInputDispatcher(),
+        )
+        context = SafetyContext(bootstrapped=True)
+        frame = decode_fields(encode_fields_v3(
+            state="armed", action_code=255, sequence=10,
+            frame_freshness_counter=20, catalog_fingerprint=0x6486,
+            binding_token=encode_binding_token("Q"), in_combat=True,
+        ))
+        self.assertTrue(engine.process_frame(frame, context).inputSent)
+        repeated = replace(frame, frame_freshness_counter=21)
+        self.assertFalse(engine.process_frame(repeated, context).inputSent)
+        normal = decode_fields(frame_fields(sequence=11, frame_freshness_counter=22))
+        self.assertTrue(engine.process_frame(normal, context).inputSent)
+        repeated = replace(frame, frame_freshness_counter=23)
+        self.assertFalse(engine.process_frame(repeated, context).inputSent)
+
+    def test_stop_control_attempt_is_once_across_fresh_frames_and_failures(self):
+        class StopDispatcher(FakeInputDispatcher):
+            calls = 0
+
+            def dispatch(self, plan):
+                self.calls += 1
+                raise RuntimeError("partial stop attempt")
+
+        dispatcher = StopDispatcher()
+        engine = TEKEngine(
+            catalog=RETRIBUTION_V2,
+            profile_resolver=ProfileResolver.from_file(LAPTOP),
+            input_dispatcher=dispatcher,
+        )
+        context = SafetyContext(bootstrapped=True)
+        for freshness in (20, 21, 22):
+            frame = decode_fields(encode_fields_v3(
+                state="armed", action_code=255, sequence=10,
+                frame_freshness_counter=freshness, catalog_fingerprint=0x6486,
+                binding_token=encode_binding_token("Q"), in_combat=True,
+            ))
+            trace = engine.process_frame(frame, context)
+        self.assertEqual(dispatcher.calls, 1)
+        self.assertEqual(trace.reason, "stop_request_already_attempted")
+
+    def test_stop_control_rejects_old_capability_and_obeys_foreground(self):
+        context = SafetyContext(bootstrapped=True)
+        frame = decode_fields(frame_fields(action_code=255, sequence=10))
+        trace = self.engine.process_frame(frame, context)
+        self.assertFalse(trace.accepted)
+        self.assertIn("catalog_fingerprint_mismatch", trace.reason)
+        frame = replace(frame, catalog_fingerprint=0x6486, frame_freshness_counter=25)
+        context.wow_foreground = False
+        trace = self.engine.process_frame(frame, context)
+        self.assertFalse(trace.accepted)
+        self.assertEqual(context.stop_attempts, set())
+
     def test_paused_frames_retry_cleanup_without_dispatching_skill(self):
         class Recovery(FakeInputDispatcher):
             held = True

@@ -55,6 +55,34 @@ test("internal_cooldown_refreshes_only_on_accepted_success",function()
  GetTime=oldTime
 end)
 
+test("manual_success_starts_internal_cd_while_paused_without_advancing",function()
+ local e=F.runtime(); local clock=100; local oldTime=GetTime
+ GetTime=function() return clock end
+ local r=row(143,{{kind="internalCooldown",threshold=30}})
+ assert(C:Save(e,{r,{spellID=205}},"single","MAGE"))
+ local generation,index,serial=e.generation,e.index,e.receiptSerial
+ e:ObserveInternalCooldownSuccess("target","other-unit",143)
+ eq(e:InternalCooldownReady(143,30),true)
+ e:ObserveInternalCooldownSuccess("player","manual-cd",143)
+ eq(e:InternalCooldownReady(143,30),false); eq(e:StrategySucceeded(143),false)
+ eq(e.generation,generation); eq(e.index,index); eq(e.receiptSerial,serial); eq(e.running,false)
+ clock=110; e:ObserveInternalCooldownSuccess("player","manual-cd",143)
+ e:MarkStrategySuccess(143,"manual-cd")
+ eq(e.strategySuccessTimes[143],100)
+ e:Reset(); clock=130; eq(e:InternalCooldownReady(143,30),true)
+ clock=131; e:ObserveInternalCooldownSuccess("player","second-manual",143)
+ eq(e:InternalCooldownReady(143,30),false)
+ e.associations["failed"]={failed=true}
+ clock=140; e:ObserveInternalCooldownSuccess("player","failed",143)
+ eq(e.strategySuccessTimes[143],131)
+ e:ObserveInternalCooldownSuccess("player","unconfigured",205)
+ eq(e.strategySuccessTimes[205],nil)
+ e:ObserveInternalCooldownSuccess("player",F.secret,143)
+ eq(e:InternalCooldownReady(143,30),nil)
+ e:ObserveInternalCooldownSuccess("player","public-again",143)
+ eq(e.strategySuccessTimes[143],140)
+ GetTime=oldTime
+end)
 test("new_conditions_clean_roundtrip_secret_and_bounds",function()
  local conditions={{kind="combat",value=true},{kind="targetType",target="enemy"},{kind="learned",spellID=205,value=true},{kind="succeeded",spellID=143,value=false},{kind="cdmStacks",spellID=133,min=2,max=4},{kind="rangedEnemies",spellID=143,min=1,max=3}}
  local r=row(143,conditions); eq(r.invalid,nil); eq(#r.strategies[1].conditions,6)
