@@ -21,7 +21,7 @@ from tek.src.engine import TEKEngine
 from tek.src.dispatch_rate_limiter import DispatchRateLimiter
 from tek.src.diagnostic_bundle import create_diagnostic_bundle
 from tek.src.profile_resolver import ProfileResolver
-from tek.src.physical_input import PhysicalInputPause, WindowsPhysicalInputMonitor
+from tek.src.physical_input import PhysicalInputPause, SemiAutoTrigger, WindowsPhysicalInputMonitor
 from tek.src.keyboard_whitelist import KeyboardInterventionWhitelist
 from tek.src.runner import RunnerConfig, TEKRunner
 from tek.src.screen_sampler import (
@@ -99,6 +99,7 @@ class WorkerController:
         self._recent_trace_records: deque[dict] = deque(maxlen=1000)
         self._reason_counts: dict[str, int] = {}
         self._stop = threading.Event()
+        self._sample_wake = threading.Event()
         self._paused = threading.Event()
         self._snapshot = TEKStatusSnapshot.stopped(log_dir=str(paths.logs))
         self._status_publisher: StatusPublisher | None = None
@@ -233,6 +234,9 @@ class WorkerController:
         if not self.is_running():
             return False
         self._paused.set()
+        trigger = getattr(self._physical_input_monitor, "semi_auto_trigger", None)
+        if trigger:
+            trigger.cancel()
         snapshot = self.snapshot
         self._set_snapshot(
             TEKStatusSnapshot(
@@ -327,6 +331,7 @@ class WorkerController:
                     )
                 )
         self._stop.set()
+        self._sample_wake.set()
         source = self._active_frame_source
         closer = getattr(source, "close", None)
         if callable(closer):
@@ -395,6 +400,7 @@ class WorkerController:
                 expected_protocol_version=options.expected_protocol_version,
             )
             while not self._stop.is_set():
+                self._sample_wake.clear()
                 config.tek_armed = not self._paused.is_set()
                 record = runner.tick(config)
                 trace_record = record
@@ -461,7 +467,7 @@ class WorkerController:
                     last_ui_snapshot_at = ui_now
                 next_interval = getattr(runner, "next_interval_seconds", None)
                 delay = next_interval(config, record) if callable(next_interval) else options.interval_seconds
-                self._stop.wait(delay)
+                self._sample_wake.wait(delay)
         except Exception as error:
             LOGGER.exception("TEK worker exited with error")
             self._set_snapshot(
@@ -511,6 +517,7 @@ class WorkerController:
         self._active_dispatcher = dispatcher
         physical_input_guard = None
         physical_input_monitor = None
+        foreground = WindowsForegroundDetector(allowed_process_names=settings.allowed_process_names())
         if options.send_input:
             intervention_whitelist = KeyboardInterventionWhitelist.from_keys(settings.auto_dispatch_exempt_keys)
             physical_input_guard = PhysicalInputPause(
@@ -519,7 +526,17 @@ class WorkerController:
                 custom_freshness_frames=settings.manual_priority_custom_freshness_frames,
                 custom_replay_guard_seconds=settings.manual_priority_custom_replay_guard_ms / 1000.0,
             )
-            monitor = WindowsPhysicalInputMonitor(physical_input_guard, intervention_whitelist=intervention_whitelist)
+            def trigger_hwnd():
+                if self._paused.is_set() or self._stop.is_set():
+                    return None
+                return int(foreground.user32.GetForegroundWindow() or 0)
+
+            def make_trigger(key):
+                return SemiAutoTrigger(key, trigger_hwnd, self._sample_wake.set)
+
+            monitor = WindowsPhysicalInputMonitor(
+                physical_input_guard, intervention_whitelist=intervention_whitelist, semi_auto_factory=make_trigger,
+            )
             monitor.start()
             # Do not fall back to unguarded dispatch while the asynchronous hook
             # is starting.  The engine treats "not ready" as a hard SendInput
@@ -542,7 +559,6 @@ class WorkerController:
         )
         source = AutoLocateFrameSource.from_settings(settings)
         self._active_frame_source = source
-        foreground = WindowsForegroundDetector(allowed_process_names=settings.allowed_process_names())
         return TEKRunner(engine, source, foreground_source=foreground)
 
 

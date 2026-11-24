@@ -422,7 +422,7 @@ end)
 test("overview_sections_order_and_class_label",function()
  F.runtime(); T.UI:ShowPage("overview")
  local titles={}; for _,child in ipairs(T.UI.pages.overview.children or {}) do if type(child.text)=="string" and type(child.point)=="table" then titles[child.text]=child.point[5] end end
- assert(titles["运行模式"]>titles["当前配置"]); assert(titles["当前配置"]>titles["派发启停快捷键"])
+ assert(titles["运行模式"]>titles["当前配置"]); assert(titles["当前配置"]>titles["派发快捷键"])
  for title in pairs(titles) do assert(not title:find("临时覆盖已有绑定",1,true)) end
  T.UI:ShowPage("profiles"); assert(T.UI.readouts.profiles.text:find("法师",1,true)); assert(not T.UI.readouts.profiles.text:find(":base",1,true))
 end)

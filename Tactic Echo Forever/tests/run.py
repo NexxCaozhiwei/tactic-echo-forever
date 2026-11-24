@@ -34,7 +34,8 @@ def main():
             assert len(headers)==len(set(headers))
             public = [b for b in tree.getroot() if b.attrib.get("header")=="TEF"]
             assert len(public)==1 and public[0].attrib["name"]=="TEF_TOGGLE_DISPATCH"
-            assert "TEF_ToggleDispatchIntent()" in public[0].text
+            assert public[0].attrib.get("runOnUp") == "true"
+            assert "TEF_DispatchHotkey(keystate)" in public[0].text
             continue
         lua.execute("assert(loadfile(...))", str(ROOT / entry))
         code = (ROOT / entry).read_text(encoding="utf-8")

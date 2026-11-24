@@ -20,6 +20,19 @@ STATE_TO_CODE = {value: key for key, value in STATE_BY_CODE.items()}
 PROTOCOL_VERSION = 3
 TEAP_FIELD_COUNT = 20
 COMMIT_BYTE = 0xA5
+SEMI_AUTO_CATALOG_VERSION = 3
+SEMI_AUTO_FINGERPRINT_TAG = 0xA7
+
+
+def semi_auto_key(catalog_version: int, catalog_fingerprint: int) -> str | None:
+    if catalog_version != SEMI_AUTO_CATALOG_VERSION or catalog_fingerprint >> 8 != SEMI_AUTO_FINGERPRINT_TAG:
+        return None
+    vk = catalog_fingerprint & 0xFF
+    if 0x30 <= vk <= 0x39 or 0x41 <= vk <= 0x5A:
+        return chr(vk)
+    if 0x70 <= vk <= 0x7B:
+        return f"F{vk - 0x6F}"
+    return None
 
 
 @dataclass(frozen=True)
@@ -45,6 +58,10 @@ class TEAPFrame:
     dispatch_origin: str = "official"
     burst_dispatch: bool = False
     reaction_dispatch: bool = False
+
+    @property
+    def semi_auto_key(self) -> str | None:
+        return semi_auto_key(self.catalog_version, self.catalog_fingerprint)
 
 
 def decode_fields(fields: list[int] | tuple[int, ...]) -> TEAPFrame:
@@ -76,6 +93,10 @@ def _decode_v3(raw: tuple[int, ...]) -> TEAPFrame:
         raise TEAPError(f"unknown_state:{raw[3]}")
 
     flags = raw[16]
+    if raw[11] == SEMI_AUTO_CATALOG_VERSION:
+        key = semi_auto_key(raw[11], raw[12] + raw[13] * 256)
+        if not key or raw[10] not in (0, 255) or flags & ~0x03:
+            raise TEAPError("invalid_semi_auto_metadata")
     burst_dispatch = bool(flags & 0x20)
     reaction_dispatch = bool(flags & 0x40)
     if burst_dispatch and reaction_dispatch:

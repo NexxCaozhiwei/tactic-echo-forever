@@ -168,12 +168,12 @@ class SafetyGate:
         # Catalog/action binding validation applies only to dispatchable armed
         # frames.  This preserves fail-closed input safety while keeping TEAP
         # pause/wait/manual ownership visible as their real state.
-        if frame.catalog_version != self.catalog.version:
+        if frame.catalog_version != self.catalog.version and not frame.semi_auto_key:
             context.state = "Blocked"
             return False, f"catalog_version_mismatch:{frame.catalog_version}:{self.catalog.version}"
         stop_request = frame.action_code == STOP_ACTION_CODE
         expected_fingerprint = STOP_CATALOG_FINGERPRINT if stop_request else self.catalog.fingerprint16
-        if frame.catalog_fingerprint != expected_fingerprint:
+        if frame.catalog_fingerprint != expected_fingerprint and not frame.semi_auto_key:
             context.state = "Blocked"
             return False, f"catalog_fingerprint_mismatch:{frame.catalog_fingerprint}:{self.catalog.fingerprint16}"
 

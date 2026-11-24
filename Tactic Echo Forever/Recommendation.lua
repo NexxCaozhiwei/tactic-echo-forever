@@ -94,23 +94,41 @@ end
 function R:HUDAPLSteps(e)
     local apl=TEF.APL
     if not self:Configured(e) then return {} end
+    if e.maintenanceActive then
+        local candidate=e.aplCandidate
+        local step=e.steps and e.steps[e.index]
+        if not candidate or not step or candidate.spellID~=step.spellID
+            or (e.maintenanceDone and e.maintenanceDone[candidate.spellID]) then return {} end
+        return {{spellID=candidate.spellID,name=candidate.name or step.name}}
+    end
     local combat=apl.State.Boolean("InCombatLockdown")
-    local battlePreview=combat==false and not e.maintenanceActive
+    local battlePreview=combat==false
     local now=apl.State.Time()
     if not now then return {},battlePreview end
 
     local revision=apl.State.revision or 0
     local serial=e.receiptSerial or 0
     local generation,scene=e.generation,e.scene
-    local maintenance=e.maintenanceActive
     local cached=self.hudAPLPreview
-    if cached and cached.engine==e and cached.scene==scene and cached.maintenance==maintenance
+    if cached and cached.engine==e and cached.scene==scene
         and cached.combat==combat and cached.generation==generation and cached.serial==serial
         and cached.revision==revision and now>=cached.time and now<cached.time+TEF.ConditionSampleInterval then
         return cached.steps,battlePreview
     end
 
-    local state=apl.State:Sample(e,true,battlePreview)
+    local state
+    local live=e.aplSnapshot
+    if combat==true and live and live.combat and live.combat.in_combat==true and not live.maintenance
+        and live.scene==scene and live.generation==generation and live.receiptSerial==serial
+        and live.revision==revision and live.sampledAt and now>=live.sampledAt
+        and now<=live.sampledAt+TEF.ConditionSampleInterval then
+        state={}
+        for key,value in pairs(live) do state[key]=value end
+        state.readOnly=true
+        state.strategyBlockDetails=nil
+    else
+        state=apl.State:Sample(e,true,battlePreview)
+    end
     local steps,seen={},{}
     if state then
         local function add(action)
@@ -119,7 +137,7 @@ function R:HUDAPLSteps(e)
                 steps[#steps+1]={spellID=action.spellID,name=action.name or ("技能 " .. action.spellID)}
             end
         end
-        if maintenance or e.db.apl.template=="custom" then
+        if e.db.apl.template=="custom" then
             for i,row in ipairs(apl.Custom:Rows(e)) do
                 if apl.Custom:Check(state,row,i)==true then add(state.actions["custom_" .. i]) end
                 if #steps==3 then break end
@@ -129,10 +147,10 @@ function R:HUDAPLSteps(e)
         end
     end
     if generation~=e.generation or serial~=(e.receiptSerial or 0) or scene~=e.scene
-        or revision~=(apl.State.revision or 0) or maintenance~=e.maintenanceActive or self:Source(e)~="apl" then
+        or revision~=(apl.State.revision or 0) or e.maintenanceActive or self:Source(e)~="apl" then
         return {},battlePreview
     end
-    self.hudAPLPreview={engine=e,scene=scene,maintenance=maintenance,combat=combat,generation=generation,
+    self.hudAPLPreview={engine=e,scene=scene,combat=combat,generation=generation,
         serial=serial,revision=revision,time=now,steps=steps}
     return steps,battlePreview
 end

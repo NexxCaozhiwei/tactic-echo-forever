@@ -706,6 +706,7 @@ function D:YieldCast(reason)
     end
 end
 function D:TickContinuous()
+    if (TEF.engine.db.dispatch.mode=="semi") and not TEF.Runtime.semiAutoHeld then return end
     if not self.continuous then return end
     local e=TEF.engine
     if TEF.Runtime and TEF.Runtime.e==e and TEF.Runtime.intent and TEF.Runtime.state~="running" then return end
@@ -968,6 +969,7 @@ function D:BindingsChanged()
     if not self:VerifyCurrent(self.pending.binding) then self:Cancel("TEK_BINDING_CHANGED") end
 end
 function D:Packet()
+    if (TEF.engine.db.dispatch.mode=="semi") and not TEF.Runtime.semiAutoHeld then return nil end
     if self.preemption then return self:PreemptPacket() end
     local p,e=self.pending,TEF.engine
     if not p then return nil end
@@ -1003,7 +1005,7 @@ function D:Packet()
     local combat
     if ok then combat=S.Public(rawCombat,"boolean") end
     if combat==nil then self:Cancel("TEK_COMBAT_UNKNOWN"); return nil end
-    if TEF.Runtime and TEF.Runtime.e==e and TEF.Runtime.intent and combat==false and e.db.dispatch.mode=="manual"
+    if TEF.Runtime and TEF.Runtime.e==e and TEF.Runtime.intent and combat==false and TEF.Runtime:ManualMode(e)
         and not TEF.Runtime:CombatAllowed(e,combat) then self:Cancel("RUNTIME_MANUAL_START_REQUIRED"); return nil end
     if e.groupRun and not e.maintenanceActive and not TEF.Runtime:CombatAllowed(e,combat) then self:Cancel("GROUP_COMBAT_REQUIRED"); return nil end
     if TEF.Runtime and TEF.Runtime.e==e and TEF.Runtime.intent
@@ -1317,6 +1319,7 @@ function D:PreemptCandidate(origin)
  return candidate,target
 end
 function D:PreemptTick()
+ if (TEF.engine.db.dispatch.mode=="semi") and not TEF.Runtime.semiAutoHeld then return false end
  local e=TEF.engine
  local pending=self.preemption
  if pending then

@@ -1037,15 +1037,14 @@ test("runtime_world_settings_unknown_client_revoke",function()
     eq(T.Runtime.state,"blocked"); T.Runtime:World(); eq(T.Runtime.intent,true)
     T.Runtime:World(); eq(T.Runtime.intent,false)
 end)
-test("hotkey_conflicts_deferred_apply_and_no_actionbar_write",function()
+test("hotkey_overrides_existing_binding_with_deferred_apply_and_no_actionbar_write",function()
     runtimeFixture(); local applied=0; local cleared=0
     local overrides={}; T.Hotkeys.appliedKey=nil
     ClearOverrideBindings=function() cleared=cleared+1; overrides={} end
     SetOverrideBinding=function(owner,priority,key,command) eq(command,"TEF_TOGGLE_DISPATCH"); applied=applied+1; overrides[key]=command end
-    GetBindingAction=function() return "ACTIONBUTTON1" end
-    local ok,reason=T.Hotkeys:Set("CTRL-Q"); eq(ok,false); eq(reason,"HOTKEY_CONFLICT"); eq(applied,0)
-    GetBindingAction=function(key,checkOverrides) return checkOverrides and overrides[key] or "" end; assert(T.Hotkeys:Set("CTRL-Q")); eq(applied,1)
-    InCombatLockdown=function() return true end; ok,reason=T.Hotkeys:Set("SHIFT-Q")
+    GetBindingAction=function(key,checkOverrides) return checkOverrides and overrides[key] or "ACTIONBUTTON1" end
+    assert(T.Hotkeys:Set("CTRL-Q")); eq(applied,1)
+    InCombatLockdown=function() return true end; local ok,reason=T.Hotkeys:Set("SHIFT-Q")
     eq(ok,false); eq(reason,"HOTKEY_DEFERRED"); eq(applied,1); eq(T.engine.db.dispatch.hotkey,"SHIFT-Q")
     InCombatLockdown=function() return false end; assert(T.Hotkeys:Apply()); eq(applied,2)
     GetBindingAction=function() return secret end; eq(T.Hotkeys:Apply(),false); eq(applied,2)
@@ -1831,14 +1830,37 @@ test("hotkey_capture_click_saves_immediately_and_toggle_command_runs",function()
     eq(T.Runtime.intent,false); TEF_ToggleDispatchIntent(); eq(T.Runtime.intent,true)
     TEF_ToggleDispatchIntent(); eq(T.Runtime.intent,false)
 end)
-test("hotkey_recording_modifiers_esc_and_conflict_keep_previous_saved_key",function()
+test("semi_auto_hotkey_starts_outside_combat_and_releases_signal_without_reset",function()
+    local f=hotkeyFixture()
+    InCombatLockdown=function() return false end
+    T.UI.captureHotkeyButton.scripts.OnClick()
+    T.UI.hotkey.scripts.OnKeyDown(T.UI.hotkey,"F1")
+    T.UI.modeControls.semi.scripts.OnClick()
+    eq(T.engine.db.dispatch.mode,"semi")
+    eq(T.Runtime.Clean({mode="manual",semiAutoHotkey=true}).mode,"semi")
+    eq(f.overrides.F1,"TEF_TOGGLE_DISPATCH"); eq(T.Runtime.intent,false)
+    eq(T.Dispatch:Packet(),nil)
+    TEF_DispatchHotkey("down")
+    eq(T.Runtime.intent,true); eq(T.Runtime:OutsideCombatAllowed(T.engine),true)
+    assert(T.Dispatch:Packet())
+    T.Transport:Paint()
+    eq(T.Transport.fields[12],3); eq(T.Transport.fields[13],112); eq(T.Transport.fields[14],167)
+    local generation=T.engine.generation
+    TEF_DispatchHotkey("down"); eq(T.engine.generation,generation)
+    TEF_DispatchHotkey("up"); eq(T.Dispatch:Packet(),nil)
+    eq(T.Transport.fields[12],3); eq(T.Transport.fields[15],0)
+    eq(T.engine.generation,generation)
+    T.UI.modeControls.manual.scripts.OnClick(); eq(T.Runtime.intent,false)
+    eq(T.engine.db.dispatch.mode,"manual")
+end)
+test("hotkey_recording_modifiers_esc_and_existing_binding_override",function()
     local f=hotkeyFixture(); assert(T.Hotkeys:Set("F8"))
     T.UI.captureHotkeyButton.scripts.OnClick(); T.UI.hotkey.scripts.OnKeyDown(T.UI.hotkey,"LCTRL")
     eq(T.UI.captureHotkey,true); eq(T.engine.db.dispatch.hotkey,"F8")
     T.UI.hotkey.scripts.OnKeyDown(T.UI.hotkey,"ESCAPE"); eq(T.UI.captureHotkey,false); eq(T.engine.db.dispatch.hotkey,"F8")
     f.base.F9="ACTIONBUTTON1"; T.UI.captureHotkeyButton.scripts.OnClick(); T.UI.hotkey.scripts.OnKeyDown(T.UI.hotkey,"F9")
-    eq(T.engine.db.dispatch.hotkey,"F8"); eq(T.UI.hotkey.text,"F8"); eq(f.overrides.F8,"TEF_TOGGLE_DISPATCH")
-    eq(T.Hotkeys.lastReason,"HOTKEY_CONFLICT"); eq(T.Runtime.intent,false)
+    eq(T.engine.db.dispatch.hotkey,"F9"); eq(T.UI.hotkey.text,"F9"); eq(f.overrides.F9,"TEF_TOGGLE_DISPATCH")
+    eq(f.base.F9,"ACTIONBUTTON1"); eq(T.Hotkeys.lastReason,"HOTKEY_APPLIED"); eq(T.Runtime.intent,false)
 end)
 test("hotkey_typed_enter_and_save_button_persist_combo_and_clear",function()
     local f=hotkeyFixture(); T.UI.hotkey.text=" ctrl-shift-f8 "
@@ -1909,21 +1931,12 @@ test("hotkey_bootstrap_login_world_and_update_binding_reapply_saved_key",functio
     f.overrides={}; ef.scripts.OnEvent(ef,"PLAYER_ENTERING_WORLD"); eq(f.overrides.F8,"TEF_TOGGLE_DISPATCH")
     f.overrides={}; ef.scripts.OnEvent(ef,"UPDATE_BINDINGS"); eq(f.overrides.F8,"TEF_TOGGLE_DISPATCH")
 end)
-test("hotkey_new_base_binding_not_hidden_by_own_override",function()
-    local f=hotkeyFixture(); assert(T.Hotkeys:Set("F8")); f.base.F8="ACTIONBUTTON1"
-    local ok,reason=T.Hotkeys:Apply(); eq(ok,false); eq(reason,"HOTKEY_CONFLICT")
-    eq(f.overrides.F8,nil); eq(T.engine.db.dispatch.hotkey,"F8")
-    f.base.F8=nil; assert(T.Hotkeys:Apply()); eq(f.overrides.F8,"TEF_TOGGLE_DISPATCH")
+test("hotkey_keeps_existing_base_binding_and_restores_it_on_clear",function()
+    local f=hotkeyFixture(); f.base.Q="ACTIONBUTTON1"
+    assert(T.Hotkeys:Set("Q")); eq(f.base.Q,"ACTIONBUTTON1")
+    eq(f.overrides.Q,"TEF_TOGGLE_DISPATCH"); eq(T.Dispatch.SkillToken("Q"),nil)
+    assert(T.Hotkeys:Set("")); eq(f.overrides.Q,nil); eq(f.base.Q,"ACTIONBUTTON1")
 end)
-test("legacy_hotkey_override_cannot_bypass_native_conflict",function()
-    local f=hotkeyFixture(); f.base.F5="TARGETPARTYMEMBER4"
-    T.engine.db.dispatch.hotkeyOverride=true
-    eq(T.Hotkeys:Set("F5"),false); eq(f.overrides.F5,nil); eq(f.base.F5,"TARGETPARTYMEMBER4")
-    T.engine.db.dispatch.hotkey="F5"
-    local e=engine(T.Config,T.engine.db); eq(e.db.dispatch.hotkeyOverride,nil)
-    T.engine=e; T.UI.engine=e; T.Runtime:Initialize(e); eq(T.Hotkeys:Apply(),false); eq(f.overrides.F5,nil)
-end)
-
 test("control_hotkey_never_becomes_spell_dispatch_with_alternate_binding",function()
     local f=hotkeyFixture(); assert(T.Hotkeys:Set("F8")); GetBindingKey=function() return "F8","2" end
     local binding=T.Dispatch:Resolve(116); assert(binding); eq(binding.key,"2")

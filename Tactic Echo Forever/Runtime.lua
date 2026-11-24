@@ -1,7 +1,7 @@
 local _,TEF=...
 local S,C=TEF.Safety,{intent=false,state="paused",requestSerial=0,cycle=0}
 TEF.Runtime=C
-local modes={auto=true,manual=true,stop=true}
+local modes={auto=true,manual=true,stop=true,semi=true}
 local names={paused="暂停",standby="待命",running="运行",blocked="阻断",completed="完成",error="异常"}
 function C:PlayIntentSound(enabled)
     local file=enabled and "te-armed-123.wav" or "te-paused-321.wav"
@@ -9,6 +9,7 @@ function C:PlayIntentSound(enabled)
 end
 function C.Clean(raw)
     local mode=S.Field(raw,"mode","string")
+    if S.Field(raw,"semiAutoHotkey","boolean")==true and mode~="semi" then mode="semi" end
     local key=S.Field(raw,"hotkey","string")
     local lead=S.Field(raw,"castQueueLead","number")
     local retry=S.Field(raw,"retryDelay","number")
@@ -95,6 +96,7 @@ function C:Initialize(e)
     TEF.Dispatch.publishedAttempt=nil
     self.retryWait=nil; self.movementSample=nil; self.timingFingerprint=nil; self.targetChangePending=nil
     self.maintenanceManual=false
+    self.semiAutoHeld=false
     self.e=e; self.intent=false; self.worldSeen=false; self.state="paused"
     self.reason=nil; self.displayBlock=nil; self.cycle=0; self.requestSerial=0
     e.db.dispatch=self.Clean(e.db.dispatch)
@@ -174,8 +176,11 @@ function C:Suspend(reason,state)
     end
 end
 -- 仅用户手动开启且选择手动启停时授予普通来源脱战资格。
+function C:ManualMode(e)
+ return e.db.dispatch.mode=="manual" or e.db.dispatch.mode=="semi"
+end
 function C:OutsideCombatAllowed(e)
- return self.e==e and TEF.engine==e and self.intent==true and self.maintenanceManual==true and e.db.dispatch.mode=="manual"
+ return self.e==e and TEF.engine==e and self.intent==true and self.maintenanceManual==true and self:ManualMode(e)
 end
 function C:CombatAllowed(e,combat)
  return combat==true or (combat==false and (self:OutsideCombatAllowed(e) or TEF.Maintenance:OutsideAllowed(e)))
@@ -304,7 +309,12 @@ function C:SetRetryDelay(value)
 end
 function C:SetMode(mode)
     if not modes[mode] then return false end
-    self.e.db.dispatch.mode=mode; self:Reconcile(); return true
+    local dispatch=self.e.db.dispatch
+    if dispatch.mode~=mode and (dispatch.mode=="semi" or mode=="semi") then
+        self.semiAutoHeld=false
+        self:Stop("SEMI_AUTO_MODE_CHANGED")
+    end
+    dispatch.mode=mode; self:Reconcile(); return true
 end
 function C:SetPermission(value)
     self.e.db.dispatch.permission=value==true
@@ -319,6 +329,7 @@ function C:SetSignal(value)
     self:Reconcile(); return ok
 end
 function C:World()
+    self.semiAutoHeld=false
     TEF.Dispatch.channelInputLock=nil
     local first=not self.worldSeen; self.worldSeen=true
     self.e:ClearUsage()
@@ -431,7 +442,7 @@ function C:ReconcileCore()
         and not (e.groupRun and TEF.Dispatch:HasCurrentInitiation()) then self:Stop("RUNTIME_OUT_OF_COMBAT_STOP"); return end
     if TEF.UI.settingsOpen then self:Suspend("RUNTIME_SETTINGS_STANDBY","standby"); return end
     if combat==nil then self:Suspend("RUNTIME_COMBAT_UNKNOWN"); return end
-    if combat==false and e.db.dispatch.mode=="manual" and not self:OutsideCombatAllowed(e)
+    if combat==false and self:ManualMode(e) and not self:OutsideCombatAllowed(e)
         and not TEF.Maintenance:OutsideAllowed(e) then self:Suspend("RUNTIME_MANUAL_START_REQUIRED","standby"); return end
     if e.groupRun and not e.maintenanceActive and not self:CombatAllowed(e,combat) then
         if TEF.Dispatch:HasCurrentInitiation() then

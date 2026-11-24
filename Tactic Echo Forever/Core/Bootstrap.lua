@@ -153,6 +153,25 @@ TEF_ToggleDispatchIntent=function()
     refresh()
 end
 TEF_DispatchToggle=TEF_ToggleDispatchIntent
+TEF_DispatchHotkey=function(rawState)
+    local engine=TEF.engine
+    if not engine then return end
+    local state=S.Public(rawState,"string")
+    local runtime=TEF.Runtime
+    if engine.db.dispatch.mode~="semi" then
+        if state=="down" then TEF_ToggleDispatchIntent() end
+        return
+    end
+    if state=="up" then
+        runtime.semiAutoHeld=false
+        if TEF.Transport.enabled then TEF.Transport:Paint() end
+    elseif state=="down" and not runtime.semiAutoHeld and not TEF.UI.settingsOpen
+        and TEF.Dispatch:InputIdle() and TEF.Hotkeys.IsSemiAutoKey(engine.db.dispatch.hotkey) then
+        runtime.semiAutoHeld=true
+        if runtime:SetIntent(true,"SEMI_AUTO_KEY_DOWN") then TEF.Transport:Pulse() end
+    end
+    refresh()
+end
 TEF_RunToggle=TEF_ToggleDispatchIntent
 TEF_ContinuousToggle=TEF_ToggleDispatchIntent
 TEF_PermissionToggle=function()
@@ -181,6 +200,15 @@ SlashCmdList.TEF=function(raw)
     elseif command=="continuousstatus" then printSafe(TEF.Dispatch.continuousReason or "CONTINUOUS_OFF")
     elseif command=="pause" or command=="stop" then TEF.Runtime:Stop()
     elseif command=="resume" then TEF.Runtime:Start(false)
+    elseif command=="semiauto" then
+        local key=input:match("^%s*%S+%s+(%S+)%s*$")
+        key=key and key:upper()
+        if key=="OFF" then
+            TEF.Hotkeys:SetSemiAuto(false)
+        elseif TEF.Hotkeys.IsSemiAutoKey(key) then
+            TEF.Hotkeys:SetSemiAuto(true,key)
+        else printSafe("用法：/tef semiauto F1 或 /tef semiauto off"); return end
+        printSafe(TEF.Hotkeys:Status())
     elseif command=="reset" then TEF.Runtime:Reset()
     elseif command=="loop" then engine:SetLoop(not engine.db.loop)
     elseif command=="settings" then TEF.UI:OpenSettings()

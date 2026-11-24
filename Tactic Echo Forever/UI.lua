@@ -367,16 +367,16 @@ function UI:CreateSettings()
     self:CreateSectionCard(self.pages.overview,"派发状态",0,0,580,84)
     self.overviewBadge=self:CreateStatusBadge(self.pages.overview,16,-40,548)
     self:CreateSectionCard(self.pages.overview,"运行模式",0,-96,580,148)
-    self.modeControls=self:CreateSegmentedControl(self.pages.overview,{{"auto","自动启停"},{"manual","手动启停"},{"stop","脱战后停止"}},16,-132,548,
+    self.modeControls=self:CreateSegmentedControl(self.pages.overview,{{"auto","自动启停"},{"manual","手动启停"},{"stop","脱战后停止"},{"semi","半自动"}},16,-132,548,
         function() return e.db.dispatch.mode end,function(value) TEF.Runtime:SetMode(value) end)
     self:CreateToggleRow(self.pages.overview,"登录或重载后自动启动",16,-184,548,
         function() return e.db.dispatch.autoStart end,function(value) e.db.dispatch.autoStart=value end)
     self:CreateSectionCard(self.pages.overview,"当前配置",0,-260,580,168)
     self:Paint(self.readouts.overview,"ClearAllPoints")
     self:Paint(self.readouts.overview,"SetPoint","TOPLEFT",self.pages.overview,"TOPLEFT",16,-344)
-    self:CreateSectionCard(self.pages.overview,"派发启停快捷键",0,-444,580,152)
+    self:CreateSectionCard(self.pages.overview,"派发快捷键",0,-444,580,152)
     self:CreateHotkeyRow(self.pages.overview,16,-484,548)
-    self:CreateHintText(self.pages.overview,"仅接纳未绑定的快捷键；不会覆盖其他技能或系统绑定。",16,-564,548)
+    self:CreateHintText(self.pages.overview,"控制键优先于游戏原绑定。新版 TEK 会自动识别半自动键。",16,-564,548)
     self:Paint(self.pages.overview,"SetHeight",612)
     local loopPanel=self:Frame("Frame",self.pages.profiles); self.manualLoopPanel=loopPanel
     self:Paint(loopPanel,"SetSize",580,280); self:Paint(loopPanel,"SetPoint","TOPLEFT",self.pages.profiles,"TOPLEFT",0,-624)

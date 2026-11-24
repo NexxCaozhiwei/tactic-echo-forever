@@ -18,12 +18,14 @@ local function xor(a,b)
     end
     return value
 end
-function T.Encode(session,sequence,freshness,state,token,inCombat,stop)
+function T.Encode(session,sequence,freshness,state,token,inCombat,stop,triggerVK)
     local fields={84,69,3,state,session%256,math.floor(session/256),sequence%256,
         math.floor(sequence/256),freshness%256,math.floor(freshness/256),
         stop and 255 or 0,token and 2 or 0,token and (stop and 134 or 132) or 0,token and 100 or 0,
         token and token%256 or 0,token and math.floor(token/256) or 0,
         token and (inCombat and 1 or 0) or (state==2 and 0 or 2)}
+    -- 半自动能力标识与触发键受原 CRC 保护，旧版 TEK 会拒绝武装帧。
+    if triggerVK then fields[12],fields[13],fields[14]=3,triggerVK,167 end
     local crc=65535
     for _,value in ipairs(fields) do
         crc=xor(crc,value*256)
@@ -41,7 +43,12 @@ function T:Paint()
     self.sequence=(self.sequence+1)%65536; self.freshness=(self.freshness+1)%65536
     local token,inCombat,stopSequence
     if TEF.Dispatch then token,inCombat,stopSequence=TEF.Dispatch:Packet() end
-    self.fields=T.Encode(e.session%65536,stopSequence or self.sequence,self.freshness,token and 1 or (e.running and 0 or 2),token,inCombat,stopSequence~=nil)
+    local triggerVK
+    if e.db.dispatch.mode=="semi" then
+        triggerVK=TEF.Hotkeys.SemiAutoVK(e.db.dispatch.hotkey)
+        if not triggerVK then token,stopSequence=nil,nil end
+    end
+    self.fields=T.Encode(e.session%65536,stopSequence or self.sequence,self.freshness,token and 1 or (e.running and 0 or 2),token,inCombat,stopSequence~=nil,triggerVK)
     for i,value in ipairs(self.fields) do
         if not TEF.UI:Call(self.blocks[i],"SetColorTexture",value/255,1-value/255,17/255,1) then
             -- A partial strip is not retained as a verified signal.

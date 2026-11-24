@@ -70,6 +70,7 @@ class TEKEngine:
         self.failure_tracker = failure_tracker or DispatchFailureTracker()
         self.physical_input_guard = physical_input_guard
         self.physical_input_monitor = physical_input_monitor
+        self.semi_auto_trigger = getattr(physical_input_monitor, "semi_auto_trigger", None)
         if self.dispatcher_backend == "windows_sendinput" and hasattr(self.input_dispatcher, "physical_key_checker"):
             self.input_dispatcher.physical_key_checker = getattr(physical_input_monitor, "is_key_physically_down", None)
 
@@ -207,6 +208,8 @@ class TEKEngine:
         self._delivery_timing = {}
         hook_reason = self._hook_block_reason()
         if hook_reason:
+            if self.semi_auto_trigger:
+                self.semi_auto_trigger.cancel()
             context.state = "Blocked"
             return self._trace(
                 frame,
@@ -228,11 +231,30 @@ class TEKEngine:
                 reason = foreground_reason
             return self._consume_manual_frame(frame, context, reason)
 
+        configure = getattr(self.physical_input_monitor, "configure_semi_auto", None)
+        foreground_ok, _ = self.safety_gate._evaluate_foreground(context)
+        if callable(configure) and foreground_ok:
+            self.semi_auto_trigger = configure(frame.semi_auto_key)
+        if frame.semi_auto_key and (
+            not self.semi_auto_trigger or self.semi_auto_trigger.key != frame.semi_auto_key
+        ):
+            context.state = "Blocked"
+            return self._trace(frame, context, accepted=False,
+                               reason="semi_auto_trigger_unavailable", dispatch_blocked=True)
+
         manual_reason = self._manual_gate_reason(frame)
         if manual_reason:
             return self._consume_manual_frame(frame, context, manual_reason)
 
+        trigger = self.semi_auto_trigger
+        previous_session = context.current_session_epoch
+        previous_freshness = context.last_frame_freshness_counter
         accepted, reason = self.safety_gate.evaluate(frame, context, send_input=self.send_input)
+        if trigger and context.current_session_epoch == frame.session_epoch and (
+            accepted or context.current_session_epoch != previous_session
+            or context.last_frame_freshness_counter != previous_freshness
+        ):
+            trigger.observe_session(frame.session_epoch)
         if not accepted:
             return self._trace(
                 frame,
@@ -242,6 +264,14 @@ class TEKEngine:
                 dispatch_blocked=True,
                 diagnostics=self._runtime_diagnostics(),
             )
+
+        ticket = hwnd = None
+        if trigger:
+            snapshot = context.foreground_before_dispatch
+            hwnd = snapshot.hwnd if snapshot else None
+            ticket, reason = trigger.ticket(hwnd)
+            if reason:
+                return self._trace(frame, context, accepted=False, reason=reason, dispatch_blocked=True)
 
         epoch_before = self._manual_epoch()
         action_id = None
@@ -261,6 +291,8 @@ class TEKEngine:
                 except ActionCatalogError:
                     action_id = None
             input_plan = plan_binding(binding)
+            if trigger and any(event.key == trigger.key for event in input_plan.events):
+                return self._trace(frame, context, accepted=False, reason="semi_auto_binding_conflict", dispatch_blocked=True)
             reservation, limiter_reason = self._reserve_rate_slot(input_plan)
             if reservation is None:
                 self.safety_gate.mark_dispatched(frame, context, sent=False)
@@ -315,6 +347,9 @@ class TEKEngine:
             # Once dispatch begins, retain the slot even if Windows reports a
             # partial/native failure: part of the input sequence may have reached
             # the foreground process.
+            if trigger and not trigger.consume(ticket, hwnd):
+                self._rollback_rate_slot(reservation)
+                return self._trace(frame, context, accepted=False, reason="semi_auto_authorization_ended", dispatch_blocked=True)
             self._commit_rate_slot(reservation)
             dispatch_started = True
             # 停止键一旦尝试即封存，异常或部分输入也不能重发。

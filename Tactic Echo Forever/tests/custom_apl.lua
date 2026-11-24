@@ -389,6 +389,27 @@ test("hud_battle_preview_uses_isolated_conditions_without_filling_empty_slots",f
  eq(e.aplCandidate,candidate); eq(e.aplSnapshot,snapshot)
  A.State.Sample=sample; InCombatLockdown,IsPlayerMoving=combat,moving
 end)
+test("hud_reuses_combat_snapshot_and_shows_only_runtime_maintenance_candidate",function()
+ local e=F.runtime()
+ assert(C:Save(e,{row(143),row(205)},"single","MAGE"))
+ local sample,combat=A.State.Sample,InCombatLockdown
+ local now=33; GetTime=function() return now end; InCombatLockdown=function() return true end
+ local live=state(C:Rows(e))
+ live.combat={in_combat=true}; live.scene=e.scene; live.generation=e.generation
+ live.receiptSerial=e.receiptSerial or 0; live.revision=A.State.revision or 0; live.sampledAt=now
+ e.aplSnapshot=live
+ A.State.Sample=function() error("HUD_DUPLICATE_SAMPLE") end
+ local v=T.Recommendation:HUDSteps(e); eq(#v,2); eq(v[1].spellID,143)
+ eq(live.readOnly,nil); eq(live.strategyBlockDetails,nil)
+ local configured=T.Recommendation.Configured
+ T.Recommendation.Configured=function() return true end
+ e.maintenanceActive=true; e.aplCandidate={spellID=205,name="寒冰箭"}
+ e.steps={{spellID=205}}; e.index=1
+ v=T.Recommendation:HUDSteps(e); eq(#v,1); eq(v[1].spellID,205)
+ e.maintenanceDone={[205]=true}; eq(#T.Recommendation:HUDSteps(e),0)
+ T.Recommendation.Configured=configured
+ A.State.Sample=sample; InCombatLockdown=combat
+end)
 test("manual_hud_preview_filters_without_advancing_sequence",function()
  local e=F.runtime(); assert(T.Recommendation:SetSource(e,"manual","single"))
  e.steps=T.Engine.Validate({{spellID=143,name="火球术",matchIDs={143}},{spellID=205,name="寒冰箭",matchIDs={205}}}); e.index=1; e.db.loop=false

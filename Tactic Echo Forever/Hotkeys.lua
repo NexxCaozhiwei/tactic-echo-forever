@@ -25,12 +25,35 @@ function H:Result(ok,reason)
 end
 function H:Status()
     local labels={HOTKEY_APPLIED="已生效",HOTKEY_DEFERRED="已保存，等待脱战应用",
-        HOTKEY_CONFLICT="与已有绑定冲突：请选择未绑定的快捷键",HOTKEY_CONFLICT_UNKNOWN="未生效：无法核对已有绑定",
+        HOTKEY_CONFLICT_UNKNOWN="未生效：无法验证快捷键绑定",
         HOTKEY_VERIFY_FAILED="已保存，绑定未验证",HOTKEY_APPLY_FAILED="已保存，绑定应用失败",
         HOTKEY_CLEAR_FAILED="已保存，旧绑定清理失败",HOTKEY_OWNER_FAILED="未生效：绑定所有者创建失败",
-        HOTKEY_INVALID="未保存：快捷键无效"}
+        HOTKEY_INVALID="未保存：快捷键无效",
+        HOTKEY_SEMI_AUTO_KEY="半自动支持字母、数字或 F1–F12 单键"}
     local key=TEF.engine and TEF.engine.db.dispatch.hotkey or ""
     return "已保存：" .. (key=="" and "未设置" or key) .. " · " .. (labels[self.lastReason] or "等待应用")
+end
+function H.IsSemiAutoKey(key)
+    return key and (key:match("^[A-Z0-9]$") or key:match("^F[1-9]$") or key:match("^F1[0-2]$"))~=nil
+end
+function H.SemiAutoVK(key)
+    if not H.IsSemiAutoKey(key) then return nil end
+    return #key==1 and key:byte() or 111+tonumber(key:sub(2))
+end
+function H:SetSemiAuto(enabled,key)
+    local dispatch=TEF.engine.db.dispatch
+    key=key or dispatch.hotkey
+    if enabled then
+        if not H.IsSemiAutoKey(key) then return self:Result(false,"HOTKEY_SEMI_AUTO_KEY") end
+        local eligible,reason=self:Check(key)
+        if not eligible then return self:Result(false,reason) end
+    end
+    if enabled then
+        TEF.Runtime:SetMode("semi")
+        return self:Set(key)
+    end
+    if dispatch.mode=="semi" then TEF.Runtime:SetMode("manual") end
+    return self:Apply()
 end
 function H:Apply()
     if self.applying then return false,"HOTKEY_REENTRANT" end
@@ -42,14 +65,11 @@ function H:Apply()
 end
 function H:Check(key)
     if key=="" then return true,nil,"" end
-    -- Our own override must not conceal a newly assigned action-bar binding.
+    -- 已有绑定保留在底层，TEF 临时覆盖只在插件生效期间优先。
     for _,includeOverrides in ipairs({false,true}) do
         local known,raw=S.Call("GetBindingAction",key,includeOverrides)
         local command=known and S.Public(raw,"string")
         if not command then return false,"HOTKEY_CONFLICT_UNKNOWN" end
-        if command~="" and command~="TEF_TOGGLE_DISPATCH" then
-            return false,"HOTKEY_CONFLICT"
-        end
         if includeOverrides then return true,nil,command end
     end
 end
@@ -97,9 +117,17 @@ function H:Set(raw)
     if self.applying then return false,"HOTKEY_REENTRANT" end
     local key=H.Normalize(raw)
     if not key then return self:Result(false,"HOTKEY_INVALID") end
+    local dispatch=TEF.engine.db.dispatch
+    if dispatch.mode=="semi" and key~="" and not H.IsSemiAutoKey(key) then
+        return self:Result(false,"HOTKEY_SEMI_AUTO_KEY")
+    end
     local eligible,conflict=self:Check(key)
     if not eligible then return self:Result(false,conflict) end
-    TEF.engine.db.dispatch.hotkey=key
+    if dispatch.mode=="semi" and dispatch.hotkey~=key then
+        TEF.Runtime:Stop("SEMI_AUTO_HOTKEY_CHANGED")
+        TEF.Runtime.semiAutoHeld=false
+    end
+    dispatch.hotkey=key
     local ok,reason=self:Apply()
     TEF.Dispatch:BindingsChanged()
     return ok,reason

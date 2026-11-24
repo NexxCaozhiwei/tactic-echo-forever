@@ -550,6 +550,77 @@ class _WindowsHookApi:
         return int(ctypes.get_last_error() or self.kernel32.GetLastError() or 0)
 
 
+class SemiAutoTrigger:
+    """一次真实按住期间的发送授权，仅由工作线程消费。"""
+
+    HOLD_SECONDS = 0.250
+    KEYS = tuple("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") + tuple(f"F{i}" for i in range(1, 13))
+
+    def __init__(self, key, foreground_hwnd, wake, *, clock=time.monotonic):
+        if key not in self.KEYS:
+            raise ValueError("invalid_semi_auto_key")
+        self.key = key
+        self.vk = ord(key) if len(key) == 1 else 0x6F + int(key[1:])
+        self._foreground_hwnd = foreground_hwnd
+        self._wake = wake
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._epoch = 0
+        self._hwnd = None
+        self._started = 0.0
+        self._attempted = False
+        self._seen_session = None
+        self._seen_epoch = None
+
+    def press(self):
+        hwnd = self._foreground_hwnd()
+        if not hwnd:
+            return
+        with self._lock:
+            self._epoch += 1
+            self._hwnd = hwnd
+            self._started = self._clock()
+            self._attempted = False
+        self._wake()
+
+    def cancel(self):
+        with self._lock:
+            self._epoch += 1
+            self._hwnd = None
+
+    def is_held(self):
+        with self._lock:
+            return self._hwnd is not None
+
+    def observe_session(self, session):
+        with self._lock:
+            # 只撤销已在旧会话中观测到的按住。换会话首帧前的新按下仍可尝试。
+            if self._seen_session not in (None, session) and self._seen_epoch == self._epoch:
+                self._epoch += 1
+                self._hwnd = None
+            self._seen_session = session
+            self._seen_epoch = self._epoch
+
+    def ticket(self, hwnd):
+        with self._lock:
+            if self._hwnd is None:
+                return None, "semi_auto_wait_trigger"
+            if self._hwnd != hwnd:
+                self._hwnd = None
+                return None, "semi_auto_foreground_changed"
+            if self._attempted and self._clock() - self._started < self.HOLD_SECONDS:
+                return None, "semi_auto_wait_hold"
+            return self._epoch, None
+
+    def consume(self, ticket, hwnd):
+        current_hwnd = self._foreground_hwnd()
+        with self._lock:
+            if ticket != self._epoch or self._hwnd != hwnd or current_hwnd != hwnd:
+                return False
+            self._attempted = True
+            return True
+
+
 class WindowsPhysicalInputMonitor:
     """Low-level keyboard monitor with fail-closed health reporting.
 
@@ -564,10 +635,14 @@ class WindowsPhysicalInputMonitor:
         pause: PhysicalInputPause,
         *,
         intervention_whitelist: KeyboardInterventionWhitelist | None = None,
+        semi_auto_trigger: SemiAutoTrigger | None = None,
+        semi_auto_factory: Callable[[str], SemiAutoTrigger] | None = None,
         platform_name: str | None = None,
         native_api_factory: Callable[[], _WindowsHookApi] | None = None,
     ) -> None:
         self.pause = pause
+        self.semi_auto_trigger = semi_auto_trigger
+        self._semi_auto_factory = semi_auto_factory
         # Runtime policy is TEK-local. WoW binding caches are intentionally not consulted.
         # No refresh_if_changed call is needed: this whitelist is immutable for one UI-linked session.
         self.intervention_whitelist = intervention_whitelist or KeyboardInterventionWhitelist()
@@ -599,6 +674,21 @@ class WindowsPhysicalInputMonitor:
     def keyboard_is_injected(flags: int) -> bool:
         return bool(int(flags) & LLKHF_INJECTED)
 
+    def configure_semi_auto(self, key: str | None) -> SemiAutoTrigger | None:
+        if self._semi_auto_factory is None:
+            return self.semi_auto_trigger
+        with self._lock:
+            trigger = self.semi_auto_trigger
+            if trigger and trigger.key == key:
+                return trigger
+            if trigger:
+                trigger.cancel()
+            trigger = self._semi_auto_factory(key) if key else None
+            if trigger and self._native_api and self._native_api.user32.GetAsyncKeyState(trigger.vk) & 0x8000:
+                self._active_keyboard_vks.add(trigger.vk)
+            self.semi_auto_trigger = trigger
+            return trigger
+
     @staticmethod
     def mouse_is_injected(flags: int) -> bool:
         return bool(int(flags) & LLMHF_INJECTED)
@@ -621,6 +711,11 @@ class WindowsPhysicalInputMonitor:
                 if vk_code in self._active_keyboard_vks:
                     return False
                 self._active_keyboard_vks.add(vk_code)
+                trigger = self.semi_auto_trigger
+                if trigger and vk_code == trigger.vk:
+                    if not self._pressed_modifiers and not self._manual_by_vk:
+                        trigger.press()
+                    return False
                 modifier = _MODIFIER_VKS.get(vk_code)
                 if modifier:
                     self._pressed_modifiers.add(modifier)
@@ -632,10 +727,14 @@ class WindowsPhysicalInputMonitor:
                     self._last_physical_key_classification = "dispatch_exempt"
                     return False
                 self._last_physical_key_classification = "manual_takeover"
+                if trigger:
+                    trigger.cancel()
                 self._manual_by_vk[vk_code] = binding
                 return self.pause.begin_manual_hold(binding)
             if message in {WM_KEYUP, WM_SYSKEYUP}:
                 self._active_keyboard_vks.discard(vk_code)
+                if self.semi_auto_trigger and vk_code == self.semi_auto_trigger.vk:
+                    self.semi_auto_trigger.cancel()
                 binding = self._manual_by_vk.pop(vk_code, None)
                 if binding:
                     self._last_physical_key = binding
@@ -858,6 +957,10 @@ class WindowsPhysicalInputMonitor:
                 return
             self._keyboard_hook_handle = keyboard_handle
             self._hook_module_mode = module_mode
+            if self.semi_auto_trigger:
+                vk = self.semi_auto_trigger.vk
+                if api.user32.GetAsyncKeyState(vk) & 0x8000:
+                    self._active_keyboard_vks.add(vk)
             self._started = True
             self._ready_event.set()
             message = MSG()

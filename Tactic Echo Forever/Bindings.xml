@@ -1,5 +1,5 @@
 <Bindings>
-  <Binding name="TEF_TOGGLE_DISPATCH" header="TEF">TEF_ToggleDispatchIntent()</Binding>
+  <Binding name="TEF_TOGGLE_DISPATCH" header="TEF" runOnUp="true">TEF_DispatchHotkey(keystate)</Binding>
   <Binding name="TEF_TOGGLE_PRACTICE" header="TEF_LEGACY">TEF_ToggleDispatchIntent()</Binding>
   <Binding name="TEF_TOGGLE_CONTINUOUS">TEF_ToggleDispatchIntent()</Binding>
   <Binding name="TEF_TOGGLE_PERMISSION" header="TEF_TEST">TEF_PermissionToggle()</Binding>

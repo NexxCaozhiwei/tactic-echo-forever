@@ -6,7 +6,12 @@ from tek.src.action_catalog import RETRIBUTION_V2
 from tek.src.engine import TEKEngine
 from tek.src.input_planner import DispatchResult
 from tek.src.profile_resolver import ProfileResolver
-from tek.src.safety_gate import SafetyContext
+from tek.src.runner import RunnerConfig, TEKRunner
+from tek.src.safety_gate import ForegroundSnapshot, SafetyContext
+from tek.src.physical_input import (
+    LLKHF_INJECTED, WM_KEYDOWN, WM_KEYUP, PhysicalInputPause,
+    SemiAutoTrigger, WindowsPhysicalInputMonitor,
+)
 from tek.src.teap import TEAPError, decode_fields, encode_fields_v3
 from tek.src.binding_tokens import encode_binding_token
 
@@ -42,6 +47,142 @@ def frame_fields(state=1, action_code=1, sequence=1, frame_freshness_counter=Non
 
 
 class TEKEngineTests(unittest.TestCase):
+    def test_semi_auto_uses_tef_trigger_and_reverts_to_normal_without_local_setting(self):
+        pause = PhysicalInputPause()
+        monitor = WindowsPhysicalInputMonitor(
+            pause, semi_auto_factory=lambda key: SemiAutoTrigger(key, lambda: 10, lambda: None),
+        )
+        engine = TEKEngine(RETRIBUTION_V2, ProfileResolver.from_file(LAPTOP),
+                           input_dispatcher=FakeInputDispatcher(), physical_input_monitor=monitor,
+                           physical_input_guard=pause)
+        foreground = ForegroundSnapshot(ok=True, hwnd=10)
+        context = SafetyContext(bootstrapped=True, foreground_before_read=foreground,
+                                foreground_before_dispatch=foreground)
+
+        def frame(key, sequence, state="armed"):
+            return decode_fields(encode_fields_v3(
+                state=state, action_code=0, sequence=sequence, frame_freshness_counter=sequence,
+                catalog_version=3, catalog_fingerprint=0xA700 | ord(key),
+                binding_token=encode_binding_token("E") if state=="armed" else 0,
+            ))
+
+        self.assertFalse(engine.process_frame(frame("Q", 1, "paused"), context).inputSent)
+        self.assertEqual(monitor.semi_auto_trigger.key, "Q")
+        self.assertEqual(engine.process_frame(frame("Q", 2), context).reason, "semi_auto_wait_trigger")
+        monitor.observe_keyboard_event(vk_code=ord("Q"), message=WM_KEYDOWN)
+        self.assertTrue(engine.process_frame(frame("Q", 3), context).inputSent)
+        self.assertEqual(engine.process_frame(frame("R", 4), context).reason, "semi_auto_wait_trigger")
+        monitor.observe_keyboard_event(vk_code=ord("Q"), message=WM_KEYUP)
+        monitor.observe_keyboard_event(vk_code=ord("R"), message=WM_KEYDOWN)
+        self.assertTrue(engine.process_frame(frame("R", 5), context).inputSent)
+        monitor.observe_keyboard_event(vk_code=ord("R"), message=WM_KEYUP)
+        normal = decode_fields(frame_fields(sequence=6))
+        self.assertTrue(engine.process_frame(normal, context).inputSent)
+        self.assertIsNone(monitor.semi_auto_trigger)
+
+    def test_semi_auto_first_paused_frame_keeps_fast_sampling_and_new_session_press(self):
+        trigger = SemiAutoTrigger("F1", lambda: 10, lambda: None)
+        engine = TEKEngine(RETRIBUTION_V2, ProfileResolver.from_file(LAPTOP),
+                           input_dispatcher=FakeInputDispatcher(),
+                           physical_input_monitor=WindowsPhysicalInputMonitor(PhysicalInputPause(), semi_auto_trigger=trigger))
+        runner = TEKRunner(engine, None)
+        context = runner.context
+        foreground = ForegroundSnapshot(ok=True, hwnd=10)
+        context.foreground_before_read = context.foreground_before_dispatch = foreground
+        context.allow_initial_armed_dispatch = True
+        config = RunnerConfig(interval_seconds=.05, idle_interval_seconds=.20)
+
+        def tick(session, sequence, state=1):
+            frame = decode_fields(frame_fields(state=state, sequence=sequence))
+            return engine.process_frame(replace(frame, session_epoch=session), context)
+
+        paused = tick(1, 1, state=2)
+        self.assertEqual(runner.next_interval_seconds(config, paused), .20)
+        trigger.press()
+        paused = tick(2, 1, state=2)
+        self.assertEqual(runner.next_interval_seconds(config, paused), .05)
+        self.assertTrue(tick(2, 2).inputSent)
+        self.assertEqual(tick(3, 1).reason, "semi_auto_wait_trigger")
+        trigger.press()
+        self.assertTrue(tick(4, 1).inputSent)
+        trigger.cancel()
+        paused = tick(4, 2, state=2)
+        self.assertEqual(runner.next_interval_seconds(config, paused), .20)
+
+    def test_semi_auto_tap_hold_repeat_release_and_manual_takeover(self):
+        now = [1.0]
+        wakes = []
+        trigger = SemiAutoTrigger("F8", lambda: 10, lambda: wakes.append(True), clock=lambda: now[0])
+        pause = PhysicalInputPause()
+        monitor = WindowsPhysicalInputMonitor(pause, semi_auto_trigger=trigger)
+        engine = TEKEngine(RETRIBUTION_V2, ProfileResolver.from_file(LAPTOP),
+                           input_dispatcher=FakeInputDispatcher(), physical_input_monitor=monitor,
+                           physical_input_guard=pause)
+        foreground = ForegroundSnapshot(ok=True, hwnd=10)
+        context = SafetyContext(bootstrapped=True, foreground_before_read=foreground,
+                                foreground_before_dispatch=foreground)
+
+        def tick(sequence):
+            return engine.process_frame(decode_fields(frame_fields(sequence=sequence)), context)
+
+        def key(message, flags=0):
+            monitor.observe_keyboard_event(vk_code=trigger.vk, message=message, flags=flags)
+
+        self.assertEqual(tick(1).reason, "semi_auto_wait_trigger")
+        key(WM_KEYDOWN, LLKHF_INJECTED)
+        self.assertEqual(tick(2).reason, "semi_auto_wait_trigger")
+        key(WM_KEYDOWN)
+        key(WM_KEYDOWN)
+        self.assertEqual(len(wakes), 1)
+        self.assertTrue(tick(3).inputSent)
+        now[0] += .249
+        self.assertEqual(tick(4).reason, "semi_auto_wait_hold")
+        now[0] += .002
+        self.assertTrue(tick(5).inputSent)
+        key(WM_KEYUP)
+        self.assertFalse(tick(6).inputSent)
+        key(WM_KEYDOWN)
+        monitor.observe_keyboard_event(vk_code=ord("Q"), message=WM_KEYDOWN)
+        self.assertEqual(tick(7).reason, "manual_input_held")
+        self.assertEqual(trigger.ticket(10)[1], "semi_auto_wait_trigger")
+
+    def test_semi_auto_rejects_released_ticket_and_foreground_change(self):
+        hwnd = [10]
+        trigger = SemiAutoTrigger("1", lambda: hwnd[0], lambda: None)
+        trigger.press()
+        ticket, _ = trigger.ticket(10)
+        trigger.cancel()
+        trigger.press()
+        self.assertFalse(trigger.consume(ticket, 10))
+        ticket, _ = trigger.ticket(10)
+        hwnd[0] = 20
+        self.assertFalse(trigger.consume(ticket, 10))
+        self.assertEqual(trigger.ticket(20)[1], "semi_auto_foreground_changed")
+
+    def test_semi_auto_stop_spends_tap_and_hold_allows_followup(self):
+        now = [1.0]
+        trigger = SemiAutoTrigger("1", lambda: 10, lambda: None, clock=lambda: now[0])
+        monitor = WindowsPhysicalInputMonitor(PhysicalInputPause(), semi_auto_trigger=trigger)
+        engine = TEKEngine(RETRIBUTION_V2, ProfileResolver.from_file(LAPTOP),
+                           input_dispatcher=FakeInputDispatcher(), physical_input_monitor=monitor)
+        foreground = ForegroundSnapshot(ok=True, hwnd=10)
+        context = SafetyContext(bootstrapped=True, foreground_before_read=foreground,
+                                foreground_before_dispatch=foreground)
+        trigger.press()
+        stop = decode_fields(encode_fields_v3(
+            state="armed", action_code=255, sequence=1, frame_freshness_counter=2,
+            catalog_fingerprint=0x6486, binding_token=encode_binding_token("Q"), in_combat=True,
+        ))
+        self.assertTrue(engine.process_frame(stop, context).inputSent)
+        followup = decode_fields(frame_fields(sequence=2))
+        self.assertEqual(engine.process_frame(followup, context).reason, "semi_auto_wait_hold")
+        now[0] += .30
+        self.assertEqual(engine.process_frame(replace(stop, frame_freshness_counter=4), context).reason,
+                         "stop_request_already_attempted")
+        conflict = decode_fields(frame_fields(sequence=4, binding_token=encode_binding_token("SHIFT+1")))
+        self.assertEqual(engine.process_frame(conflict, context).reason, "semi_auto_binding_conflict")
+        self.assertTrue(engine.process_frame(decode_fields(frame_fields(sequence=5)), context).inputSent)
+
     def test_stop_identity_survives_transport_sequence_wrap(self):
         engine = TEKEngine(
             catalog=RETRIBUTION_V2,

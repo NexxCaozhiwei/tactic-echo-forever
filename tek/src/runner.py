@@ -66,6 +66,9 @@ class TEKRunner:
         self.context.foreground_before_read = self._foreground_snapshot(config)
         self.context.wow_foreground = self.context.foreground_before_read.ok
         self._set_frame_source_foreground(self.context.foreground_before_read)
+        trigger = getattr(self.engine, "semi_auto_trigger", None)
+        if trigger and (not config.tek_armed or not self.context.foreground_before_read.ok):
+            trigger.cancel()
 
         # UI linked mode may stay alive while WoW is closed or in the background.
         # Avoid repeatedly scanning the desktop until the foreground detector sees
@@ -139,6 +142,9 @@ class TEKRunner:
         idle_interval = max(active_interval, float(config.idle_interval_seconds))
         if not self.context.wow_foreground:
             return idle_interval
+        trigger = getattr(self.engine, "semi_auto_trigger", None)
+        if config.tek_armed and trigger and trigger.is_held():
+            return active_interval
         if record.state in {"paused", "waiting"} or record.tekState in {"Paused", "Waiting"}:
             return idle_interval
         return active_interval
