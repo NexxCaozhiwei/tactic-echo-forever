@@ -144,6 +144,8 @@ class TEKRunner:
             return idle_interval
         trigger = getattr(self.engine, "semi_auto_trigger", None)
         if config.tek_armed and trigger and trigger.is_held():
+            if trigger.needs_fast_sample():
+                return min(active_interval, 0.010)
             return active_interval
         if record.state in {"paused", "waiting"} or record.tekState in {"Paused", "Waiting"}:
             return idle_interval

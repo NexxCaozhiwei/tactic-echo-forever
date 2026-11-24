@@ -554,6 +554,7 @@ class SemiAutoTrigger:
     """一次真实按住期间的发送授权，仅由工作线程消费。"""
 
     HOLD_SECONDS = 0.250
+    RELEASE_GRACE_SECONDS = 0.250
     KEYS = tuple("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") + tuple(f"F{i}" for i in range(1, 13))
 
     def __init__(self, key, foreground_hwnd, wake, *, clock=time.monotonic):
@@ -569,6 +570,7 @@ class SemiAutoTrigger:
         self._hwnd = None
         self._started = 0.0
         self._attempted = False
+        self._release_deadline = None
         self._seen_session = None
         self._seen_epoch = None
 
@@ -581,6 +583,19 @@ class SemiAutoTrigger:
             self._hwnd = hwnd
             self._started = self._clock()
             self._attempted = False
+            self._release_deadline = None
+        self._wake()
+
+    def release(self):
+        with self._lock:
+            if self._hwnd is None or self._release_deadline is not None:
+                return
+            now = self._clock()
+            if self._attempted and now - self._started < self.HOLD_SECONDS:
+                self._hwnd = None
+                self._epoch += 1
+            else:
+                self._release_deadline = now + self.RELEASE_GRACE_SECONDS
         self._wake()
 
     def cancel(self):
@@ -590,7 +605,15 @@ class SemiAutoTrigger:
 
     def is_held(self):
         with self._lock:
-            return self._hwnd is not None
+            return self._is_active(self._clock())
+
+    def needs_fast_sample(self):
+        with self._lock:
+            now = self._clock()
+            return self._is_active(now) and (not self._attempted or self._release_deadline is not None)
+
+    def _is_active(self, now):
+        return self._hwnd is not None and (self._release_deadline is None or now < self._release_deadline)
 
     def observe_session(self, session):
         with self._lock:
@@ -601,23 +624,31 @@ class SemiAutoTrigger:
             self._seen_session = session
             self._seen_epoch = self._epoch
 
-    def ticket(self, hwnd):
+    def ticket(self, hwnd, *, require_held=False):
         with self._lock:
-            if self._hwnd is None:
+            now = self._clock()
+            if not self._is_active(now):
                 return None, "semi_auto_wait_trigger"
             if self._hwnd != hwnd:
                 self._hwnd = None
                 return None, "semi_auto_foreground_changed"
-            if self._attempted and self._clock() - self._started < self.HOLD_SECONDS:
+            if require_held and self._release_deadline is not None:
+                return None, "semi_auto_wait_trigger"
+            if self._attempted and now - self._started < self.HOLD_SECONDS:
                 return None, "semi_auto_wait_hold"
             return self._epoch, None
 
-    def consume(self, ticket, hwnd):
+    def consume(self, ticket, hwnd, *, require_held=False):
         current_hwnd = self._foreground_hwnd()
         with self._lock:
-            if ticket != self._epoch or self._hwnd != hwnd or current_hwnd != hwnd:
+            if ticket != self._epoch or not self._is_active(self._clock()) or self._hwnd != hwnd or current_hwnd != hwnd:
+                return False
+            if require_held and self._release_deadline is not None:
                 return False
             self._attempted = True
+            if self._release_deadline is not None:
+                self._hwnd = None
+                self._epoch += 1
             return True
 
 
@@ -734,7 +765,7 @@ class WindowsPhysicalInputMonitor:
             if message in {WM_KEYUP, WM_SYSKEYUP}:
                 self._active_keyboard_vks.discard(vk_code)
                 if self.semi_auto_trigger and vk_code == self.semi_auto_trigger.vk:
-                    self.semi_auto_trigger.cancel()
+                    self.semi_auto_trigger.release()
                 binding = self._manual_by_vk.pop(vk_code, None)
                 if binding:
                     self._last_physical_key = binding

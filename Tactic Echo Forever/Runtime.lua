@@ -115,6 +115,7 @@ function C:Invalidated(e)
     end
 end
 function C:Stop(reason,state)
+    self.semiAutoReleasedAt=nil
     TEF.Dispatch.preemption=nil
     TEF.Dispatch.preemptProtected=nil
     TEF.Dispatch.handoff=nil
@@ -131,6 +132,12 @@ function C:Stop(reason,state)
     TEF.Dispatch:StopContinuous(reason or "RUNTIME_MANUAL_PAUSE")
     TEF.Dispatch:Cancel(reason or "RUNTIME_MANUAL_PAUSE")
     self:Changed(state or "paused",reason or "RUNTIME_MANUAL_PAUSE")
+end
+function C:SemiAutoInputActive()
+    if self.semiAutoHeld then return true end
+    local released=self.semiAutoReleasedAt
+    local now=released and TEF.APL.State.Time()
+    return now and now>=released and now-released<.250 or false
 end
 function C:Fault(reason) self:Stop(reason or "RUNTIME_FATAL_ERROR","error") end
 function C:OnDispatchFault(reason)

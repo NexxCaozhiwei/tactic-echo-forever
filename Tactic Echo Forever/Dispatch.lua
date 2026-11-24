@@ -706,7 +706,7 @@ function D:YieldCast(reason)
     end
 end
 function D:TickContinuous()
-    if (TEF.engine.db.dispatch.mode=="semi") and not TEF.Runtime.semiAutoHeld then return end
+    if TEF.engine.db.dispatch.mode=="semi" and not TEF.Runtime:SemiAutoInputActive() then return end
     if not self.continuous then return end
     local e=TEF.engine
     if TEF.Runtime and TEF.Runtime.e==e and TEF.Runtime.intent and TEF.Runtime.state~="running" then return end
@@ -969,8 +969,11 @@ function D:BindingsChanged()
     if not self:VerifyCurrent(self.pending.binding) then self:Cancel("TEK_BINDING_CHANGED") end
 end
 function D:Packet()
-    if (TEF.engine.db.dispatch.mode=="semi") and not TEF.Runtime.semiAutoHeld then return nil end
-    if self.preemption then return self:PreemptPacket() end
+    if TEF.engine.db.dispatch.mode=="semi" and not TEF.Runtime:SemiAutoInputActive() then return nil end
+    if self.preemption then
+        if TEF.engine.db.dispatch.mode=="semi" and not TEF.Runtime.semiAutoHeld then return nil end
+        return self:PreemptPacket()
+    end
     local p,e=self.pending,TEF.engine
     if not p then return nil end
     if not p.castQueue and self:HasCurrentInitiation() then self:Cancel("CONTINUOUS_WAIT_CURRENT_RECEIPT"); return nil end

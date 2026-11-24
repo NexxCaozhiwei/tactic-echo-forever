@@ -163,11 +163,14 @@ TEF_DispatchHotkey=function(rawState)
         return
     end
     if state=="up" then
+        local now=runtime.semiAutoHeld and TEF.APL.State.Time()
         runtime.semiAutoHeld=false
+        runtime.semiAutoReleasedAt=now or nil
         if TEF.Transport.enabled then TEF.Transport:Paint() end
     elseif state=="down" and not runtime.semiAutoHeld and not TEF.UI.settingsOpen
         and TEF.Dispatch:InputIdle() and TEF.Hotkeys.IsSemiAutoKey(engine.db.dispatch.hotkey) then
         runtime.semiAutoHeld=true
+        runtime.semiAutoReleasedAt=nil
         if runtime:SetIntent(true,"SEMI_AUTO_KEY_DOWN") then TEF.Transport:Pulse() end
     end
     refresh()

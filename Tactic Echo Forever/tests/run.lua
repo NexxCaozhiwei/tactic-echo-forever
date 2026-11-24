@@ -1847,7 +1847,14 @@ test("semi_auto_hotkey_starts_outside_combat_and_releases_signal_without_reset",
     eq(T.Transport.fields[12],3); eq(T.Transport.fields[13],112); eq(T.Transport.fields[14],167)
     local generation=T.engine.generation
     TEF_DispatchHotkey("down"); eq(T.engine.generation,generation)
-    TEF_DispatchHotkey("up"); eq(T.Dispatch:Packet(),nil)
+    local released=GetTime()
+    TEF_DispatchHotkey("up"); assert(T.Dispatch:Packet())
+    local oldTime=GetTime
+    GetTime=function() return released+.249 end
+    assert(T.Dispatch:Packet())
+    GetTime=function() return released+.251 end
+    eq(T.Dispatch:Packet(),nil); T.Transport:Paint()
+    GetTime=oldTime
     eq(T.Transport.fields[12],3); eq(T.Transport.fields[15],0)
     eq(T.engine.generation,generation)
     T.UI.modeControls.manual.scripts.OnClick(); eq(T.Runtime.intent,false)

@@ -100,7 +100,7 @@ class TEKEngineTests(unittest.TestCase):
         self.assertEqual(runner.next_interval_seconds(config, paused), .20)
         trigger.press()
         paused = tick(2, 1, state=2)
-        self.assertEqual(runner.next_interval_seconds(config, paused), .05)
+        self.assertEqual(runner.next_interval_seconds(config, paused), .01)
         self.assertTrue(tick(2, 2).inputSent)
         self.assertEqual(tick(3, 1).reason, "semi_auto_wait_trigger")
         trigger.press()
@@ -140,7 +140,8 @@ class TEKEngineTests(unittest.TestCase):
         now[0] += .002
         self.assertTrue(tick(5).inputSent)
         key(WM_KEYUP)
-        self.assertFalse(tick(6).inputSent)
+        self.assertTrue(tick(6).inputSent)
+        self.assertFalse(trigger.is_held())
         key(WM_KEYDOWN)
         monitor.observe_keyboard_event(vk_code=ord("Q"), message=WM_KEYDOWN)
         self.assertEqual(tick(7).reason, "manual_input_held")
@@ -158,6 +159,23 @@ class TEKEngineTests(unittest.TestCase):
         hwnd[0] = 20
         self.assertFalse(trigger.consume(ticket, 10))
         self.assertEqual(trigger.ticket(20)[1], "semi_auto_foreground_changed")
+
+    def test_semi_auto_quick_tap_can_send_once_after_release(self):
+        now = [1.0]
+        trigger = SemiAutoTrigger("E", lambda: 10, lambda: None, clock=lambda: now[0])
+        trigger.press()
+        trigger.release()
+        self.assertTrue(trigger.needs_fast_sample())
+        self.assertIsNone(trigger.ticket(10, require_held=True)[0])
+        now[0] += .249
+        ticket, _ = trigger.ticket(10)
+        self.assertTrue(trigger.consume(ticket, 10))
+        self.assertIsNone(trigger.ticket(10)[0])
+        trigger.press()
+        trigger.release()
+        ticket, _ = trigger.ticket(10)
+        now[0] += .251
+        self.assertFalse(trigger.consume(ticket, 10))
 
     def test_semi_auto_stop_spends_tap_and_hold_allows_followup(self):
         now = [1.0]

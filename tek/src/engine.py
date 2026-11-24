@@ -269,7 +269,7 @@ class TEKEngine:
         if trigger:
             snapshot = context.foreground_before_dispatch
             hwnd = snapshot.hwnd if snapshot else None
-            ticket, reason = trigger.ticket(hwnd)
+            ticket, reason = trigger.ticket(hwnd, require_held=frame.action_code == STOP_ACTION_CODE)
             if reason:
                 return self._trace(frame, context, accepted=False, reason=reason, dispatch_blocked=True)
 
@@ -347,7 +347,7 @@ class TEKEngine:
             # Once dispatch begins, retain the slot even if Windows reports a
             # partial/native failure: part of the input sequence may have reached
             # the foreground process.
-            if trigger and not trigger.consume(ticket, hwnd):
+            if trigger and not trigger.consume(ticket, hwnd, require_held=frame.action_code == STOP_ACTION_CODE):
                 self._rollback_rate_slot(reservation)
                 return self._trace(frame, context, accepted=False, reason="semi_auto_authorization_ended", dispatch_blocked=True)
             self._commit_rate_slot(reservation)
