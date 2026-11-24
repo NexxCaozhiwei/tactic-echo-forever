@@ -57,7 +57,7 @@ end
 -- 只读显示列表，不能成为运行意图、派发请求或回执身份。
 function R:HUDSteps(e)
     local manual=self:Source(e)=="manual"
-    if not manual and e.db.apl.template~="custom" then return nil end
+    if not manual then return self:HUDAPLSteps(e) end
     local ok,raw=TEF.Safety.Call("UnitExists","target")
     local target=ok and TEF.Safety.Public(raw,"boolean")
     if target==true then
@@ -70,55 +70,69 @@ function R:HUDSteps(e)
     local function add(id,name)
         if id and not seen[id] then result[#result+1]={spellID=id,name=name or ("技能 " .. id)}; seen[id]=true end
     end
-    local rows=manual and (e.steps or {}) or TEF.APL.Custom:Rows(e)
-    local snapshot=e.aplPreviewSnapshot or e.aplSnapshot
-    local now=TEF.APL.State.Time()
-    local fresh=snapshot and snapshot.generation==e.generation and snapshot.receiptSerial==(e.receiptSerial or 0)
-        and snapshot.revision==(TEF.APL.State.revision or 0) and now and snapshot.sampledAt and now>=snapshot.sampledAt and now-snapshot.sampledAt<=1
-    local first=1
-    if manual then
-        local current=rows[e.index]
-        if current then add(current.spellID,current.name) end
-        local position=e.index or 1
-        for offset=1,#rows-1 do
-            local index=position+offset
-            if index>#rows then if e.db.loop then index=(index-1)%#rows+1 else break end end
-            local row=rows[index]
-            if target==false then add(row.spellID,row.name)
-            elseif target==true then
-                local action=TEF.APL.Custom:Read(row.spellID,false,row.targetMode)
-                local allowed=TEF.Dispatch:ManualPolicy(e,row,false,false,true)
-                if allowed==true and action.known==true and action.usable==true and action.power_ok==true and action.in_range==true then add(row.spellID,row.name) end
-            end
-            if #result>=3 then break end
+    local rows=e.steps or {}
+    local current=rows[e.index]
+    if current then add(current.spellID,current.name) end
+    local position=e.index or 1
+    for offset=1,#rows-1 do
+        local index=position+offset
+        if index>#rows then if e.db.loop then index=(index-1)%#rows+1 else break end end
+        local row=rows[index]
+        if target==false then add(row.spellID,row.name)
+        elseif target==true then
+            local action=TEF.APL.Custom:Read(row.spellID,false,row.targetMode)
+            local allowed=TEF.Dispatch:ManualPolicy(e,row,false,false,true)
+            if allowed==true and action.known==true and action.usable==true and action.power_ok==true and action.in_range==true then add(row.spellID,row.name) end
         end
-        while #result>0 and #result<3 do result[#result+1]=result[#result] end
-        return result
-    end
-    if not e.aplCandidate then target=false end
-    if target==true then
-        local current=e.aplCandidate
-        if current then add(current.spellID,current.name); first=(current.customIndex or 0)+1 end
-        if fresh then
-            for i=first,#rows do
-                local row=rows[i]; local action=snapshot.actions["custom_" .. i]
-                if TEF.APL.Custom:Check(snapshot,row,i)==true and action then add(action.spellID,action.name) end
-                if #result>=3 then break end
-            end
-        end
-    elseif target==false then
-        for _,row in ipairs(rows) do
-            if row.enabled and not row.invalid then add(row.spellID) end
-            if #result>=3 then break end
-        end
-    end
-    -- 待命或没有可显示候选时，三格统一回退到配置顺序；只读预览不授权输入。
-    if #result==0 then
-        for _,row in ipairs(rows) do
-            if row.enabled and not row.invalid then add(row.spellID) end
-            if #result>=3 then break end
-        end
+        if #result>=3 then break end
     end
     while #result>0 and #result<3 do result[#result+1]=result[#result] end
     return result
+end
+
+
+function R:HUDAPLSteps(e)
+    local apl=TEF.APL
+    if not self:Configured(e) then return {} end
+    local combat=apl.State.Boolean("InCombatLockdown")
+    local battlePreview=combat==false and not e.maintenanceActive
+    local now=apl.State.Time()
+    if not now then return {},battlePreview end
+
+    local revision=apl.State.revision or 0
+    local serial=e.receiptSerial or 0
+    local generation,scene=e.generation,e.scene
+    local maintenance=e.maintenanceActive
+    local cached=self.hudAPLPreview
+    if cached and cached.engine==e and cached.scene==scene and cached.maintenance==maintenance
+        and cached.combat==combat and cached.generation==generation and cached.serial==serial
+        and cached.revision==revision and now>=cached.time and now<cached.time+TEF.ConditionSampleInterval then
+        return cached.steps,battlePreview
+    end
+
+    local state=apl.State:Sample(e,true,battlePreview)
+    local steps,seen={},{}
+    if state then
+        local function add(action)
+            if action and action.spellID and not seen[action.spellID] then
+                seen[action.spellID]=true
+                steps[#steps+1]={spellID=action.spellID,name=action.name or ("技能 " .. action.spellID)}
+            end
+        end
+        if maintenance or e.db.apl.template=="custom" then
+            for i,row in ipairs(apl.Custom:Rows(e)) do
+                if apl.Custom:Check(state,row,i)==true then add(state.actions["custom_" .. i]) end
+                if #steps==3 then break end
+            end
+        else
+            add(apl:Evaluate(state,e.db.apl,e.classToken))
+        end
+    end
+    if generation~=e.generation or serial~=(e.receiptSerial or 0) or scene~=e.scene
+        or revision~=(apl.State.revision or 0) or maintenance~=e.maintenanceActive or self:Source(e)~="apl" then
+        return {},battlePreview
+    end
+    self.hudAPLPreview={engine=e,scene=scene,maintenance=maintenance,combat=combat,generation=generation,
+        serial=serial,revision=revision,time=now,steps=steps}
+    return steps,battlePreview
 end

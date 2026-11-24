@@ -263,14 +263,16 @@ function P:ReadAction(key,learned,readReady,override)
  else result.cooldownReason="NOT_REQUESTED" end
  return result
 end
-function P:Sample(e)
+function P:Sample(e,readOnly,battlePreview)
  local generation,serial,revision=e.generation,e.receiptSerial or 0,self.revision or 0
  local now=P.Time(); if not now then return nil,"APL_TIME_UNKNOWN" end
+ local combat=P.Boolean("InCombatLockdown")
+ if readOnly and battlePreview and combat==false then combat=true end
  local function fresh() return generation==e.generation and serial==(e.receiptSerial or 0) and revision==(self.revision or 0) end
  if not fresh() then return nil,"APL_STALE_SAMPLE" end
  if e.maintenanceActive or e.db.apl.template=="custom" then
   local state={generation=generation,receiptSerial=serial,revision=revision,sampledAt=now,
-   combat={in_combat=P.Boolean("InCombatLockdown")},gcd={},actions={},talents={},buildSignature={},scene=e.scene,moving=P.Boolean("IsPlayerMoving")}
+   readOnly=readOnly,combat={in_combat=combat},gcd={},actions={},talents={},buildSignature={},scene=e.scene,moving=P.Boolean("IsPlayerMoving")}
   A.Custom:Sample(e,state)
   if not fresh() then return nil,"APL_STALE_SAMPLE" end
   return state
@@ -288,7 +290,7 @@ function P:Sample(e)
   self.talents,self.build,self.talentProvider=talents,build,provider
  end
  local state={generation=generation,receiptSerial=serial,revision=revision,sampledAt=now,
-  combat={in_combat=P.Boolean("InCombatLockdown")},gcd={},actions={},talents=talents,
+  readOnly=readOnly,combat={in_combat=combat},gcd={},actions={},talents=talents,
   buildSignature=build,mana_band="UNKNOWN",scene=e.scene,moving=P.Boolean("IsPlayerMoving")}
  -- GCD is intentionally not queried or required by this APL policy.
  if not fresh() then return nil,"APL_STALE_SAMPLE" end

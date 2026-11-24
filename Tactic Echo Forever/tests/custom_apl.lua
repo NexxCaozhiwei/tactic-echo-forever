@@ -361,23 +361,33 @@ test("all_class_custom_profiles_and_public_generic_spell_dispatch",function()
  C_SpellBook.IsSpellKnown=function() return F.secret end; eq(C:Read(100,false,"self").known,nil)
  C_Spell.GetSpellInfo,C_SpellBook.IsSpellKnown,C_Spell.IsSpellPassive,C_Spell.IsSpellHarmful,C_Spell.IsSpellHelpful,GetActionInfo=oldInfo,oldKnown,oldPassive,oldHarmful,oldHelpful,oldAction
 end)
-test("hud_candidates_aaa_abb_abc_and_static_no_target",function()
- local e=F.runtime(); assert(C:Save(e,{row(143),row(205),row(2136)},"single","MAGE"))
- local exists=UnitExists; UnitExists=function() return true end
- local s=state(C:Rows(e)); s.generation=e.generation; s.receiptSerial=e.receiptSerial or 0
- s.revision=A.State.revision or 0; s.sampledAt=A.State.Time()
- e.aplCandidate={spellID=143,name="火球术",customIndex=1}; e.aplSnapshot=s; e.aplPreviewSnapshot=nil
- local function ids(a,b,c) local v=T.Recommendation:HUDSteps(e); eq(v[1].spellID,a); eq(v[2].spellID,b); eq(v[3].spellID,c) end
- ids(143,205,2136)
- s.actions.custom_3.usable=false; ids(143,205,205)
- s.actions.custom_2.usable=nil; ids(143,143,143)
- UnitExists=function(unit) return unit=="player" end; ids(143,205,2136)
+test("hud_battle_preview_uses_isolated_conditions_without_filling_empty_slots",function()
+ local e=F.runtime()
+ local rows={row(143),row(205)}
+ rows[1].strategies={{mode="use",conditions={{kind="combat",value=true},{kind="moving",value=false}}}}
+ assert(C:Save(e,rows,"single","MAGE"))
+ local combat,moving=InCombatLockdown,IsPlayerMoving
+ InCombatLockdown=function() return false end
+ IsPlayerMoving=function() return false end
+ local live=assert(A.State:Sample(e))
+ eq(live.combat.in_combat,false)
+ local preview=assert(A.State:Sample(e,true,true))
+ eq(preview.combat.in_combat,true); eq(preview.readOnly,true)
+ local sample=A.State.Sample
+ A.State.Sample=function(_,engine,readOnly,battlePreview)
+  eq(engine,e); eq(readOnly,true); eq(battlePreview,true)
+  local result=state(C:Rows(e)); result.readOnly=true; result.combat={in_combat=true}
+  result.moving=IsPlayerMoving(); return result
+ end
  local generation,index,intent=e.generation,e.index,T.Runtime.intent
- T.HUD.engine=e; e.db.hud.preview=true
- T.HUD:Refresh(); eq(T.HUD.cards[1].displayStep.spellID,143); eq(T.HUD.cards[2].displayStep.spellID,205); eq(T.HUD.cards[3].displayStep.spellID,2136)
+ local candidate,snapshot=e.aplCandidate,e.aplSnapshot
+ local v,mode=T.Recommendation:HUDSteps(e)
+ eq(mode,true); eq(#v,2); eq(v[1].spellID,143)
+ IsPlayerMoving=function() return true end; A:Invalidate()
+ v=T.Recommendation:HUDSteps(e); eq(#v,1); eq(v[1].spellID,205)
  eq(e.generation,generation); eq(e.index,index); eq(T.Runtime.intent,intent)
- UnitExists=function() return F.secret end; ids(143,205,2136)
- UnitExists=exists
+ eq(e.aplCandidate,candidate); eq(e.aplSnapshot,snapshot)
+ A.State.Sample=sample; InCombatLockdown,IsPlayerMoving=combat,moving
 end)
 test("manual_hud_preview_filters_without_advancing_sequence",function()
  local e=F.runtime(); assert(T.Recommendation:SetSource(e,"manual","single"))
@@ -478,24 +488,13 @@ test("third_priority_plan_source_and_name_survive_reload",function()
  local copy=T.Engine.New(T.Config,e.db); assert(T.Profiles:Select(copy,"third"))
  eq(T.Recommendation:Source(copy),"apl"); eq(T.Profiles:PlanName("third",copy,"apl"),"第三优先策略")
 end)
-test("dead_hostile_target_hud_falls_back_without_dispatch",function()
- local e=F.runtime(); assert(C:Save(e,{row(143),row(205),row(2136)},"single","MAGE"))
- local exists,attack,dead=UnitExists,UnitCanAttack,UnitIsDeadOrGhost
- UnitExists=function() return true end; UnitCanAttack=function() return true end; UnitIsDeadOrGhost=function() return true end
- e.aplCandidate=nil; e.aplSnapshot=nil; e.aplPreviewSnapshot=nil
- local v=T.Recommendation:HUDSteps(e); eq(v[1].spellID,143); eq(v[2].spellID,205); eq(v[3].spellID,2136)
- T.Runtime:SetIntent(true); T.Dispatch:TickContinuous(); eq(T.Dispatch:Packet(),nil)
- UnitIsDeadOrGhost=function() return F.secret end; e.aplCandidate=nil; e.aplSnapshot=nil; e.aplPreviewSnapshot=nil
- eq(T.Recommendation:HUDSteps(e)[1].spellID,143)
- UnitExists,UnitCanAttack,UnitIsDeadOrGhost=exists,attack,dead
-end)
-test("standby_no_eligible_rule_shows_default_order_read_only",function()
+test("standby_without_eligible_rule_leaves_hud_empty",function()
  local e=F.runtime(); local rows={row(143),row(205),row(2136)}
  for _,r in ipairs(rows) do r.moving="yes" end
  assert(C:Save(e,rows,"single","MAGE")); IsPlayerMoving=function() return false end
  T.Runtime:SetIntent(true); eq(e.aplCandidate,nil)
  local serial,index,generation=e.receiptSerial or 0,e.index,e.generation
- local v=T.Recommendation:HUDSteps(e); eq(v[1].spellID,143); eq(v[2].spellID,205); eq(v[3].spellID,2136)
+ eq(#T.Recommendation:HUDSteps(e),0)
  T.Dispatch:TickContinuous(); eq(T.Dispatch:Packet(),nil); eq(e.receiptSerial or 0,serial); eq(e.index,index); eq(e.generation,generation)
 end)
 test("maintenance_outside_manual_only_preserves_list_progress_and_receipts",function()

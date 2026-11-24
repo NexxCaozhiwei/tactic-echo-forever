@@ -419,7 +419,10 @@ function H:TooltipDetails(card)
  end
  local group=e.groupRun
  if group then U:Call(GameTooltip,"AddLine",group.group.name .. " · 第" .. group.round .. "/" .. group.group.rounds .. "轮",.7,.8,.9,true) end
- if TEF.Recommendation:Source(e)=="apl" then U:Call(GameTooltip,"AddLine","只读候选预览，不代表施放顺序。",.7,.8,.9,true) end
+ if TEF.Recommendation:Source(e)=="apl" then
+  local detail=self.battlePreview and "战斗预览：按当前状态推演进战后的推荐。" or "只读候选预览，不代表施放顺序。"
+  U:Call(GameTooltip,"AddLine",detail,.7,.8,.9,true)
+ end
  if step then U:Call(GameTooltip,"AddLine","本步成功 " .. (e.stepCasts or 0) .. "/" .. (step.repeatCount or 1) .. "次",.7,.8,.9) end
  if card.fullKeyText then U:Call(GameTooltip,"AddLine","键位：" .. card.fullKeyText,.7,.8,.9) end
 end
@@ -643,7 +646,8 @@ end
 function H:Refresh(cooldownEvent)
     local e=self.engine; if not self.frame then return end
     self.metadata=self.metadata or {}
-    local display=TEF.Recommendation:HUDSteps(e)
+    local display,battlePreview=TEF.Recommendation:HUDSteps(e)
+    self.battlePreview=battlePreview
     for i,card in ipairs(self.cards) do
         local index=e.index+i-1
         if e.db.loop and e.steps and index>#e.steps then index=(index-1)%#e.steps+1 end
@@ -653,14 +657,27 @@ function H:Refresh(cooldownEvent)
         local key=step and (step.spellID .. ":" .. step.name)
         local view=key and self.metadata[key]
         if step and not view then view=S.Spell(step.spellID,step.name); self.metadata[key]=view end
-        if not U:Paint(card.icon,"SetTexture",view and view.icon or TEF.Placeholder) then U:Call(card.icon,"SetTexture",TEF.Placeholder) end
+        local coords
+        if i==1 and display and not step and TEF.APL:IsActive(e) and e.classToken then
+            coords=S.Field(CLASS_ICON_TCOORDS,e.classToken,"table")
+        end
+        local left,right,top,bottom=S.Field(coords,1,"number"),S.Field(coords,2,"number"),
+            S.Field(coords,3,"number"),S.Field(coords,4,"number")
+        if left and right and top and bottom
+            and U:Paint(card.icon,"SetTexture","Interface\\Glues\\CharacterCreate\\UI-CharacterCreate-Classes") then
+            U:Paint(card.icon,"SetTexCoord",left,right,top,bottom)
+        else
+            U:Paint(card.icon,"SetTexCoord",.08,.92,.08,.92)
+            if not U:Paint(card.icon,"SetTexture",view and view.icon or TEF.Placeholder) then U:Call(card.icon,"SetTexture",TEF.Placeholder) end
+        end
         card.displayStep=step
         if TEF.Presentation then TEF.Presentation:Paint(card,step,cooldownEvent) end
         if i==1 then local ok,raw=U:Invoke(card.key,"GetText"); card.fullKeyText=ok and S.Public(raw,"string") or nil end
     end
-    local step=display and display[1] or (e.steps and e.steps[e.index])
+    local step=e.steps and e.steps[e.index]
+    if display then step=display[1] end
     local view=step and self.metadata[step.spellID .. ":" .. step.name]
-    self.primaryFullName=(e.completed and not e.groupRun) and "完成" or (view and view.name or (TEF.APL:IsActive(e) and TEF.APL.Trace:Waiting(e) or "未配置推荐序列"))
+    self.primaryFullName=(e.completed and not e.groupRun) and "完成" or (view and view.name or (TEF.APL:IsActive(e) and "暂无可用技能" or "未配置推荐序列"))
     local style=e.db.hud.styles.global.name
     local limit=math.max(3,math.floor((self.textSlots.name.width or 140)/TEF.HudStyles.EffectiveSize(style,14))-1)
     local name=U:ShortLabel(self.primaryFullName,limit+1)
@@ -688,7 +705,7 @@ function H:RefreshState()
     local tint=unknown and {.72,.62,.96} or c
     local shortBadge=({["等待施法结束"]="施法收尾",["施法状态未知"]="施法未知",["战斗状态未知"]="战斗未知",
         ["暂无可用技能"]="暂无可用",["无符合技能"]="暂无推荐",["方案未配置"]="方案缺失"})[badge] or U:ShortLabel(badge,4)
-    U:Paint(self.badgeText,"SetText",shortBadge)
+    U:Paint(self.badgeText,"SetText",self.battlePreview and "战斗预览" or shortBadge)
     U:Paint(self.badgeText,"SetTextColor",tint[1],tint[2],tint[3],1)
     local dot=v.intent==true and self.colors.running or self.colors.error
     U:Paint(self.statusDot,"SetVertexColor",dot[1],dot[2],dot[3],1)
@@ -727,6 +744,6 @@ function H:RefreshState()
 end
 function H:VisualTick()
     -- 复用显示节拍，距离及变色只读，不参与派发。
-    self:PaintCastVisual()
+    if TEF.APL:IsActive(self.engine) then self:Refresh() else self:PaintCastVisual() end
     TEF.Presentation:UpdateRange(self)
 end
