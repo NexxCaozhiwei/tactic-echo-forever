@@ -60,7 +60,8 @@ function U:GroupAdd(id,index)
  if not self:CommitGroupFields() then return false end
  id=S.ID(id); if not id or id==7268 or #self.groupDraft.steps>=G.MaxSteps then self:Paint(self.groupMessage,"SetText","精确ID无效或组内已达到36步。"); return false end
  local view=S.Spell(id,"技能 " .. id)
- table.insert(self.groupDraft.steps,index and math.min(index,#self.groupDraft.steps+1) or #self.groupDraft.steps+1,{spellID=id,name=view.name,matchIDs={id},repeatCount=1,enabled=true,usagePolicy="always",strategies={}})
+ table.insert(self.groupDraft.steps,index and math.min(index,#self.groupDraft.steps+1) or #self.groupDraft.steps+1,
+  {spellID=id,name=view.name,matchIDs={id},repeatCount=1,enabled=true,usagePolicy="always",strategies=T.APL.Custom:NewSpellStrategies(id)})
  self.groupDirty=true; self:RefreshSkillGroup()
  self:Paint(self.groupMessage,"SetText","已加入技能组草稿；保存后生效。")
  return true

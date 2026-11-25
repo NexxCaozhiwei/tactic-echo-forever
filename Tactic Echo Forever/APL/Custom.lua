@@ -49,7 +49,7 @@ function C.CleanStrategies(raw)
    local c={kind=kind,value=value}
    if kind=="internalCooldown" then
     local seconds=S.Field(v,"threshold","number")
-    if not seconds or seconds<1 or seconds>C.InternalCooldownMax or seconds%1~=0 then return nil,"CUSTOM_STRATEGY_INVALID" end
+    if not seconds or seconds<=0 or seconds>C.InternalCooldownMax then return nil,"CUSTOM_STRATEGY_INVALID" end
     c.threshold=seconds; c.value=nil
    elseif not conditionKinds[kind] then return nil,"CUSTOM_STRATEGY_INVALID"
    elseif kind=="arcaneBlastStacks" or kind=="comboPoints" or kind=="distance" or kind=="enemies" or kind=="rangedEnemies" or kind=="cdmStacks" or kind=="nearbyEnemies" then
@@ -367,6 +367,13 @@ function C:StrategyCondition(state,row,index,c)
 end
 function C:HasInternalCooldown(row)
  return self:InternalCooldownSeconds(row)~=nil
+end
+function C:NewSpellStrategies(id,condition)
+ local seconds=A.State:DefaultCooldown(id)
+ local conditions={}
+ if condition then conditions[1]=condition end
+ if seconds and seconds>0 then conditions[#conditions+1]={kind="internalCooldown",threshold=seconds} end
+ return #conditions>0 and {{mode="use",conditions=conditions}} or {}
 end
 function C:InternalCooldownSeconds(row)
  local seconds

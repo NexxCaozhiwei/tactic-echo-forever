@@ -64,7 +64,8 @@ function U:AddSequenceSpell(rawID,index)
     if not rows then self:SequenceMessage("草稿无效，请重新编辑技能配置。"); return false end
     if #rows>=16 then self:SequenceMessage("未新增：每套最多16个技能步骤。"); return false end
     local view=S.Spell(id,"技能 " .. id)
-    local row={spellID=id,name=view.reason=="PUBLIC" and view.name or ("技能 " .. id),matchIDs={id},repeatCount=1}
+    local row={spellID=id,name=view.reason=="PUBLIC" and view.name or ("技能 " .. id),matchIDs={id},repeatCount=1,
+        strategies=TEF.APL.Custom:NewSpellStrategies(id)}
     table.insert(rows,index and math.min(index,#rows+1) or #rows+1,row)
     self:WriteDraft(rows)
     self:SequenceMessage(view.reason=="PUBLIC" and "已加入草稿；仅匹配该精确ID，点击保存生效。" or "已加入精确ID，但技能信息未解析；请核对后保存。")

@@ -16,7 +16,10 @@ end
 function P:Invalidate(static,cause)
  self.revision=(self.revision or 0)+1
  self.invalidationCause=S.Public(cause,"string")
- if static then self.learned=nil; self.talents=nil; self.build=nil end
+ if static then
+  self.learned=nil; self.talents=nil; self.build=nil
+  self.defaultCooldowns=nil; self.defaultCooldownCount=nil; self.pendingCooldown=nil
+ end
 end
 -- 编辑时按需完整扫描；等级只来自同一公开法术书槽位，绝不按ID大小推断。
 function P.HighestLearnedRank(rawID)
@@ -187,6 +190,58 @@ function P.ProbeCooldown(id)
  probe.total,probe.totalReason=durationMethod(object,"GetTotalDuration","number")
  probe.remaining,probe.remainingReason=durationMethod(object,"GetRemainingDuration","number")
  return probe
+end
+local function activeDefaultCooldown(id)
+ -- 只读取单个技能的独立冷却对象，真实时长由客户端计算。
+ local ok,raw=S.Call("C_Spell.GetSpellCooldownDuration",id,true)
+ if not ok then return end
+ local object,reason=S.Public(raw,"table")
+ if reason=="UNKNOWN_TYPE" then object=S.Public(raw,"userdata") end
+ if not object then return end
+ local remaining=durationMethod(object,"GetRemainingDuration","number")
+ local total=durationMethod(object,"GetTotalDuration","number")
+ if remaining and remaining>0 and total and total>=remaining and total<=A.Custom.InternalCooldownMax then
+  return math.max(1,math.floor(total*1000+.5))/1000
+ end
+end
+function P:ObserveDefaultCooldown(unit,guid,rawID)
+ local id=S.ID(rawID)
+ if S.Public(unit,"string")~="player" or not S.Identity(guid) or not id or id==61304
+  or self.Boolean("C_SpellBook.IsSpellKnown",id)~=true then return end
+ local now=self.Time(); if not now then return end
+ self.pendingCooldown={id=id,time=now}
+ self:RefreshDefaultCooldown()
+end
+function P:RefreshDefaultCooldown()
+ local pending=self.pendingCooldown
+ if not pending then return end
+ local now=self.Time()
+ if not now or now<pending.time or now-pending.time>1 then self.pendingCooldown=nil; return end
+ local seconds=activeDefaultCooldown(pending.id)
+ if not seconds or self.pendingCooldown~=pending then return end
+ self.pendingCooldown=nil
+ local cache=self.defaultCooldowns or {}
+ local count=self.defaultCooldownCount or 0
+ if not cache[pending.id] then
+  if count>=128 then cache={}; count=0 end
+  count=count+1
+ end
+ cache[pending.id]=seconds
+ self.defaultCooldowns,self.defaultCooldownCount=cache,count
+end
+function P:DefaultCooldown(rawID)
+ local id=S.ID(rawID)
+ if not id or id==61304 or self.Boolean("C_SpellBook.IsSpellKnown",id)~=true then return end
+ local current=activeDefaultCooldown(id)
+ if current then return current,"当前实际冷却" end
+ local observed=self.defaultCooldowns and self.defaultCooldowns[id]
+ if observed then return observed,"本次会话最近观测" end
+ local path=S.Resolve("C_Spell.GetSpellBaseCooldown") and "C_Spell.GetSpellBaseCooldown" or "GetSpellBaseCooldown"
+ local ok,raw=S.Call(path,id)
+ local ms=ok and S.Public(raw,"number")
+ if ms and ms>=0 and ms<=A.Custom.InternalCooldownMax*1000 then
+  return math.floor(ms+.5)/1000,"基础冷却"
+ end
 end
 function P.FriendlyUnit()
  local exists=P.Boolean("UnitExists","target")

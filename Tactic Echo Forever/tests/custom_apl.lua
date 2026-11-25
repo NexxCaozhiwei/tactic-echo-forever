@@ -10,6 +10,45 @@ local function state(rows)
  return s
 end
 local function evaluate(rows,s) return C:Evaluate(s or state(rows),{custom={MAGE={single=rows}}},"MAGE") end
+test("default_cooldown_fills_fractional_draft_and_retains_value_when_unknown",function()
+ local e=F.runtime()
+ local duration,base=C_Spell.GetSpellCooldownDuration,GetSpellBaseCooldown
+ local oldBase,oldTime=C_Spell.GetSpellBaseCooldown,GetTime
+ local total=7.5
+ GetTime=function() return 20 end; C_Spell.GetSpellBaseCooldown=nil
+ GetSpellBaseCooldown=function(id) eq(id,143); return 8000 end
+ C_Spell.GetSpellCooldownDuration=function(id,ignore)
+  if id~=143 or ignore~=true then return nil end
+  return {GetTotalDuration=function() return total end,GetRemainingDuration=function() return total==F.secret and F.secret or 4 end}
+ end
+ A.State:ObserveDefaultCooldown("player","cooldown-observed",143)
+ local value,source=A.State:DefaultCooldown(143); eq(value,7.5); eq(source,"当前实际冷却")
+ total=F.secret
+ value,source=A.State:DefaultCooldown(143); eq(value,7.5); eq(source,"本次会话最近观测")
+ A:Invalidate(true)
+ value,source=A.State:DefaultCooldown(143); eq(value,8); eq(source,"基础冷却")
+ eq(A.State:DefaultCooldown(61304),nil)
+ local U=T.UI; U:ShowPage("customapl"); U.customDraft={}
+ total=7.5
+ assert(U:AddCustomSpell(143)); assert(U:SelectStudioRule("apl",1))
+ local draft=U:CustomRow(); eq(C:InternalCooldownSeconds(draft),7.5)
+ total=6.25
+ U.strategyDefaultCooldown.scripts.OnClick()
+ eq(C:InternalCooldownSeconds(draft),6.25)
+ A:Invalidate(true); total=F.secret; GetSpellBaseCooldown=function() return F.secret end
+ U.strategyDefaultCooldown.scripts.OnClick()
+ eq(C:InternalCooldownSeconds(draft),6.25)
+ local cleaned=C.CleanRows({draft}); eq(C:InternalCooldownSeconds(cleaned[1]),6.25)
+ GetSpellBaseCooldown=function() return 0 end
+ eq(A.State:DefaultCooldown(143),0)
+ eq(#C:NewSpellStrategies(143),0)
+ U.strategyDefaultCooldown.scripts.OnClick()
+ eq(C:InternalCooldownSeconds(draft),nil)
+ eq(U.strategyInternalInput.box.text,"0")
+ eq(U.engine,e)
+ C_Spell.GetSpellCooldownDuration,GetSpellBaseCooldown,C_Spell.GetSpellBaseCooldown,GetTime=duration,base,oldBase,oldTime
+ A:Invalidate(true)
+end)
 test("first_eligible_in_manual_order",function()
  local rows={row(2136),row(143)}; rows[1].moving="yes"
  local s=state(rows); eq(evaluate(rows,s).spellID,143); s.moving=true; eq(evaluate(rows,s).spellID,2136)

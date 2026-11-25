@@ -68,7 +68,10 @@ local function onEvent(_,event,...)
         TEF.ActionSources:Clear(); TEF.Dispatch:BindingsChanged()
         TEF.Presentation.bindings={}; TEF.Research:Invalidate(); TEF.APL:Invalidate(true); refresh(); return
     end
-    if event == "SPELL_UPDATE_COOLDOWN" or event == "SPELL_UPDATE_CHARGES" then TEF.HUD:Refresh(event=="SPELL_UPDATE_COOLDOWN"); return end
+    if event == "SPELL_UPDATE_COOLDOWN" or event == "SPELL_UPDATE_CHARGES" then
+        TEF.APL.State:RefreshDefaultCooldown()
+        TEF.HUD:Refresh(event=="SPELL_UPDATE_COOLDOWN"); return
+    end
     if event == "PLAYER_REGEN_ENABLED" then
         if engine.db.loopMode=="combat" then TEF.Runtime:ResetCycle("LOOP_COMBAT_RESET") end
         TEF.Hotkeys:Apply(); TEF.Runtime:Tick(); TEF.UI:Layout(); refresh(); return
@@ -105,6 +108,7 @@ local function onEvent(_,event,...)
         if event=="UNIT_SPELLCAST_SUCCEEDED" then
             engine:ObserveArcaneBlast(unit,guid,id)
             engine:ObserveInternalCooldownSuccess(unit,guid,id)
+            TEF.APL.State:ObserveDefaultCooldown(unit,guid,id)
         end
         local consumed=TEF.Dispatch:Event(event,unit,id,guid)
         if not consumed then engine:Handle(engine.generation,event,unit,guid,id) end

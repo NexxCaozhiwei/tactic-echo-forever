@@ -187,6 +187,37 @@ test("group_editor_save_roundtrip_and_reject_nested_secret",function()
  local g=group(); g.steps[1].group=group(); eq(T.SkillGroups:Clean(g),nil)
  g=group(); g.rounds=F.secret; eq(T.SkillGroups:Clean(g),nil)
 end)
+test("group_entry_cooldown_is_visible_and_clearable_without_changing_step_strategies",function()
+ local U,C=T.UI,T.APL.Custom
+ for _,source in ipairs({"apl","manual"}) do
+  local e=F.runtime()
+  local g=group()
+  g.steps[2].strategies={{mode="use",conditions={{kind="internalCooldown",threshold=5}}}}
+  local entry=T.SkillGroups:Row(g,{{mode="use",conditions={
+   {kind="cdmBuff",spellID=400647,value=true},
+   {kind="internalCooldown",threshold=8},
+  }}})
+  assert(T.Recommendation:SetSource(e,source,"single"))
+  if source=="manual" then assert(T.Profiles:Save(e,"single",{entry}))
+  else
+   local aplEntry={group=g,spellID=entry.spellID,enabled=true,strategies=entry.strategies}
+   assert(C:Save(e,{aplEntry},"single",e.classToken))
+  end
+  U:ShowPage(source=="manual" and "profiles" or "customapl")
+  assert(U:SelectStudioRule(source,1))
+  local input=U.strategyInternalInput
+  eq(input.box.text,"8"); eq(input.internalRow,U:CustomRow()); eq(U.strategyDefaultCooldown,nil)
+  input.box.text="0"
+  U.strategySaveButton.scripts.OnClick()
+  local saved=source=="manual" and e.db.profiles.single or C:Rows(e,"single")
+  eq(C:InternalCooldownSeconds(saved[1]),nil)
+  eq(#saved[1].strategies[1].conditions,1)
+  eq(saved[1].strategies[1].conditions[1].spellID,400647)
+  eq(C:InternalCooldownSeconds(saved[1].group.steps[2]),5)
+  assert(U:SelectStudioRule(source,1))
+  eq(U.strategyInternalInput.box.text,"0")
+ end
+end)
 test("group_maintenance_restores_child_progress_and_edit_clears_both",function()
  local e=F.runtime(); local info,known=C_Spell.GetSpellInfo,C_SpellBook.IsSpellKnown
  C_Spell.GetSpellInfo=function(id) return {name=id==168 and "霜甲术" or id==205 and "寒冰箭" or "火球术"} end

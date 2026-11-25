@@ -15,9 +15,9 @@ function U:CommitCustomNumbers()
   local limit=entry.field=="spellID" and 2147483647 or entry.field=="radius" and 40 or entry.condition.kind=="distance" and 2000 or entry.condition.kind=="comboPoints" and 10 or entry.condition.kind=="arcaneBlastStacks" and 4 or 40
   if entry.condition.kind=="internalCooldown" then
    limit=C.InternalCooldownMax
-   if not n or n>limit or n%1~=0 then self:CustomMessage("人工内置CD请输入0～86400的整数秒。"); return false end
+   if not n or n>limit then self:CustomMessage("人工内置 CD 请输入 0～86400 秒，支持小数。"); return false end
   end
-  if text~="" and (not n or n>limit or (entry.condition.kind~="distance" and entry.field~="radius" and n%1~=0) or ((entry.field=="spellID" or entry.field=="radius") and n<=0)) then
+  if text~="" and (not n or n>limit or (entry.condition.kind~="internalCooldown" and entry.condition.kind~="distance" and entry.field~="radius" and n%1~=0) or ((entry.field=="spellID" or entry.field=="radius") and n<=0)) then
    if entry.label then self:Paint(entry.label,"SetText",(entry.labelText or "数值") .. "：格式或范围无效") end
    self:CustomMessage("数值无效：距离0～2000码、敌人数0～40整数、连击点0～10整数、奥冲层数0～4整数，观察技能填写精确ID。"); return false
   end
@@ -113,11 +113,12 @@ function U:AddCustomSpell(id,index)
  if self.page=="maintenance" and not T.Maintenance:BuffSpell(id) then self:CustomMessage("仅支持可确认的增益或已支持的解控法术；治疗、伤害、造物和位移不能加入。"); return false end
  if not self:CommitCustomNumbers() then return false end
  if #self.customDraft>=16 then self:CustomMessage("最多16条规则。"); return false end
- self.customDraft[#self.customDraft+1]={spellID=id,enabled=true,moving="any",activity="any",distanceOp="any",cdmKind="none",experimentalEnemies=false,strategies={}}
+ local condition
  if self.page=="maintenance" then
-  local condition=T.Maintenance.ControlBreakers[id] and {kind="lossOfControl",control="stun",value=true} or {kind="cdmBuff",value=false,spellID=id}
-  self.customDraft[#self.customDraft].strategies={{mode="use",conditions={condition}}}
+  condition=T.Maintenance.ControlBreakers[id] and {kind="lossOfControl",control="stun",value=true} or {kind="cdmBuff",value=false,spellID=id}
  end
+ self.customDraft[#self.customDraft+1]={spellID=id,enabled=true,moving="any",activity="any",distanceOp="any",cdmKind="none",experimentalEnemies=false,
+  strategies=C:NewSpellStrategies(id,condition)}
  if index and index<#self.customDraft then local added=table.remove(self.customDraft); table.insert(self.customDraft,index,added) end
  self.customSelected=index or #self.customDraft; self.customFormIndex=nil; self:RefreshCustomAPL(); self:CustomMessage("已加入草稿；保存后生效。自动无法识别目标类型时，请编辑施放类型。"); return true
 end
@@ -318,7 +319,7 @@ function U:RefreshStrategyForm()
  self:Paint(form,"SetSize",390,100); self:Paint(self.strategyScroll,"SetScrollChild",form)
  -- SetScrollChild复用同一对象时不能代替重新锚定。
  self:Paint(form,"SetPoint","TOPLEFT",self.strategyScroll,"TOPLEFT",0,0)
- self.strategyInputs={}; self.strategyInternalInput=nil; self.customNumbers={}
+ self.strategyInputs={}; self.strategyInternalInput=nil; self.strategyDefaultCooldown=nil; self.customNumbers={}
  local y=0
  if row then
   local function audit(x,width)
@@ -328,14 +329,28 @@ function U:RefreshStrategyForm()
     self:CustomMessage(not valid and errors or warnings~="" and warnings or "未发现可证明的条件矛盾。")
    end)
   end
-  local internalInput
+  local seconds=C:InternalCooldownSeconds(row) or 0
+  local cooldownLabel=row.group and "组入口人工 CD（秒，0关闭）" or "人工内置 CD（秒，0关闭）"
+  local label=self:CreateHintText(form,cooldownLabel,0,y,200)
+  local box=self:SequenceInput(form,208,y,86)
+  self:Paint(box,"SetText",tostring(seconds))
+  local internalInput={box=box,condition={kind="internalCooldown",threshold=seconds},field="threshold",label=label,internalRow=row}
+  if row.group then
+   self:BindControlTooltip(box,"组入口人工 CD","按当前组首技能的成功施法时间计时。支持小数，填 0 关闭，保存方案后生效。")
+  else
+   self.strategyDefaultCooldown=self:CreateActionButton(form,"默认 CD",302,y,88,function()
+    if self:CustomRow()~=row then return end
+    local value,source=T.APL.State:DefaultCooldown(row.spellID)
+    if value==nil then self:CustomMessage("没有可确认的默认 CD，当前数值保留。"); return end
+    self:Paint(box,"SetText",tostring(value))
+    if self:CommitCustomNumbers() then
+     self:CustomMessage("已填入" .. source .. " " .. value .. " 秒，保存后生效。")
+    end
+   end)
+   self:BindControlTooltip(self.strategyDefaultCooldown,"默认 CD","优先使用实际冷却，其次使用本次会话观测值或客户端基础冷却。")
+  end
+  y=y-36
   if not row.group then
-   local seconds=C:InternalCooldownSeconds(row)
-   local label=self:CreateHintText(form,"人工内置 CD（秒，0关闭）",0,y,220)
-   local box=self:SequenceInput(form,228,y,96)
-   self:Paint(box,"SetText",tostring(seconds or 0))
-   internalInput={box=box,condition={kind="internalCooldown",threshold=seconds or 0},field="threshold",label=label,internalRow=row}
-   y=y-36
    self:CreateHintText(form,"精确技能ID · 更换技能保留策略条件",0,y,390); y=y-20
    self.strategySpellID=self:SequenceInput(form,0,y,96); self:Paint(self.strategySpellID,"SetText",tostring(row.spellID))
    self.strategyReplaceID=self:CreateActionButton(form,"ID替换",104,y,72,function()
@@ -446,7 +461,7 @@ function U:RefreshStrategyForm()
     end
     if condition.kind=="internalCooldown" then
      input("threshold",8,96)
-     self:CreateHintText(card,"用于使用策略。精确成功后计时（1～86400秒）。",8,cy-96,370)
+     self:CreateHintText(card,"精确成功后按填写的秒数计时，支持小数。",8,cy-96,370)
     elseif condition.kind=="cdmStacks" then
      self:CreateHintText(card,"此条件已移除，旧配置保持未知阻断。请删除此条件或更换类型后保存。",8,cy-36,370)
     elseif condition.kind=="comboPoints" and self.engine.classToken~="ROGUE" then
@@ -579,7 +594,6 @@ function U:CreateStrategyPanel()
    local c=self.strategyKindTarget; if not c then return end
    for k in pairs(c) do c[k]=nil end
    c.kind=selectedKind
-   if selectedKind=="internalCooldown" then c.threshold=30; return end
    if selectedKind=="arcaneBlastStacks" then c.min=4 elseif selectedKind=="comboPoints" then c.min=5 elseif selectedKind=="lossOfControl" then c.control="stun"; c.value=true elseif selectedKind=="distance" then c.max=20 elseif selectedKind=="nearbyEnemies" then c.min=1; c.radius=10 elseif selectedKind=="enemies" or selectedKind=="rangedEnemies" or selectedKind=="cdmStacks" then c.min=1 elseif selectedKind=="targetType" then c.target="enemy" else c.value=selectedKind~="cdmCooldown" and selectedKind~="cooldown" end
   end); self:Paint(menu,"Hide") end)
  end

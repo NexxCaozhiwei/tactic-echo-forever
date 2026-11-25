@@ -161,6 +161,38 @@ test("group_queue_opt_in_preserves_order_and_keep_gate",function()
  T.SkillGroups.KeepAllowed=keep
 end)
 
+test("group_queue_uses_public_metadata_for_unclassified_unit_spells",function()
+ for _,spell in ipairs({{id=1240046,name="冰枪术",castTime=0},{id=234567,name="测试读条",castTime=1500}}) do
+  fixture()
+  local e,D=T.engine,T.Dispatch
+  local step=e.steps[2]
+  step.spellID,step.name,step.matchIDs=spell.id,spell.name,{spell.id}
+  e.groupRun={targetSerial=e.usageTargetSerial or 0,round=1,group={maintain=false,rounds=1}}
+  e.db.dispatch.groupQueue=true
+  GetActionInfo=function(slot) return "spell",slot==1 and 116 or spell.id end
+  local originalInfo=C_Spell.GetSpellInfo
+  local metadata={name=spell.name,spellID=spell.id,castTime=spell.castTime}
+  C_Spell.GetSpellInfo=function(id) if id==spell.id then return metadata end; return originalInfo(id) end
+  C_Spell.IsSpellPassive=function() return false end
+  C_Spell.IsAutoRepeatSpell=function() return false end
+  C_Spell.IsSpellInRange=function() return true end
+  D:ClearBindingCache()
+  now=12.31
+  step.targetMode="ground"; eq(D:CastQueueWindow(),nil)
+  step.targetMode=nil
+  metadata.castTime=F.secret; eq(D:CastQueueWindow(),nil)
+  metadata.castTime=spell.castTime
+  C_Spell.IsSpellPassive=function() return true end; eq(D:CastQueueWindow(),nil)
+  C_Spell.IsSpellPassive=function() return false end
+  C_Spell.IsAutoRepeatSpell=function() return true end; eq(D:CastQueueWindow(),nil)
+  C_Spell.IsAutoRepeatSpell=function() return false end
+  C_Spell.IsSpellInRange=function() return nil end; eq(D:CastQueueWindow(),nil)
+  C_Spell.IsSpellInRange=function() return true end
+  assert(D:TryCastQueue()); assert(D:Packet()); eq(D.castQueue.spellID,spell.id)
+  eq(e.index,1); eq(e.receiptSerial or 0,0)
+ end
+end)
+
 test("group_queue_cross_round_promotes_only_on_exact_success",function()
  fixture(); local e=T.engine
  e.groupRun={targetSerial=e.usageTargetSerial or 0,round=1,group={maintain=false,rounds=2}}

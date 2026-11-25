@@ -391,6 +391,7 @@ end
 function D:QueueStepAllowed(step)
     local id=step and step.spellID
     if not id then return false,"NEXT_STEP_MISSING" end
+    if id==5019 or id==6603 or id==75 or step.targetMode=="ground" then return false,"NEXT_TYPE_UNSUPPORTED" end
     if TEF.APL.State.Boolean("C_SpellBook.IsSpellKnown",id)~=true then return false,"NEXT_EXACT_LEARNED_UNKNOWN_OR_FALSE" end
     local ok,info=S.Call("C_Spell.GetSpellInfo",id)
     local name=ok and S.Field(info,"name","string")
@@ -398,9 +399,24 @@ function D:QueueStepAllowed(step)
     local catalog=TEF.APL.CatalogByID[id]
     local key=catalog and catalog.key or TEF.APL.AbilityNames[name]
     local ability=key and TEF.APL.Abilities[key]
+    local kind=ability and ability.type
     -- 下一技能可以是引导；这不授予截断当前引导的资格。
-    if not ability then return false,"NEXT_TYPE_UNKNOWN" end
-    if not ({filler=true,cast=true,instant=true,channel=true})[ability.type] then return false,"NEXT_TYPE_UNSUPPORTED" end
+    if kind=="filler" or kind=="cast" or kind=="instant" or kind=="channel" then return true end
+    if kind and kind~="unclassified" and kind~="unclassified_active" then return false,"NEXT_TYPE_UNSUPPORTED" end
+
+    -- 未分类条目只接受公开确认的单位目标主动技能，施法时间为零也合法。
+    local castTime=S.Field(info,"castTime","number")
+    if S.Field(info,"spellID","number")~=id or not castTime or castTime<0 then return false,"NEXT_METADATA_UNKNOWN" end
+    local passivePath=S.Resolve("C_Spell.IsSpellPassive") and "C_Spell.IsSpellPassive" or "IsPassiveSpell"
+    local repeatPath=S.Resolve("C_Spell.IsAutoRepeatSpell") and "C_Spell.IsAutoRepeatSpell" or "IsAutoRepeatSpell"
+    local passive,repeating=publicBoolean(passivePath,id),publicBoolean(repeatPath,id)
+    if passive==true or repeating==true then return false,"NEXT_TYPE_UNSUPPORTED" end
+    if passive~=false or repeating~=false then return false,"NEXT_TYPE_UNKNOWN" end
+    local holdPath="C_Spell.IsPressHoldReleaseSpell"
+    if S.Resolve(holdPath) and publicBoolean(holdPath,id)~=false then return false,"NEXT_TYPE_UNSUPPORTED" end
+    local unit=step.targetMode=="self" and "player" or "target"
+    local rangeOK,rangeRaw=S.Call("C_Spell.IsSpellInRange",id,unit)
+    if not rangeOK or rangeBoolean(rangeRaw)~=true then return false,"NEXT_UNIT_TARGET_OR_RANGE_UNKNOWN" end
     return true
 end
 -- 网络延迟仅作为有界估计，不改变客户端公开的最大预载窗口。
@@ -481,7 +497,7 @@ function D:PrepareHandoff()
    e.aplPreviewSnapshot=snapshot
    prepared={engine=e,generation=e.generation,receiptSerial=e.receiptSerial or 0,originGUID=origin,targetIdentity=target,
     candidate=candidate,snapshot=snapshot,policyRow=row,
-    step={spellID=candidate.spellID,name=candidate.name,matchIDs={candidate.spellID},repeatCount=1}}
+    step={spellID=candidate.spellID,name=candidate.name,matchIDs={candidate.spellID},repeatCount=1,targetMode=candidate.target}}
    if not isChannel then self.aplQueuePreparation=prepared end
    step=prepared.step
   else step=nil end
@@ -604,7 +620,7 @@ function D:CastQueueWindow()
             local candidate,snapshot,row=TEF.APL:PrepareQueueCandidate(e)
             if not candidate or not targetIdentity or targetIdentity~=TEF.APL:QueueTargetIdentity(e) then return nil end
             preparation={engine=e,generation=generation,receiptSerial=serial,originGUID=initiation.guid,targetIdentity=targetIdentity,candidate=candidate,snapshot=snapshot,policyRow=row,
-                step={spellID=candidate.spellID,name=candidate.name,matchIDs={candidate.spellID},repeatCount=1}}
+                step={spellID=candidate.spellID,name=candidate.name,matchIDs={candidate.spellID},repeatCount=1,targetMode=candidate.target}}
         end
         self.aplQueuePreparation=preparation
     end
