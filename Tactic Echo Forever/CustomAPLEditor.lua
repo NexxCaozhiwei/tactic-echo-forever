@@ -89,6 +89,7 @@ function U:RefreshCustomAPL()
    self:Paint(w.frame,"ClearAllPoints"); self:Paint(w.frame,"SetPoint","TOPLEFT",self.customChild,"TOPLEFT",0,-listHeight); self:Paint(w.frame,"SetHeight",height); listHeight=listHeight+height+4
    self:Paint(w.groupEdit,row.group and "Show" or "Hide"); self:Paint(w.name,"SetWidth",232)
    if not self.studio then
+   self:PaintSkillEnabled(w.enabled,row); self:Paint(w.name,"SetWidth",172)
    local view=S.Spell(row.spellID,tostring(row.spellID or "未解析")); if row.group then view.name="【" .. row.group.name .. "】" end
    self:Paint(w.name,"SetText",(i==self.customSelected and "|cff8cf0df" or "") .. i .. ". " .. self:ShortLabel(view.name,8) .. " · ID " .. (row.spellID or "?") .. (row.enabled and "" or " · 已停用") .. "|r")
    w.frame.tefTooltipTitle=view.name; w.frame.tefTooltipBody="精确ID " .. (row.spellID or "未知") .. "；编辑策略仅修改草稿，保存后生效。"
@@ -205,7 +206,8 @@ function U:CreateCustomAPLEditor(parent)
   self:BindControlTooltip(frame,"技能条目","编辑当前技能或技能组草稿。")
   self:CompactControl(policy,88); self:CompactControl(groupEdit,120); self:CompactControl(up,32); self:CompactControl(down,32); self:CompactControl(delete,96)
   self:StyleListRow(frame,i)
-  self.customWidgets[i]={frame=frame,name=name,groupEdit=groupEdit,policy=policy,up=up,down=down,delete=delete}
+  local enabled=self:CreateSkillEnabledControl(frame,"apl",index,188)
+  self.customWidgets[i]={frame=frame,name=name,groupEdit=groupEdit,policy=policy,up=up,down=down,delete=delete,enabled=enabled}
  end
  self.customMessage=self:Text(footer,0,-4,580)
  self.customUndoButton=self:CreateActionButton(footer,"撤销删除",0,-52,120,function() self:UndoDelete("apl") end)

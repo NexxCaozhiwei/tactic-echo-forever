@@ -29,8 +29,11 @@ function G:Clean(raw)
   or (exit and exit~="next" and exit~="stop") then return nil,"GROUP_POLICY_INVALID" end
  return {name=name,rounds=rounds,steps=clean,maintain=maintain==true,adoptCurrentCast=adopt==true or nil,exit=exit or "next"}
 end
+function G:FirstEnabled(group)
+ for _,step in ipairs(group.steps) do if step.enabled~=false then return step end end
+end
 function G:Row(group,strategies,enabled)
- local first=group.steps[1]
+ local first=self:FirstEnabled(group) or group.steps[1]
  return {group=group,name=group.name,spellID=first and first.spellID or 0,matchIDs=first and first.matchIDs or {},
   unverified=not first or first.unverified or nil,repeatCount=1,usagePolicy="always",enabled=enabled~=false,strategies=strategies or {}}
 end
@@ -57,7 +60,15 @@ function G:Begin(e,row,source,observedGUID)
  if not T.Runtime:CombatAllowed(e,combat) and not (observedGUID and combat==false) then return false end
  if e.groupRun or e.maintenanceActive or (not observedGUID and e:RecommendationLocked()) or not row.group or #row.group.steps==0 then return false end
  local group=self:Clean(row.group); if not group then return false end
- for i,step in ipairs(group.steps) do T.APL.Custom.PolicyIdentities[step]=row.group.steps[i] end
+ local active={}
+ for i,step in ipairs(group.steps) do
+  if step.enabled~=false then
+   T.APL.Custom.PolicyIdentities[step]=row.group.steps[i]
+   active[#active+1]=step
+  end
+ end
+ if #active==0 then return false end
+ group.steps=active
  local steps=T.Engine.Validate(group.steps,self.MaxSteps); if not steps then return false end
  local run={row=row,group=group,source=source,steps=e.steps,index=e.index,count=e.stepCasts,completed=e.completed,running=e.running,
   usageProgress=e.usageProgress,shootHandoff=e.shootHandoff,candidate=e.aplCandidate,round=1,
@@ -104,7 +115,7 @@ function G:ObserveStart(e,event,unit,id,guid)
   row=candidate and T.APL.Custom:Rows(e)[candidate.customIndex]
   allowed=candidate and candidate.spellID==id and row and row.group~=nil
  end
- local first=row and row.group and row.group.steps[1]
+ local first=row and row.group and self:FirstEnabled(row.group)
  if allowed~=true or not first or first.enabled==false or first.unverified or first.spellID~=id then return false end
  if source=="manual" and T.Dispatch:ManualPolicy(e,first,true)~=true then return false end
  if source=="apl" then
@@ -146,7 +157,7 @@ function G:AdoptCurrentCast(e,identity)
   candidate=T.APL:Evaluate(preview,e.db.apl,e.classToken)
   row=candidate and rows[candidate.customIndex]
  end
- local first=row and row.group and row.group.adoptCurrentCast and row.group.steps[1]
+ local first=row and row.group and row.group.adoptCurrentCast and self:FirstEnabled(row.group)
  if not first or first.unverified or first.spellID~=cast.spellID then return false end
  if source=="manual" then
   if dispatch:ManualPolicy(e,row,true,true,true)~=true then return false end

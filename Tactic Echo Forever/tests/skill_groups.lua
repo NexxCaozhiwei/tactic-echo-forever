@@ -5,6 +5,24 @@ local function test(name,fn) fn(); n=n+1 end
 local function spell(id,count,skip) return {spellID=id,name="技能 " .. id,matchIDs={id},repeatCount=count or 1,skipUnavailable=skip,enabled=true,strategies={}} end
 local function group() return {name="技能组A",rounds=1,steps={spell(143),spell(205,2)}} end
 local function receipt(id,guid) F.receipt("UNIT_SPELLCAST_SENT",id,guid); F.receipt("UNIT_SPELLCAST_SUCCEEDED",id,guid) end
+test("disabled_group_steps_do_not_gate_or_enter_the_running_group",function()
+ for _,source in ipairs({"manual","apl"}) do
+  local e=F.runtime()
+  assert(T.Recommendation:SetSource(e,source,"single"))
+  local g=group(); g.steps[1].enabled=false; g.steps[2].repeatCount=1
+  if source=="manual" then
+   assert(T.Profiles:Save(e,"single",{T.SkillGroups:Row(g)}))
+  else
+   assert(T.APL.Custom:Save(e,{{group=g,spellID=143,enabled=true}},"single","MAGE"))
+  end
+  local saved=source=="manual" and e.db.profiles.single or T.APL.Custom:Rows(e)
+  eq(saved[1].group.steps[1].enabled,false)
+  T.Runtime:SetIntent(true); T.Runtime:Reconcile()
+  assert(e.groupRun); eq(#e.steps,1); eq(e.steps[1].spellID,205)
+  receipt(205,"enabled-group-" .. source); eq(e.receiptSerial,1)
+  T.Runtime:Stop()
+ end
+end)
 test("group_36_steps_roundtrip_and_precise_execution",function()
  for _,source in ipairs({"manual","apl"}) do
   local e=F.runtime(); assert(T.Recommendation:SetSource(e,source,"single"))

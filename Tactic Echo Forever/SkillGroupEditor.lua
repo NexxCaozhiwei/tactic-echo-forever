@@ -48,6 +48,7 @@ function U:RefreshSkillGroup()
   local row=self.groupDraft.steps[i]; self:Paint(w.frame,row and "Show" or "Hide")
   if row then
    if not self.studio then
+   self:PaintSkillEnabled(w.enabled,row); self:Paint(w.name,"SetWidth",96)
    w.frame.tefTooltipTitle=S.Spell(row.spellID,row.name).name; w.frame.tefTooltipBody="精确ID " .. row.spellID .. "；次数1～99。"
    self:Paint(w.name,"SetText",i .. ". " .. self:ShortLabel(w.frame.tefTooltipTitle,6) .. " · ID " .. row.spellID)
    end
@@ -166,6 +167,7 @@ function U:CreateSkillGroupEditor()
   self:BindControlTooltip(frame,"组内技能","精确成功回执推进组内步骤。")
   local w={frame=frame,name=self:Text(frame,8,-10,148),count=self:SequenceInput(frame,48,-44,64)}
   self:Paint(w.name,"SetWordWrap",false)
+  w.enabled=self:CreateSkillEnabledControl(frame,"group",index,104)
   w.policy=self:CreateActionButton(frame,"编辑策略",164,-8,84,function()
    if not self:PrepareGroupPanelSwitch(true) then return end
    self.strategySource="groupStep"; self.groupSelected=index; self.customSelected=index; self.customFormIndex=nil

@@ -430,6 +430,23 @@ test("优先级技能组编辑按钮与状态和组摘要分列",function()
  end end
  assert(found)
 end)
+test("技能行开关修改各列表原有草稿状态",function()
+ local e=setup()
+ local w=U.customWidgets[1]
+ eq(w.enabled.text,"开启")
+ U:StudioAction(w.enabled); eq(U.customDraft[1].enabled,false); eq(w.enabled.text,"停用"); eq(#C:Rows(e),0)
+ U:StudioAction(w.enabled); eq(U.customDraft[1].enabled,true)
+ U:ShowPage("profiles"); U:WriteDraft({spell(143),spell(205)})
+ U:StudioAction(U.sequenceRows[1].enabled); eq(U:DraftRows()[1].enabled,false); eq(U:DraftRows()[2].enabled,true)
+ U:ShowPage("maintenance")
+ U.customDraft={{spellID=1459,enabled=true,strategies={}}}; U:RefreshCustomAPL()
+ U:StudioAction(w.enabled); eq(U.customDraft[1].enabled,false); eq(w.enabled.text,"停用")
+ for _,width in ipairs({536,760}) do
+  U:LayoutStudioRow(w,width)
+  assert(w.frame.studioID.point[4]+w.frame.studioID.width<w.enabled.point[4])
+  assert(w.enabled.point[4]+w.enabled.width<w.policy.point[4])
+ end
+end)
 test("优先级相邻向下和向上拖动确实改变位置",function()
  setup(); U:AddCustomSpell(143); U:AddCustomSpell(205)
  local diagnostics=#U.engine.db.diagnostics

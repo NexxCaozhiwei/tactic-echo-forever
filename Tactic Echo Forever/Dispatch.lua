@@ -206,7 +206,7 @@ function D:CheckStepPolicy(e,step,live,groupEntry,readOnly)
     if step and not step.group and TEF.Maintenance:Owns(e,step.spellID) then return false,"MAINTENANCE_OWNS_SPELL" end
     if not step then return nil,"SEQUENCE_POLICY_STEP_UNKNOWN" end
     if step.group and not groupEntry then return nil,"GROUP_WAIT_ENTRY" end
-    if step.group and #step.group.steps==0 then return false,"GROUP_EMPTY" end
+    if step.group and not TEF.SkillGroups:FirstEnabled(step.group) then return false,"GROUP_NO_ENABLED_STEPS" end
     if step.enabled==false then return false,"SEQUENCE_POLICY_DISABLED" end
     if e.groupPolicyBlocked then return nil,e.groupPolicyBlocked end
     if not step.behavior and (not step.strategies or #step.strategies==0) then
@@ -1403,7 +1403,7 @@ function D:PreemptCandidate(origin)
  local queue={candidate=candidate,snapshot=state,targetIdentity=target}
  if self:ContinuousEvidence(candidate.spellID,row,queue)~=true then return end
  if row.group then
-  local first=row.group.steps[1]
+  local first=TEF.SkillGroups:FirstEnabled(row.group)
   if not first or first.unverified or first.spellID~=candidate.spellID
    or self:CheckStepPolicy(e,first,true,false,true)~=true
    or (first.skipUnavailable and self:Unavailable(first.spellID)~=false) then return end

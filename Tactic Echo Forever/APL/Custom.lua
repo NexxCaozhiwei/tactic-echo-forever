@@ -153,7 +153,7 @@ function C.CleanRows(raw)
    local clean,why=T.SkillGroups:Clean(group)
    if groupType~="PUBLIC" or not clean then row.invalid=why or "GROUP_INVALID"
    else
-    row.group=clean; local first=clean.steps[1]; row.spellID=first and first.spellID or 0
+    row.group=clean; local first=T.SkillGroups:FirstEnabled(clean) or clean.steps[1]; row.spellID=first and first.spellID or 0
     if first then
      if row.invalid=="CUSTOM_ID_INVALID" then row.invalid=nil end
      row.targetMode=first.targetMode
@@ -503,6 +503,7 @@ function C:Check(state,row,index)
  if action.reason=="CUSTOM_SPELL_UNSUPPORTED" then return false,action.reason,"BLOCKED" end
  if action.reason=="CUSTOM_PASSIVE_SPELL" then return false,action.reason,"BLOCKED" end
  if action.reason=="CUSTOM_TARGET_UNKNOWN" or action.reason=="CUSTOM_PASSIVE_UNKNOWN" or action.reason=="CUSTOM_METADATA_UNKNOWN" then return nil,"UNKNOWN:custom:" .. action.reason end
+ if row.group and not T.SkillGroups:FirstEnabled(row.group) then return false,"GROUP_NO_ENABLED_STEPS","DISABLED" end
  if row.group and not T.SkillGroups:Admission(state,row,index) then return false,"GROUP_CONSUMED" end
  local strategies,strategyReason=self:CheckStrategies(state,row,index)
  if row.behavior and state.engine then

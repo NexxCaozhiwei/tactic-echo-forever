@@ -63,8 +63,37 @@ function U:CreateRuleRow(parent,index)
  self:StyleListRow(frame,index)
  return frame
 end
+function U:CreateSkillEnabledControl(parent,source,index,x)
+ local button=self:CreateActionButton(parent,"开启",x,-8,52,function()
+  if source=="manual" then self:EditSequenceRow(index,"toggleEnabled"); return end
+  if not self:CommitCustomNumbers() then return end
+  if source=="group" and not self:CommitGroupFields() then return end
+  local rows=source=="group" and self.groupDraft and self.groupDraft.steps or source=="apl" and self.customDraft
+  local row=rows and rows[index]
+  if not row then return end
+  row.enabled=row.enabled==false
+  if source=="group" then
+   self.groupDirty=true; self:RefreshSkillGroup()
+  else
+   self:RefreshCustomAPL(); self:CustomMessage("草稿已调整，保存后生效。")
+  end
+  self:RefreshControls()
+ end)
+ self:CompactControl(button,52)
+ self:BindControlTooltip(button,"技能条目开关","保存后生效。")
+ return button
+end
+function U:PaintSkillEnabled(button,row)
+ if not button then return end
+ local active=row.enabled~=false
+ button.tefControlSelected=active
+ self:Paint(button,"SetText",active and "开启" or "停用")
+ button.tefTooltipTitle=active and "停用此条目" or "开启此条目"
+ self:SetControlEnabled(button,true)
+end
 function U:RefreshStudioRow(w,row,index,source)
  if not row then return end
+ self:PaintSkillEnabled(w.enabled,row)
  w.studioAPLGroup=source=="apl" and row.group~=nil
  local view=S.Spell(row.spellID,row.name or ("技能 " .. (row.spellID or "未知")))
  self:Paint(w.frame.studioIcon,"SetTexture",view.icon)

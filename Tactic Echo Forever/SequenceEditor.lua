@@ -74,6 +74,7 @@ end
 function U:EditSequenceRow(index,operation,value)
     if not self:CommitSequenceCounts() then return false end
     if not self:CommitCustomNumbers() then return false end
+    if operation=="toggleEnabled" then self:StoreSequencePolicy() end
     local rows=self:DraftRows()
     if not rows or not rows[index] then return false end
     if operation=="delete" then return self:DeleteDraft("manual",index)
@@ -81,6 +82,8 @@ function U:EditSequenceRow(index,operation,value)
         local dest=index+value
         if dest<1 or dest>#rows then return false end
         rows[index],rows[dest]=rows[dest],rows[index]
+    elseif operation=="toggleEnabled" then
+        rows[index].enabled=rows[index].enabled==false
     elseif operation=="skip" then
         rows[index].skipUnavailable=S.Public(value,"boolean")==true
     elseif operation=="usage" then
@@ -159,7 +162,7 @@ function U:RefreshSequenceEditor(force)
             widgets.frame.tefTooltipTitle=row.group and row.group.name or view.name; widgets.frame.tefTooltipBody="精确ID " .. row.spellID .. "；次数按独立成功回执计数。"
             self:Paint(widgets.icon,"SetTexture",view.icon)
             self:Paint(widgets.groupEdit,row.group and "Show" or "Hide")
-            self:Paint(widgets.name,"SetWidth",232)
+            self:PaintSkillEnabled(widgets.enabled,row); self:Paint(widgets.name,"SetWidth",172)
             self:Paint(widgets.name,"SetText",i .. ". " .. (row.group and ("【" .. self:ShortLabel(row.group.name,12) .. "】") or (self:ShortLabel(view.name,8) .. " · ID " .. row.spellID)) .. (row.enabled==false and " · 已停用" or ""))
             end
             self:Paint(widgets.groupEdit,row.group and "Show" or "Hide")
@@ -226,6 +229,7 @@ function U:CreateSequenceEditor(parent)
         widgets.groupInfo=self:Text(row,136,-52,384,"GameFontHighlightSmall")
         self:BindInputCommit(widgets.count,function(box) local ok,raw=self:Invoke(box,"GetText"); if ok then return self:EditSequenceRow(index,"count",raw) end end)
         widgets.groupEdit=self:CreateActionButton(row,"编辑技能组",8,-44,120,function() self:OpenSkillGroup("manual",index) end)
+        widgets.enabled=self:CreateSkillEnabledControl(row,"manual",index,188)
         widgets.policy=self:CreateActionButton(row,"编辑策略",248,-8,88,function() self:OpenSequencePolicy(index) end)
         widgets.up=self:CreateActionButton(row,"↑",344,-8,32,function() self:EditSequenceRow(index,"move",-1) end)
         widgets.down=self:CreateActionButton(row,"↓",384,-8,32,function() self:EditSequenceRow(index,"move",1) end)

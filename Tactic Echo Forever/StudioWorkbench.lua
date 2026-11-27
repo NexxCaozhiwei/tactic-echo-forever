@@ -478,8 +478,9 @@ function U:LayoutStudioRow(w,width)
  if w.count then self:StudioAnchor(w.count,w.frame,48,-40,64,28) end
  if w.countLabel then self:StudioAnchor(w.countLabel,w.frame,8,-48,32) end
  local inline=width>=760
- self:StudioAnchor(w.name,w.frame,68,-10,inline and 144 or width-264)
- self:StudioAnchor(w.frame.studioID,w.frame,inline and 220 or 68,inline and -14 or -30,92)
+ if w.enabled then self:StudioAnchor(w.enabled,w.frame,inline and 252 or width-244,-8,52,28) end
+ self:StudioAnchor(w.name,w.frame,68,-10,inline and 104 or width-324)
+ self:StudioAnchor(w.frame.studioID,w.frame,inline and 176 or 68,inline and -14 or -30,inline and 72 or 92)
  if inline then
   if w.count then self:StudioAnchor(w.count,w.frame,344,-8,44,28) end
   if w.countLabel then self:StudioAnchor(w.countLabel,w.frame,312,-14,32) end
