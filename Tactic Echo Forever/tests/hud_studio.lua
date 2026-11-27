@@ -265,12 +265,19 @@ test("hud_compact_large_legacy_preferences_never_expand_footprint",function()
  eq(H.name.point[4],0); eq(H.name.point[5],0); eq(H.rangeText,nil)
  e.db.hud.styles.global.status.enabled=false; H:Layout(); eq(H.status.shown,true); eq(H.countText.shown,true)
 end)
-test("hud_compact_metadata_and_controls_stay_in_tooltip",function()
- local e=setup(); local lines={}; local tooltip=GameTooltip
- GameTooltip={AddLine=function(_,text) lines[#lines+1]=text end}
- H:TooltipDetails(H.cards[1]); GameTooltip=tooltip
- local joined=table.concat(lines,"\n")
- assert(joined:find("SpellID",1,true)); assert(joined:find("固定序列",1,true))
+test("hud_skill_icons_keep_hover_highlight_without_tooltip",function()
+ setup(); local tooltip=GameTooltip
+ for _,mode in ipairs({"standard","mini","minimal"}) do
+  H:SetMode(mode)
+  local card=H.cards[1]; local calls=0
+  local function called() calls=calls+1 end
+  GameTooltip={SetOwner=called,AddLine=called,Show=called,Hide=called}
+  card.frame:GetScript("OnEnter")(); eq(card.hover,true)
+  card.frame:GetScript("OnLeave")(); eq(card.hover,false)
+  eq(calls,0)
+  GameTooltip=tooltip
+ end
+ H:SetMode("standard")
  eq(H.hint,nil); eq(H.sourceText,nil); eq(H.previewTitle,nil)
  eq(H.status.text,"步骤 1/4"); eq(H.countText.text,"本步 0/1"); eq(T.Dispatch.pending,nil)
 end)

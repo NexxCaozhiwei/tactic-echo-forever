@@ -486,7 +486,7 @@ test("hud_style_controls_only_expose_supported_labels",function()
  assert(T.UI.commandGlowToggle); assert(T.UI.commandPressToggle)
  eq(T.UI.commandGlowToggle.parent,T.UI.pages.hud); eq(T.UI.commandPressToggle.parent,T.UI.pages.hud)
  eq(e.db.hud.styles.global.rangeText,nil)
- T.Presentation:UpdateRange(T.HUD); assert(type(T.HUD.rangeDescription)=="string"); eq(T.HUD.rangeText,nil)
+ T.Presentation:UpdateRange(T.HUD); eq(T.HUD.rangeDescription,nil); eq(T.HUD.rangeText,nil)
  local copy=T.Engine.New(T.Config,e.db); eq(copy.db.hud.styles.global.rangeText,nil)
  InCombatLockdown=combat; T.HUD.engine=hudEngine
 end)

@@ -381,32 +381,13 @@ function H:Card(x,size,primary)
                 end
             end)
         end)
-        U:Call(f,"SetScript","OnEnter",function()
-            card.hover=true; self:RefreshState()
-            U:Call(GameTooltip,"SetOwner",f,"ANCHOR_RIGHT")
-            U:Call(GameTooltip,"AddLine",self.primaryFullName or "TACTIC ECHO FOREVER")
-            U:Call(GameTooltip,"AddLine","左键：派发当前技能一次　右键：临时开门",1,1,1,true)
-            U:Call(GameTooltip,"AddLine","Ctrl＋左键：启停派发　Ctrl＋右键：设置",1,1,1,true)
-            local state=TEF.Runtime:GetViewState()
-            U:Call(GameTooltip,"AddLine",state.intent==true and "派发开关：已开启（绿点）" or "派发开关：已关闭（红点）",.7,.8,.9)
-            U:Call(GameTooltip,"AddLine","当前：" .. state.label,.7,.8,.9)
-            if state.state=="blocked" then
-                local category,description=self:StatusText(state)
-                U:Call(GameTooltip,"AddLine","阻断分类：" .. category .. " · " .. description,1,.78,.28,true)
-                local code=S.Public(state.reason,"string")
-                if code then U:Call(GameTooltip,"AddLine","原因码：" .. code,.7,.7,.7) end
-            end
-            U:Call(GameTooltip,"AddLine",TEF.Runtime:TimingView(),.7,.8,.9,true)
-            self:TooltipDetails(card)
-            U:Call(GameTooltip,"Show")
-        end)
-        U:Call(f,"SetScript","OnLeave",function() card.hover=false; card.pressed=false; self:RefreshState(); U:Call(GameTooltip,"Hide") end)
+        U:Call(f,"SetScript","OnEnter",function() card.hover=true; self:RefreshState() end)
+        U:Call(f,"SetScript","OnLeave",function() card.hover=false; card.pressed=false; self:RefreshState() end)
         U:Call(f,"RegisterForDrag","LeftButton")
         U:Call(f,"SetScript","OnDragStart",function()
             if self.displayMode~="minimal" then return end
             local ok,start=U:Invoke(self.frame,"GetScript","OnDragStart")
             if ok and start then start(self.frame); card.suppressClick=self.dragging or nil end
-            U:Call(GameTooltip,"Hide")
         end)
         U:Call(f,"SetScript","OnDragStop",function()
             local ok,stop=U:Invoke(self.frame,"GetScript","OnDragStop")
@@ -417,27 +398,6 @@ function H:Card(x,size,primary)
         U:Call(f,"SetScript","OnMouseUp",function() card.pressed=false; self:RefreshState() end)
     end
     return card
-end
-function H:TooltipDetails(card)
- local step=card.displayStep
- if step then U:Call(GameTooltip,"AddLine","SpellID " .. step.spellID,.7,.8,.9) end
- local e=self.engine
- local source=e.maintenanceActive and "增益维护" or e.groupRun and "技能组" or TEF.Recommendation:Source(e)=="apl" and "优先级推荐" or "固定序列"
- local plan=e.maintenanceActive and "全局列表" or TEF.Profiles:PlanName(e.scene,e,TEF.Recommendation:BaseSource(e))
- U:Call(GameTooltip,"AddLine",source .. " / " .. plan,.7,.8,.9,true)
- if self.rangeDescription then U:Call(GameTooltip,"AddLine",self.rangeDescription,.7,.8,.9,true) end
- for _,field in ipairs({self.castText,self.castTime}) do
-  local ok,raw=U:Invoke(field,"GetText"); local text=ok and S.Public(raw,"string")
-  if text and text~="" then U:Call(GameTooltip,"AddLine",text,.7,.8,.9,true) end
- end
- local group=e.groupRun
- if group then U:Call(GameTooltip,"AddLine",group.group.name .. " · 第" .. group.round .. "/" .. group.group.rounds .. "轮",.7,.8,.9,true) end
- if TEF.Recommendation:Source(e)=="apl" then
-  local detail=self.battlePreview and "战斗预览：按当前状态推演进战后的推荐。" or "只读候选预览，不代表施放顺序。"
-  U:Call(GameTooltip,"AddLine",detail,.7,.8,.9,true)
- end
- if step then U:Call(GameTooltip,"AddLine","本步成功 " .. (e.stepCasts or 0) .. "/" .. (step.repeatCount or 1) .. "次",.7,.8,.9) end
- if card.fullKeyText then U:Call(GameTooltip,"AddLine","键位：" .. card.fullKeyText,.7,.8,.9) end
 end
 function H:CompactVisibility()
  local mini=self.displayMode~="standard"

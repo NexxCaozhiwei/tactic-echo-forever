@@ -28,8 +28,6 @@ function P:UpdateRange(hud)
     self:PrepareRangeProbes()
     for _,card in ipairs(hud.cards or {}) do self:PaintRange(card,card.displayStep) end
     local low,high,reason=self:MeasureDistance()
-    local text=low and (high and string.format("估测距离：%d–%d码",low,high) or string.format("估测距离：%d码以上",low)) or "估测距离：未知"
-    hud.rangeDescription=text
     local ok,raw=S.Call("UnitGUID","target"); local guid=ok and S.Public(raw,"string")
     if guid and #guid>128 then guid=nil end
     local signature=(guid or "UNKNOWN")..":"..reason..":"..tostring(low)..":"..tostring(high)
