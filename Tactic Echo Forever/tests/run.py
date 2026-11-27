@@ -13,7 +13,7 @@ def main():
     assert entries == ["Config.lua", "Safety.lua", "ActionSources.lua", "APL/Packs/Mage/Abilities.lua", "APL/Packs/Mage/Talents.lua", "APL/TalentState.lua", "APL/Registry.lua", "APL/PublicConditions.lua", "APL/Custom.lua", "APL/RankResolver.lua", "APL/Packs/Mage/BuildSelector.lua", "APL/State.lua", "APL/Conditions.lua", "APL/Trace.lua", "APL/Packs/Mage/Mage60.lua", "APL/Packs/Mage/Rules.lua", "APL/Engine.lua", "SkillGroups.lua", "Sequence.lua", "SequenceUsage.lua", "HudStyles.lua", "Profiles.lua", "Recommendation.lua", "Maintenance.lua", "Research.lua", "PlanShare.lua", "UI.lua", "UIComponents.lua", "Studio.lua", "StudioWorkbench.lua", "StudioTools.lua", "SequenceEditor.lua", "CustomAPLEditor.lua", "SkillGroupEditor.lua", "PlanShareUI.lua", "RankAlignment.lua", "HUD.lua", "Dispatch.lua", "Presentation.lua", "Transport.lua", "Runtime.lua", "Hotkeys.lua", "Core/Bootstrap.lua"]
     assert "## Interface: 16001" in toc and "## SavedVariables: TEF_DB" in toc
     version = (ROOT / "VERSION").read_text().strip()
-    assert version == "2.1.2" and f"## Version: {version}" in toc
+    assert version == "2.5.0" and f"## Version: {version}" in toc
     assert f'local VERSION = "{version}"' in (ROOT / "Core/Bootstrap.lua").read_text(encoding="utf-8")
     baseline = ROOT / f"docs/baselines/BASELINE_{version}.md"
     if not baseline.is_file():
@@ -29,13 +29,17 @@ def main():
             import xml.etree.ElementTree as ET
             tree=ET.parse(ROOT/entry)
             assert tree.getroot().tag == "Bindings"
-            assert len(list(tree.getroot()))==6
+            assert len(list(tree.getroot()))==8
             headers=[b.attrib["header"] for b in tree.getroot() if "header" in b.attrib]
             assert len(headers)==len(set(headers))
             public = [b for b in tree.getroot() if b.attrib.get("header")=="TEF"]
             assert len(public)==1 and public[0].attrib["name"]=="TEF_TOGGLE_DISPATCH"
             assert public[0].attrib.get("runOnUp") == "true"
             assert "TEF_DispatchHotkey(keystate)" in public[0].text
+            for index in (1, 2):
+                gate = tree.find(f"Binding[@name='TEF_OPEN_DISPATCH_GATE_{index}']")
+                assert gate is not None and gate.attrib.get("runOnUp") == "true"
+                assert f"TEF_OpenDispatchGate({index}, keystate)" in gate.text
             continue
         lua.execute("assert(loadfile(...))", str(ROOT / entry))
         code = (ROOT / entry).read_text(encoding="utf-8")

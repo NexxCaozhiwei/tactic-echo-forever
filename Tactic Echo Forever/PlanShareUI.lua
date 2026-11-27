@@ -224,7 +224,7 @@ function U:SaveBundleDraft()
   for _,source in ipairs({"manual","apl"}) do for _,slot in ipairs({"single","multi","third"}) do self:ShareNames()[source..":"..slot]=nil end end
   self.studioPlanLoaded=nil; self:RefreshStudio()
  end
- self:StudioMessage(ok and "整包所含方案及增益与紧急已保存，旧派发已停止；本机启用状态保留。" or ("整包未保存："..tostring(reason)))
+ self:StudioMessage(ok and "整包已保存，派发意图及本机启用状态已保留。" or ("整包未保存："..tostring(reason)))
  return ok,reason
 end
 function U:CreatePlanShare()

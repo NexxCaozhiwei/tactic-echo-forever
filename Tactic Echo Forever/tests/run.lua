@@ -1087,6 +1087,26 @@ test("settings_open_preserves_intent_and_zeroes_token",function()
     eq(T.Dispatch.pending,nil); eq(T.Dispatch.continuous,false); eq(T.engine.running,false)
     eq(T.Transport.fields[15],0)
 end)
+test("studio_save_preserves_open_gate_and_paused_intent_and_retires_old_cast",function()
+    deliveryFixture("manual")
+    local e,r,U=T.engine,T.Runtime,T.UI
+    local now=100; GetTime=function() return now end
+    assert(r:OpenGateRound())
+    assert(T.Dispatch.pending); receipt("UNIT_SPELLCAST_SENT",116,"before-plan-save")
+    U:OpenSettings(); U:ShowPage("profiles")
+    U:WriteDraft({{spellID=205,name="寒冰箭",matchIDs={205}}})
+    now=101; U:SaveStudio()
+    eq(r.intent,true); eq(r.gateRound,"opened"); eq(r.gateOpenedAt,100)
+    eq(e.steps[1].spellID,205); eq(T.Dispatch:Packet(),nil)
+    U:CloseSettings(); T.Transport:Pulse()
+    assert(T.Dispatch.pending); eq(T.Dispatch.pending.binding.spellID,205)
+    receipt("UNIT_SPELLCAST_SUCCEEDED",116,"before-plan-save")
+    eq(e.receiptSerial or 0,0); eq(e.index,1)
+    r:Stop(); U:OpenSettings(); U:ShowPage("profiles")
+    U:WriteDraft({{spellID=116,name="寒冰箭",matchIDs={116}}})
+    U:SaveStudio(); U:CloseSettings(); T.Transport:Pulse()
+    eq(e.steps[1].spellID,116); eq(r.intent,false); eq(T.Dispatch:Packet(),nil)
+end)
 test("settings_close_reconciles_without_restoring_old_pending",function()
     deliveryFixture(); T.Runtime:SetIntent(true); T.Dispatch:TickContinuous()
     local old=T.Dispatch.pending; receipt("UNIT_SPELLCAST_SENT",116,"pre-settings")
@@ -1161,34 +1181,77 @@ test("ui_callback_failure_uses_runtime_fault",function()
     eq(T.Dispatch.pending,nil); eq(T.engine.running,false)
     eq(T.Runtime.reason,"UI_CALLBACK_FAILED")
 end)
-test("hud_primary_left_click_toggles_intent_only",function()
+test("hud_primary_ctrl_click_starts_and_does_not_toggle_off",function()
     deliveryFixture(); local card=T.HUD.cards[1]; eq(card.frame.kind,"Button")
     local before=T.engine.index
+    IsControlKeyDown=function() return true end
     card.frame.scripts.OnClick(card.frame,"LeftButton")
     eq(T.Runtime.intent,true); eq(T.engine.index,before); eq(T.Dispatch.pending,nil)
-    card.frame.scripts.OnClick(card.frame,"LeftButton"); eq(T.Runtime.intent,false)
+    card.frame.scripts.OnClick(card.frame,"LeftButton"); eq(T.Runtime.intent,true)
 end)
-test("hud_primary_never_requests_or_casts",function()
-    deliveryFixture(); local original=T.Dispatch.Request
-    T.Dispatch.Request=function() error("DIRECT_REQUEST_FORBIDDEN") end
+test("hud_primary_click_publishes_one_attempt_and_advances_on_exact_success",function()
+    deliveryFixture("auto")
+    local e,r,card=T.engine,T.Runtime,T.HUD.cards[1]
+    local now=100; GetTime=function() return now end
     local calls=0; local forbidden=function() calls=calls+1 end
     CastSpellByID=forbidden; UseAction=forbidden
-    T.HUD.cards[1].frame.scripts.OnClick(T.HUD.cards[1].frame,"LeftButton")
-    eq(T.Runtime.intent,true); eq(calls,0); eq(T.Dispatch.pending,nil)
-    T.Dispatch.Request=original; CastSpellByID=nil; UseAction=nil
+    IsControlKeyDown=function() return false end
+    InCombatLockdown=function() return secret end
+    card.frame.scripts.OnClick(card.frame,"LeftButton")
+    eq(T.Dispatch.pending,nil)
+    InCombatLockdown=function() return false end
+    card.frame.scripts.OnClick(card.frame,"LeftButton")
+    eq(r.intent,false); eq(calls,0); eq(T.Transport.fields[15],5); eq(e.index,1)
+    local fields=table.concat(T.Transport.fields,","); local serial=r.requestSerial
+    now=100.1; T.Transport:Pulse(); eq(table.concat(T.Transport.fields,","),fields)
+    card.frame.scripts.OnClick(card.frame,"LeftButton"); eq(r.requestSerial,serial)
+    receipt("UNIT_SPELLCAST_SENT",116,"hud-single")
+    eq(T.Transport.fields[15],0); eq(e.index,1)
+    now=102; T.Transport:Pulse(); assert(r.hudShot)
+    receipt("UNIT_SPELLCAST_SUCCEEDED",116,"hud-single"); T.Transport:Pulse()
+    eq(e.index,2); eq(r.intent,false); eq(e.running,false); eq(T.Transport.fields[15],0)
+    T.HUD:Refresh(); card.frame.scripts.OnClick(card.frame,"LeftButton")
+    eq(T.Dispatch.pending.binding.spellID,205)
+    now=103; T.Transport:Pulse(); eq(r.hudShot,nil); eq(T.Transport.fields[15],0)
+    assert(r:SetIntent(true,"RUNTIME_AUTO_WORLD")); eq(r.reason,"RUNTIME_AUTO_STANDBY")
+    card.frame.scripts.OnClick(card.frame,"LeftButton"); eq(T.Transport.fields[15],5)
+    now=104; T.Transport:Pulse()
+    eq(r.hudShot,nil); eq(r.intent,true); eq(r.reason,"RUNTIME_AUTO_STANDBY"); eq(T.Transport.fields[15],0)
+    CastSpellByID=nil; UseAction=nil
 end)
-test("hud_and_settings_toggle_stay_in_sync",function()
+test("hud_single_click_admits_a_group_and_dispatches_only_its_first_step",function()
+    deliveryFixture()
+    local e,r,H=T.engine,T.Runtime,T.HUD
+    local group={name="测试技能组",rounds=1,steps={
+        {spellID=116,name="寒冰箭",matchIDs={116}},
+        {spellID=205,name="寒冰箭",matchIDs={205}},
+    }}
+    e.steps=T.Engine.Validate({T.SkillGroups:Row(group)})
+    IsControlKeyDown=function() return false end
+    H:Refresh(); H.cards[1].frame.scripts.OnClick(nil,"LeftButton")
+    assert(e.groupRun); eq(T.Dispatch.pending.binding.spellID,116); eq(r.intent,false)
+    receipt("UNIT_SPELLCAST_SENT",116,"hud-group-first")
+    receipt("UNIT_SPELLCAST_SUCCEEDED",116,"hud-group-first")
+    T.Transport:Pulse(); eq(e.index,2); eq(T.Dispatch.pending,nil); eq(r.intent,false)
+    H:Refresh(); H.cards[1].frame.scripts.OnClick(nil,"LeftButton")
+    eq(T.Dispatch.pending.binding.spellID,205)
+end)
+test("hud_single_click_respects_settings_and_leaves_intent_unchanged",function()
     deliveryFixture(); T.UI:OpenSettings(); T.UI:ShowPage("overview")
     T.UI.studioRun.scripts.OnClick(); eq(T.Runtime.intent,true); eq(T.Runtime.state,"standby")
     eq(T.UI.studioRun.text,"停止意图")
+    IsControlKeyDown=function() return false end
     T.HUD.cards[1].frame.scripts.OnClick(T.HUD.cards[1].frame,"LeftButton")
-    eq(T.Runtime.intent,false); eq(T.UI.studioRun.text,"开启意图")
+    eq(T.Runtime.intent,true); eq(T.Dispatch.pending,nil)
+    T.UI.studioRun.scripts.OnClick(); eq(T.UI.studioRun.text,"开启意图")
     T.UI:CloseSettings(); eq(T.Runtime.intent,false)
 end)
-test("hotkey_and_hud_toggle_stay_in_sync",function()
+test("hotkey_can_stop_intent_started_by_hud_ctrl_click",function()
     deliveryFixture(); TEF_ToggleDispatchIntent(); eq(T.Runtime.intent,true)
-    T.HUD.cards[1].frame.scripts.OnClick(T.HUD.cards[1].frame,"LeftButton"); eq(T.Runtime.intent,false)
-    TEF_DispatchToggle(); eq(T.Runtime.intent,true)
+    IsControlKeyDown=function() return true end
+    T.HUD.cards[1].frame.scripts.OnClick(T.HUD.cards[1].frame,"LeftButton"); eq(T.Runtime.intent,true)
+    TEF_DispatchToggle(); eq(T.Runtime.intent,false)
+    T.HUD.cards[1].frame.scripts.OnClick(T.HUD.cards[1].frame,"LeftButton"); eq(T.Runtime.intent,true)
 end)
 test("auto_mode_out_of_combat_standby_keeps_intent",function()
     deliveryFixture("auto"); T.Runtime:SetIntent(true)
@@ -1265,6 +1328,7 @@ test("hud_block_categories_show_reason_without_changing_dispatch",function()
 end)
 test("hud_lock_drag_and_primary_click_do_not_conflict",function()
     deliveryFixture(); local f=T.HUD.frame; local moves=rawget(f,"moves") or 0
+    IsControlKeyDown=function() return true end
     T.engine.db.hud.locked=true; f.scripts.OnDragStart(); eq(rawget(f,"moves") or 0,moves)
     T.engine.db.hud.locked=false; f.scripts.OnDragStart(); eq(f.moves,moves+1)
     T.HUD.cards[1].frame.scripts.OnClick(T.HUD.cards[1].frame,"LeftButton"); eq(T.Runtime.intent,false)
@@ -1810,18 +1874,104 @@ test("repeat_partial_save_and_scene_switch_clear_count",function()
 end)
 local function hotkeyFixture()
     deliveryFixture("manual"); T.Hotkeys.owner=nil; T.Hotkeys.appliedKey=nil
+    T.Hotkeys.appliedGateKeys=nil; T.Hotkeys.gateHeld=nil
     T.Hotkeys.lastReason=nil; T.Hotkeys.applying=false; T.Hotkeys.pending=false
     local f={overrides={},base={},sets=0,clears=0}
     GetBindingAction=function(key,overrides) return overrides and f.overrides[key] or f.base[key] or "" end
     ClearOverrideBindings=function() f.clears=f.clears+1; f.overrides={} end
     SetOverrideBinding=function(_,priority,key,command)
-        eq(priority,true); eq(command,"TEF_TOGGLE_DISPATCH"); f.sets=f.sets+1; f.overrides[key]=command
+        eq(priority,true)
+        assert(command=="TEF_TOGGLE_DISPATCH" or command:match("^TEF_OPEN_DISPATCH_GATE_[12]$"))
+        f.sets=f.sets+1; f.overrides[key]=command
         return true
     end
     SaveBindings=function() error("FORBIDDEN_SAVE_BINDINGS") end; SetBinding=function() error("FORBIDDEN_BASE_BINDING") end
     IsControlKeyDown=function() return false end; IsAltKeyDown=function() return false end; IsShiftKeyDown=function() return false end
     return f
 end
+test("studio_gate_keys_open_one_round_without_holding_and_close_on_combat_end",function()
+    local f=hotkeyFixture()
+    local e,r=T.engine,T.Runtime
+    local combat=false; InCombatLockdown=function() return combat end
+    local now=100; GetTime=function() return now end
+    e.steps=T.Engine.Validate({{spellID=116,name="寒冰箭",matchIDs={116}}})
+    T.UI:OpenSettings(); T.UI:ShowPage("tek")
+    f.base.Q="ACTIONBUTTON3"; f.base["`"]="ACTIONBUTTON4"
+    local lookup=GetBindingAction
+    GetBindingAction=function(key,overrides)
+        if key=="`" and not (overrides and f.overrides[key]) then return secret end
+        return lookup(key,overrides)
+    end
+    local first,second=T.UI.gateHotkeyRows[1],T.UI.gateHotkeyRows[2]
+    first.record.scripts.OnClick(); first.box.scripts.OnKeyDown(first.box,"Q")
+    second.record.scripts.OnClick(); second.box.scripts.OnKeyDown(second.box,"·")
+    eq(e.db.dispatch.gateKey2,"`")
+    eq(T.Hotkeys.Normalize("CTRL-·",true),"CTRL-`")
+    second.box.text="·"; second.save.scripts.OnClick()
+    eq(e.db.dispatch.gateKey1,"Q"); eq(e.db.dispatch.gateKey2,"`")
+    eq(T.Runtime.Clean(e.db.dispatch).gateKey2,"`")
+    eq(f.overrides.Q,"TEF_OPEN_DISPATCH_GATE_1"); eq(f.overrides["`"],"TEF_OPEN_DISPATCH_GATE_2")
+    eq(f.base.Q,"ACTIONBUTTON3"); eq(f.base["`"],"ACTIONBUTTON4")
+    eq(T.Dispatch.SkillToken("Q"),nil); eq(T.Dispatch.SkillToken("`"),nil)
+    local ok,reason=T.Hotkeys:Set("Q"); eq(ok,false); eq(reason,"HOTKEY_DUPLICATE")
+    TEF_OpenDispatchGate(1,"down"); eq(r.intent,false); TEF_OpenDispatchGate(1,"up")
+    T.UI:CloseSettings()
+    e.db.dispatch.autoStart=true; r:World(); eq(r.intent,false)
+    assert(r:SetMode("semi")); assert(T.Hotkeys:Set("F1"))
+    TEF_OpenDispatchGate(1,"down")
+    eq(r.intent,true); eq(r.gateRound,"opened"); eq(r.semiAutoHeld,false)
+    eq(T.Transport.fields[12],2); eq(T.Transport.fields[15],5)
+    TEF_OpenDispatchGate(1,"up")
+    receipt("UNIT_SPELLCAST_SENT",116,"gate-pull-cast")
+    receipt("UNIT_SPELLCAST_SUCCEEDED",116,"gate-pull-cast")
+    eq(e.receiptSerial,1); eq(e.completed,false); eq(e.index,1); eq(e.db.loop,false)
+    now=101; T.Transport:Pulse(); eq(r.intent,true); eq(T.Transport.fields[15],5)
+    now=114.9
+    combat=true; T.Transport:Pulse(); eq(r.gateRound,"combat")
+    now=130; T.Transport:Pulse(); eq(r.intent,true); eq(T.Transport.fields[15],5)
+    receipt("UNIT_SPELLCAST_SENT",116,"gate-combat-cast")
+    receipt("UNIT_SPELLCAST_SUCCEEDED",116,"gate-combat-cast")
+    now=131; T.Transport:Pulse()
+    eq(e.receiptSerial,2); eq(e.completed,false); eq(T.Transport.fields[15],5)
+    TEF_OpenDispatchGate(2,"down"); eq(r.gateRound,"combat")
+    combat=false; T.Transport:Pulse()
+    eq(r.intent,false); eq(r.gateRound,nil); eq(T.Transport.fields[15],0)
+    TEF_OpenDispatchGate(2,"down"); eq(r.intent,false)
+    TEF_OpenDispatchGate(2,"up")
+    assert(r:SetMode("auto")); TEF_OpenDispatchGate(2,"down")
+    eq(r.intent,true); eq(r.gateRound,"opened"); eq(T.Transport.fields[15],5)
+    TEF_OpenDispatchGate(2,"up")
+    now=145.9; TEF_OpenDispatchGate(1,"down"); TEF_OpenDispatchGate(1,"up")
+    eq(r.gateOpenedAt,131); eq(r.intent,true)
+    now=145.95; T.Transport:Pulse(); eq(T.Transport.fields[15],5)
+    now=146; eq(T.Dispatch:Packet(),nil); T.Transport:Pulse()
+    eq(r.intent,false); eq(r.gateRound,nil); eq(r.reason,"GATE_ROUND_PULL_WINDOW_ENDED"); eq(T.Transport.fields[15],0)
+    combat=true; T.Transport:Pulse(); eq(r.intent,false); eq(T.Transport.fields[15],0)
+end)
+test("closing_temporary_gate_restores_armed_auto_mode",function()
+    deliveryFixture("auto")
+    local r=T.Runtime
+    local now,combat=100,false
+    GetTime=function() return now end
+    InCombatLockdown=function() return combat end
+    assert(r:SetIntent(true,"RUNTIME_AUTO_WORLD"))
+    eq(r.state,"standby"); eq(r.maintenanceManual,false); eq(T.Dispatch:Packet(),nil)
+    assert(r:OpenGateRound()); eq(T.Transport.fields[15],5)
+    now=115; T.Transport:Pulse()
+    eq(r.gateRound,nil); eq(r.intent,true); eq(r.maintenanceManual,false)
+    eq(r.reason,"RUNTIME_AUTO_STANDBY"); eq(T.Transport.fields[15],0)
+    now=116; combat=true; T.Transport:Pulse()
+    eq(r.gateRound,nil); eq(T.Transport.fields[15],5)
+    assert(r:OpenGateRound()); eq(r.gateRound,"combat")
+    now=117; combat=false; T.Transport:Pulse()
+    eq(r.gateRound,nil); eq(r.intent,true); eq(r.reason,"RUNTIME_AUTO_STANDBY")
+    eq(T.Transport.fields[15],0)
+    now=118; combat=true; T.Transport:Pulse()
+    eq(r.gateRound,nil); eq(T.Transport.fields[15],5)
+    assert(r:OpenGateRound())
+    r:Stop(); combat=false; T.Transport:Pulse()
+    eq(r.intent,false); eq(r.gateRound,nil); eq(T.Transport.fields[15],0)
+end)
 test("hotkey_capture_click_saves_immediately_and_toggle_command_runs",function()
     local f=hotkeyFixture(); T.UI.captureHotkeyButton.scripts.OnClick()
     eq(T.UI.captureHotkey,true); T.UI.hotkey.scripts.OnKeyDown(T.UI.hotkey,"F8")

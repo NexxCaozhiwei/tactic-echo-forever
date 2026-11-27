@@ -238,7 +238,9 @@ function P:Save(e, key, rows)
     local clean = self:Clean(rows)
     if not clean then return false,"CONFIG_INVALID" end
     local valid,errors=TEF.APL.Custom:Audit(clean); if not valid then return false,errors end
-    e:Reset()
+    local runtime=TEF.Runtime
+    if not runtime then e:Reset()
+    elseif not runtime:PreparePlanSave(e,true) then return false,"RUNTIME_ENGINE_FAILED" end
     e.db.profiles[key] = clean
     e.db.profileMigrationConflicts[e.classToken]=nil
     if e.scene == key then
@@ -247,6 +249,7 @@ function P:Save(e, key, rows)
         e.steps = TEF.Engine.Validate(selected)
     end
     e:Log("lifecycle","CONFIG_SAVED")
+    if runtime then runtime:RefreshSavedPlan(e) end
     return true
 end
 function P:SaveBundle(e,raw)
@@ -268,7 +271,9 @@ function P:SaveBundle(e,raw)
         if not maintenance then return false,"增益与紧急："..tostring(why) end
     end
     -- 六槽及维护列表全部校验通过才一次保存；仅复用原重置与推荐刷新路径。
-    e:Reset()
+    local runtime=TEF.Runtime
+    if not runtime then e:Reset()
+    elseif not runtime:PreparePlanSave(e,true) then return false,"RUNTIME_ENGINE_FAILED" end
     e.db.classProfiles[e.profileKey]=manual; e.db.profiles=manual
     e.db.apl.custom[e.classToken]=apl; e.db.planNames[e.classToken]=names
     e.db.profileMigrationConflicts[e.classToken]=nil
@@ -281,6 +286,7 @@ function P:SaveBundle(e,raw)
     if TEF.APL:IsActive(e) then e.steps=nil
     else e.steps=TEF.Engine.Validate(TEF.Recommendation:Rows(e,e.scene)) end
     e:Log("lifecycle","PLAN_BUNDLE_SAVED")
+    if runtime then runtime:RefreshSavedPlan(e) end
     return true
 end
 function P:RefreshIdentity(e)

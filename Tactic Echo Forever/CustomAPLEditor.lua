@@ -166,11 +166,10 @@ function U:CreateCustomAPLEditor(parent)
  local footer=self:Footer(parent)
  self.customSave=self:CreateActionButton(footer,"保存配置",436,-52,144,function()
   if not self:CommitCustomNumbers() then return end
-  if self.page=="maintenance" then local ok,reason=T.Maintenance:Save(self.engine,self.customDraft); self:CustomMessage(ok and "增益维护已保存并停止派发；关闭设置后手动开启。" or reason); return end
+  if self.page=="maintenance" then local ok,reason=T.Maintenance:Save(self.engine,self.customDraft); self:CustomMessage(ok and "增益维护已保存，派发意图已保留。" or reason); return end
   local ok,reason=C:Save(self.engine,self.customDraft,self.customLoadedScene,self.customClass)
   if ok then self:CommitShareName("apl",self.customLoadedScene) end
-  if ok and self.engine.db.enabledPlans.apl[self.customLoadedScene] then ok,reason=T.Profiles:UsePlan(self.engine,"apl",self.customLoadedScene) end
-  self:CustomMessage(ok and "已保存并停止派发；关闭设置后主动开启。" or (reason or "保存失败"))
+  self:CustomMessage(ok and "方案已保存，派发意图已保留。" or (reason or "保存失败"))
  end)
  self.customListCard=self:CreateSectionCard(parent,"技能列表 · 拖动条目或用上下箭头排序",0,-228,580,412)
  local scroll=self:Frame("ScrollFrame",parent,"UIPanelScrollFrameTemplate")
@@ -560,13 +559,12 @@ function U:CreateStrategyPanel()
   if self.strategySource=="manual" then
    local rows=self:DraftRows(); local ok,reason=T.Profiles:Save(self.engine,self.editScene,rows)
    if ok then self:CommitShareName("manual",self.editScene) end
-   self:SequenceMessage(ok and "已保存列表循环策略并停止派发。" or (reason or "保存失败")); return
+   self:SequenceMessage(ok and "列表循环策略已保存，派发意图已保留。" or (reason or "保存失败")); return
   end
-  if self.page=="maintenance" then local ok,reason=T.Maintenance:Save(self.engine,self.customDraft); self:CustomMessage(ok and "增益维护策略已保存并停止派发。" or reason); return end
+  if self.page=="maintenance" then local ok,reason=T.Maintenance:Save(self.engine,self.customDraft); self:CustomMessage(ok and "增益维护策略已保存，派发意图已保留。" or reason); return end
   local ok,reason=C:Save(self.engine,self.customDraft,self.customLoadedScene,self.customClass)
   if ok then self:CommitShareName("apl",self.customLoadedScene) end
-  if ok and self.engine.db.enabledPlans.apl[self.customLoadedScene] then ok,reason=T.Profiles:UsePlan(self.engine,"apl",self.customLoadedScene) end
-  self:CustomMessage(ok and "已保存并停止派发；关闭设置后主动开启。" or (reason or "保存失败"))
+  self:CustomMessage(ok and "方案已保存，派发意图已保留。" or (reason or "保存失败"))
  end)
  self.strategyClearButton=self:CreateActionButton(panel,"清空条件",16,-675,96,function() self:ConfirmAction("确认清空当前技能的全部条件？保存后生效。",function() self.strategyInputs={}; local row=self:CustomRow(); if row then row.strategies={} end; self:ChangeCustomStrategy(function(r)
   r.strategies={}; r.moving="any"; r.activity="any"; r.distanceOp="any"; r.distanceValue=nil

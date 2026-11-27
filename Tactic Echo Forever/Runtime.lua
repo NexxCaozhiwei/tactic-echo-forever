@@ -1,6 +1,7 @@
 local _,TEF=...
 local S,C=TEF.Safety,{intent=false,state="paused",requestSerial=0,cycle=0}
 TEF.Runtime=C
+C.GatePullWindow=15
 local modes={auto=true,manual=true,stop=true,semi=true}
 local names={paused="暂停",standby="待命",running="运行",blocked="阻断",completed="完成",error="异常"}
 function C:PlayIntentSound(enabled)
@@ -11,6 +12,10 @@ function C.Clean(raw)
     local mode=S.Field(raw,"mode","string")
     if S.Field(raw,"semiAutoHotkey","boolean")==true and mode~="semi" then mode="semi" end
     local key=S.Field(raw,"hotkey","string")
+    local gate1=TEF.Hotkeys.Normalize(S.Field(raw,"gateKey1","string"),true) or ""
+    local gate2=TEF.Hotkeys.Normalize(S.Field(raw,"gateKey2","string"),true) or ""
+    if gate2==gate1 or gate2==key then gate2="" end
+    if gate1==key then gate1="" end
     local lead=S.Field(raw,"castQueueLead","number")
     local retry=S.Field(raw,"retryDelay","number")
     local channelLead=S.Field(raw,"channelTailLead","number")
@@ -32,6 +37,7 @@ function C.Clean(raw)
         permission=S.Field(raw,"permission","boolean")~=false,signal=S.Field(raw,"signal","boolean")~=false,
         takeover=S.Field(raw,"takeover","string")=="pause" and "pause" or "continue",
         hotkey=key and #key<=40 and key:match("^[A-Z0-9%-=]+$") and key or "",
+        gateKey1=gate1,gateKey2=gate2,
         ordinaryContinuous=ordinary==true or ordinaryReason=="NO_DATA",
         castQueue=S.Field(raw,"castQueue","boolean")==true,
         castQueueLead=lead and math.max(0,math.min(.5,lead)) or .2,
@@ -64,6 +70,9 @@ function C:Changed(state,reason)
     if TEF.UI and TEF.UI.engine==self.e and TEF.UI.settingsOpen and TEF.UI.readouts then pcall(TEF.UI.RefreshPage,TEF.UI) end
     self.notifying=false
 end
+function C:ClearGateRound()
+    self.gateRound,self.gateOpenedAt,self.gateBase=nil,nil,nil
+end
 function C:EngineCall(method)
     local channel=method=="Resume" and TEF.Dispatch:ChannelTailAllowed() and TEF.Dispatch.channelReceipt
     if method=="Reset" and self.e.groupRun then TEF.SkillGroups:Restore(self.e,"GROUP_RESET") end
@@ -74,12 +83,32 @@ function C:EngineCall(method)
     if ok and channel and channel.serial==(self.e.receiptSerial or 0) and channel.group==self.e.groupRun then channel.generation=self.e.generation end
     if not ok then
         -- Last-resort containment belongs to Runtime, never to presentation.
-        self.intent=false; self.e.running=false
+        self.intent=false; self:ClearGateRound(); self.hudShot=nil; self.e.running=false
         self.e.generation=self.e.generation+1; self.e.associations={}; self.e.associationCount=0
         TEF.Dispatch:StopContinuous("RUNTIME_ENGINE_FAILED"); TEF.Dispatch:Cancel("RUNTIME_ENGINE_FAILED")
         self:Changed("error","RUNTIME_ENGINE_FAILED")
     end
     return ok
+end
+function C:PreparePlanSave(e,reset)
+    if self.e~=e or TEF.engine~=e then
+        if reset then e:Reset() else e:Pause() end
+        return true
+    end
+    self.hudShot=nil
+    self.retryWait=nil; self.targetChangePending=nil; e.finishOldTargetReceipt=nil
+    TEF.Dispatch.preemption=nil; TEF.Dispatch.preemptProtected=nil; TEF.Dispatch.handoff=nil
+    if e.maintenanceActive then TEF.Maintenance:Restore(e,"MAINTENANCE_EDITED") end
+    if not reset and e.groupRun then TEF.SkillGroups:Restore(e,"GROUP_PLAN_SAVED") end
+    e.groupConsumed={}
+    return self:EngineCall(reset and "Reset" or "Pause")
+end
+function C:RefreshSavedPlan(e)
+    if self.e~=e or TEF.engine~=e then return end
+    if not self.intent then self:Changed("paused","PLAN_SAVED_PAUSED")
+    elseif TEF.UI.settingsOpen then self:Changed("standby","RUNTIME_SETTINGS_STANDBY")
+    elseif TEF.Transport.enabled then TEF.Transport:Pulse()
+    else self:Reconcile() end
 end
 function C:ReplaceRecommendation(rows)
     local channel=TEF.Dispatch:ChannelTailAllowed() and TEF.Dispatch.channelReceipt
@@ -96,7 +125,9 @@ function C:Initialize(e)
     TEF.Dispatch.publishedAttempt=nil
     self.retryWait=nil; self.movementSample=nil; self.timingFingerprint=nil; self.targetChangePending=nil
     self.maintenanceManual=false
+    self.hudShot=nil
     self.semiAutoHeld=false
+    self:ClearGateRound()
     self.e=e; self.intent=false; self.worldSeen=false; self.state="paused"
     self.reason=nil; self.displayBlock=nil; self.cycle=0; self.requestSerial=0
     e.db.dispatch=self.Clean(e.db.dispatch)
@@ -105,16 +136,19 @@ end
 function C:Invalidated(e)
     -- Explicit edits/reset and the retained developer Engine API stop intent.
     if e==self.e and not self.internal then
+        self.hudShot=nil
         TEF.Dispatch.preemption=nil; TEF.Dispatch.preemptProtected=nil
             self.retryWait=nil
         self.maintenanceManual=false
         if e.maintenanceActive then TEF.Maintenance:Restore(e,"MAINTENANCE_INVALIDATED") end
         if e.groupRun then TEF.SkillGroups:Restore(e,"GROUP_INVALIDATED") end
         e.groupConsumed={}
-        self.intent=false; self:Changed("paused","RUNTIME_CONFIGURATION_INVALIDATED")
+        self.intent=false; self:ClearGateRound(); self:Changed("paused","RUNTIME_CONFIGURATION_INVALIDATED")
     end
 end
 function C:Stop(reason,state)
+    self:ClearGateRound()
+    self.hudShot=nil
     self.semiAutoReleasedAt=nil
     TEF.Dispatch.preemption=nil
     TEF.Dispatch.preemptProtected=nil
@@ -138,6 +172,52 @@ function C:SemiAutoInputActive()
     local released=self.semiAutoReleasedAt
     local now=released and TEF.APL.State.Time()
     return now and now>=released and now-released<.250 or false
+end
+function C:RequiresSemiAuto(e)
+    return e.db.dispatch.mode=="semi" and not self.gateRound
+end
+function C:GatePullWindowOpen()
+    local now=TEF.APL.State.Time()
+    local started=self.gateOpenedAt
+    return now and started and now>=started and now-started<self.GatePullWindow
+end
+function C:CloseGateRound(reason)
+    local base=self.gateBase
+    self:ClearGateRound()
+    if not base or not base.intent then self:Stop(reason); return end
+    self.maintenanceManual=base.maintenanceManual
+    self.retryWait=nil; self.targetChangePending=nil; self.e.finishOldTargetReceipt=nil
+    TEF.Dispatch.preemption=nil; TEF.Dispatch.handoff=nil
+    self:Suspend(reason,"standby")
+end
+function C:UpdateGateCombat(combat)
+    if not self.gateRound then return false end
+    if self.gateRound=="opened" and not self:GatePullWindowOpen() then
+        self:CloseGateRound("GATE_ROUND_PULL_WINDOW_ENDED")
+        return true
+    end
+    if combat==true then self.gateRound="combat"; self.gateOpenedAt=nil
+    elseif combat==false and self.gateRound=="combat" then
+        self:CloseGateRound("GATE_ROUND_COMBAT_ENDED")
+        return true
+    end
+    return false
+end
+function C:OpenGateRound()
+    local e=self.e
+    if not e or e~=TEF.engine or TEF.UI.settingsOpen or not TEF.Dispatch:InputIdle()
+        or not e.db.dispatch.permission or not e.db.dispatch.signal then return false end
+    if not self.gateRound then
+        local combat=TEF.APL.State.Boolean("InCombatLockdown")
+        local now=combat~=true and TEF.APL.State.Time() or nil
+        if combat~=true and not now then return false end
+        if self.intent and e.completed and not self:ResetCycle("GATE_ROUND_LIST_WRAP") then return false end
+        self.gateBase={intent=self.intent,maintenanceManual=self.maintenanceManual}
+        self.gateRound=combat==true and "combat" or "opened"; self.gateOpenedAt=now
+        self.semiAutoHeld=false; self.semiAutoReleasedAt=nil
+        if not self:SetIntent(true,"GATE_ROUND_OPENED") then self:ClearGateRound(); return false end
+    end
+    return TEF.Transport:Pulse()
 end
 function C:Fault(reason) self:Stop(reason or "RUNTIME_FATAL_ERROR","error") end
 function C:OnDispatchFault(reason)
@@ -187,7 +267,10 @@ function C:ManualMode(e)
  return e.db.dispatch.mode=="manual" or e.db.dispatch.mode=="semi"
 end
 function C:OutsideCombatAllowed(e)
- return self.e==e and TEF.engine==e and self.intent==true and self.maintenanceManual==true and self:ManualMode(e)
+ return self.e==e and TEF.engine==e
+    and (self.hudShot~=nil or (self.intent==true
+        and ((self.gateRound=="opened" and self:GatePullWindowOpen())
+            or (not self.gateRound and self.maintenanceManual==true and self:ManualMode(e)))))
 end
 function C:CombatAllowed(e,combat)
  return combat==true or (combat==false and (self:OutsideCombatAllowed(e) or TEF.Maintenance:OutsideAllowed(e)))
@@ -211,6 +294,72 @@ function C:SetIntent(enabled,reason)
     return self.intent
 end
 function C:ToggleIntent(reason) return self:SetIntent(not self.intent,reason) end
+function C:FinishHUDShot()
+    local shot=self.hudShot
+    self.hudShot=nil
+    if not shot then return end
+    if shot.pending and TEF.Dispatch.pending==shot.pending then TEF.Dispatch:Cancel("HUD_SINGLE_REQUEST_ENDED") end
+    if shot.group and not shot.guid and self.e.groupRun==shot.group then
+        TEF.SkillGroups:Restore(self.e,"HUD_SINGLE_GROUP_NOT_STARTED")
+    end
+    if shot.guid and self.e.seen[shot.guid]==true and self.e.completed and self.e.groupRun then
+        TEF.SkillGroups:Refresh(self.e,"progress")
+    end
+    if not self.intent and self.e.running then self:EngineCall("Pause") end
+end
+function C:UpdateHUDShot()
+    local shot=self.hudShot
+    if not shot then return false end
+    local e,now=self.e,TEF.APL.State.Time()
+    local association=shot.guid and e.associations[shot.guid]
+    if TEF.UI.settingsOpen or e.generation~=shot.generation or not now or now<shot.started
+        or (shot.guid and (e.seen[shot.guid] or not association or association.failed or now-shot.started>=15))
+        or (not shot.guid and (TEF.Dispatch.pending~=shot.pending or now-shot.started>=.75)) then
+        self:FinishHUDShot(); return false
+    end
+    return true
+end
+function C:RequestHUDSkill(id)
+    local e,d=self.e,TEF.Dispatch
+    if not e or e~=TEF.engine or not id then return false,"HUD_SINGLE_NO_SKILL" end
+    if TEF.UI.settingsOpen then return false,"TEK_SETTINGS_OPEN" end
+    if self.hudShot then return false,"HUD_SINGLE_ALREADY_PENDING" end
+    if not d.enabled or not e.db.dispatch.permission or not e.db.dispatch.signal then return false,"RUNTIME_GATE_OFF" end
+    if not d:InputIdle() then return false,"CONTINUOUS_TEXT_FOCUS_OR_UNKNOWN" end
+    if not d:CastIdle() or d.channelInputLock or d.preemption or e:RecommendationLocked() then return false,"TEK_CAST_PRESENT_OR_UNKNOWN" end
+    if e.identitySaturated or e.clientValidated==false then return false,"HUD_SINGLE_IDENTITY_OR_CLIENT_BLOCKED" end
+    local combat=TEF.APL.State.Boolean("InCombatLockdown")
+    if combat==nil then return false,"RUNTIME_COMBAT_UNKNOWN" end
+    if e.completed and e.groupRun then TEF.SkillGroups:Refresh(e,"progress") end
+    if e.completed or not TEF.Recommendation:Configured(e) then return false,"HUD_SINGLE_NO_SKILL" end
+    if TEF.APL:IsActive(e) then TEF.APL:Refresh(e) end
+    local step=e.steps and e.steps[e.index]
+    local rule=TEF.APL:IsActive(e) and TEF.APL.Custom:CurrentPolicyRow(e)
+    if not step or step.spellID~=id then return false,"HUD_SINGLE_CANDIDATE_CHANGED" end
+    if d.continuous and self:CombatAllowed(e,combat) and (not self:RequiresSemiAuto(e) or self:SemiAutoInputActive()) then
+        return TEF.Transport:Pulse()
+    end
+    local now=TEF.APL.State.Time(); if not now then return false,"HUD_SINGLE_CLOCK_UNKNOWN" end
+    -- 左键是显式的单次派发，脱战资格只随当前请求存活。
+    local shot={started=now,generation=e.generation}; self.hudShot=shot
+    if d.pending then d:Cancel("HUD_SINGLE_REQUEST_REPLACED") end
+    if d.continuous then d:StopContinuous("HUD_SINGLE_REQUEST") end
+    if step.group or (rule and rule.group) then
+        TEF.SkillGroups:Refresh(e,"admit")
+        shot.group=e.groupRun
+        step=shot.group and e.steps[e.index]
+        if not step or step.spellID~=id then self:FinishHUDShot(); return false,"HUD_SINGLE_GROUP_BLOCKED" end
+    end
+    local allowed,reason=d:ContinuousEvidence(id,step)
+    if allowed~=true or (not e.running and not self:EngineCall("Resume")) then
+        self:FinishHUDShot(); return false,reason or "HUD_SINGLE_REQUEST_BLOCKED"
+    end
+    shot.generation=e.generation
+    local requested,why=d:Request()
+    if not requested then self:FinishHUDShot(); return false,why or "HUD_SINGLE_REQUEST_BLOCKED" end
+    shot.pending=d.pending; d.pending.hudShot=shot
+    return TEF.Transport:Paint()
+end
 -- 人工操作通过Runtime撤销旧身份；跳过不等于成功，不写成功额度。
 function C:Intervene(action)
  local e=self.e
@@ -317,7 +466,7 @@ end
 function C:SetMode(mode)
     if not modes[mode] then return false end
     local dispatch=self.e.db.dispatch
-    if dispatch.mode~=mode and (dispatch.mode=="semi" or mode=="semi") then
+    if dispatch.mode~=mode and (self.gateRound or dispatch.mode=="semi" or mode=="semi") then
         self.semiAutoHeld=false
         self:Stop("SEMI_AUTO_MODE_CHANGED")
     end
@@ -341,7 +490,8 @@ function C:World()
     local first=not self.worldSeen; self.worldSeen=true
     self.e:ClearUsage()
     self:Stop("RUNTIME_WORLD_INVALIDATED")
-    if first and self.e.db.dispatch.autoStart then self:SetIntent(true,"RUNTIME_AUTO_WORLD") end
+    local d=self.e.db.dispatch
+    if first and d.autoStart and (d.gateKey1 or "")=="" and (d.gateKey2 or "")=="" then self:SetIntent(true,"RUNTIME_AUTO_WORLD") end
 end
 function C:TryConfirmAttackEnabled()
     local policy=TEF.Dispatch:ManualPolicy(self.e,self.e.steps and self.e.steps[self.e.index])
@@ -407,8 +557,11 @@ function C:ReconcileCore()
     TEF.APL.State.SampleResources(self.e)
     self.e:ObserveUsageCombat()
     TEF.APL.Custom:LifecycleContext(self.e)
-    if not self.intent then return end
     local e=self.e
+    if self.gateRound then
+        self:UpdateGateCombat(TEF.APL.State.Boolean("InCombatLockdown"))
+    end
+    if self:UpdateHUDShot() or not self.intent then return end
     if self.targetChangePending then
         if TEF.Dispatch:HasCurrentInitiation() or not TEF.Dispatch:CastIdle() then
             TEF.Dispatch:Cancel("TARGET_WAIT_CURRENT_RECEIPT"); self:Changed("blocked","TARGET_WAIT_CURRENT_RECEIPT"); return
@@ -431,7 +584,7 @@ function C:ReconcileCore()
         TEF.Dispatch:YieldCast("GROUP_WAIT_STEP_FINISH"); self:Changed("blocked","GROUP_WAIT_STEP_FINISH"); return
     end
     if e.completed then
-        if TEF.Maintenance:Enabled(e) and (self.maintenanceManual or TEF.APL.State.Boolean("InCombatLockdown")==true) then self:Suspend("MAINTENANCE_IDLE","standby")
+        if not self.gateRound and TEF.Maintenance:Enabled(e) and (self.maintenanceManual or TEF.APL.State.Boolean("InCombatLockdown")==true) then self:Suspend("MAINTENANCE_IDLE","standby")
         else self:Stop("RUNTIME_COMPLETED","completed") end
         return
     end
@@ -445,7 +598,7 @@ function C:ReconcileCore()
     if ok then combat=S.Public(raw,"boolean") end
     if not current() then return end
     local maintenanceOutside=combat==false and self.maintenanceManual and TEF.Maintenance:Enabled(e)
-    if e.db.dispatch.mode=="stop" and combat==false and not maintenanceOutside
+    if e.db.dispatch.mode=="stop" and combat==false and not self.gateRound and not maintenanceOutside
         and not (e.groupRun and TEF.Dispatch:HasCurrentInitiation()) then self:Stop("RUNTIME_OUT_OF_COMBAT_STOP"); return end
     if TEF.UI.settingsOpen then self:Suspend("RUNTIME_SETTINGS_STANDBY","standby"); return end
     if combat==nil then self:Suspend("RUNTIME_COMBAT_UNKNOWN"); return end
@@ -466,7 +619,7 @@ function C:ReconcileCore()
         if not allowed then self:Suspend(reason); return end
     end
     if maintenanceOutside and not e.maintenanceActive and not self:OutsideCombatAllowed(e) then self:Suspend("MAINTENANCE_IDLE","standby"); return end
-    if e.db.dispatch.mode=="auto" and combat==false and not TEF.Maintenance:OutsideAllowed(e) then
+    if e.db.dispatch.mode=="auto" and combat==false and not self:OutsideCombatAllowed(e) and not TEF.Maintenance:OutsideAllowed(e) then
         if TEF.Recommendation:Source(e)=="manual" then
             -- 待命保留固定序列的精确回执监听，输入仍由派发门禁控制。
             -- 不反复恢复或暂停，避免清除手动起手跨进战斗的身份。
@@ -521,7 +674,7 @@ function C:ReconcileCore()
                 self:Suspend("SEQUENCE_POLICY_ALL_BLOCKED")
             elseif e.completed then
                 if e.groupRun then TEF.SkillGroups:Refresh(e); self:Changed("blocked","GROUP_STEP_SKIPPED")
-                elseif TEF.Maintenance:Enabled(e) and (self.maintenanceManual or combat==true) then self:Suspend("MAINTENANCE_IDLE","standby") else self:Stop("RUNTIME_COMPLETED","completed") end
+                elseif not self.gateRound and TEF.Maintenance:Enabled(e) and (self.maintenanceManual or combat==true) then self:Suspend("MAINTENANCE_IDLE","standby") else self:Stop("RUNTIME_COMPLETED","completed") end
             else self:Changed("blocked","STRATEGY_STEP_SKIPPED") end
             return
         end

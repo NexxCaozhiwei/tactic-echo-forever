@@ -115,7 +115,7 @@ function E:PrepareUsage()
     for _=1,#self.steps do
         following=following+1
         if following>#self.steps then
-            if not self.db.loop then following=nil; break end
+            if not (self.db.loop or self:LoopsParent()) then following=nil; break end
             following=1
         end
         local eligible,blocked=self:UsageEligibility(following)

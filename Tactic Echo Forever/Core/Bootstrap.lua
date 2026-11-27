@@ -1,5 +1,5 @@
 local addonName, TEF = ...
-local VERSION = "2.1.2"
+local VERSION = "2.5.0"
 local S = TEF.Safety
 local engine, frame
 
@@ -73,6 +73,7 @@ local function onEvent(_,event,...)
         TEF.HUD:Refresh(event=="SPELL_UPDATE_COOLDOWN"); return
     end
     if event == "PLAYER_REGEN_ENABLED" then
+        if TEF.Runtime:UpdateGateCombat(false) and TEF.Transport.enabled then TEF.Transport:Paint() end
         if engine.db.loopMode=="combat" then TEF.Runtime:ResetCycle("LOOP_COMBAT_RESET") end
         TEF.Hotkeys:Apply(); TEF.Runtime:Tick(); TEF.UI:Layout(); refresh(); return
     end
@@ -81,6 +82,7 @@ local function onEvent(_,event,...)
         TEF.Dispatch:BindingsChanged(); TEF.Presentation.bindings={}; TEF.Research:Invalidate(); TEF.APL:Invalidate(true); refresh(); return
     end
     if event == "PLAYER_REGEN_DISABLED" then
+        TEF.Runtime:UpdateGateCombat(true)
         -- Combat flags are sampled live by Packet; entering combat is not a
         -- generation or target change and must not kill a first-cast request.
         TEF.Research:Invalidate(); TEF.Runtime:Tick(); refresh(); return
@@ -96,6 +98,7 @@ local function onEvent(_,event,...)
         TEF.UI:Layout(); refresh(); return
     end
     if event=="PLAYER_DEAD" then
+        if TEF.Runtime.gateRound then TEF.Runtime:Stop("GATE_ROUND_PLAYER_DEAD") end
         engine.arcaneBlastWindow=nil; engine.arcaneBlastUnknown=nil; engine.arcaneBlastUnknownUntil=nil
         TEF.APL:Invalidate(); refresh(); return
     end
@@ -148,6 +151,8 @@ BINDING_HEADER_TEF_TEST="TEF · 开发/测试工具"
 BINDING_NAME_TEF_TOGGLE_PRACTICE="旧练习键：兼容统一派发启停"
 BINDING_NAME_TEF_TOGGLE_CONTINUOUS="旧连续键：兼容统一派发启停"
 BINDING_NAME_TEF_TOGGLE_DISPATCH="TEF：派发启/停"
+BINDING_NAME_TEF_OPEN_DISPATCH_GATE_1="TEF：开门键 1"
+BINDING_NAME_TEF_OPEN_DISPATCH_GATE_2="TEF：开门键 2"
 BINDING_NAME_TEF_TOGGLE_PERMISSION="TEF：TEK请求许可启/停"
 BINDING_NAME_TEF_REQUEST_CURRENT="TEF：派发当前技能"
 BINDING_NAME_TEF_STOP_ALL="TEF：停止练习及TEK请求"
@@ -162,6 +167,7 @@ TEF_DispatchHotkey=function(rawState)
     if not engine then return end
     local state=S.Public(rawState,"string")
     local runtime=TEF.Runtime
+    if runtime.gateRound and engine.db.dispatch.mode=="semi" then return end
     if engine.db.dispatch.mode~="semi" then
         if state=="down" then TEF_ToggleDispatchIntent() end
         return
@@ -178,6 +184,9 @@ TEF_DispatchHotkey=function(rawState)
         if runtime:SetIntent(true,"SEMI_AUTO_KEY_DOWN") then TEF.Transport:Pulse() end
     end
     refresh()
+end
+TEF_OpenDispatchGate=function(index,state)
+    TEF.Hotkeys:GateKey(index,state)
 end
 TEF_RunToggle=TEF_ToggleDispatchIntent
 TEF_ContinuousToggle=TEF_ToggleDispatchIntent

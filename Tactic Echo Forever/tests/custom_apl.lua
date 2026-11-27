@@ -244,6 +244,20 @@ test("retired_resource_threshold_does_not_survive_save",function()
  local e=F.runtime(); local r=row(143); r.manaOp,r.manaValue="lt",20
  assert(C:Save(e,{r},"single","MAGE")); eq(C:Rows(e)[1].manaOp,nil)
 end)
+test("hud_single_click_can_dispatch_an_apl_opener_in_automatic_standby",function()
+ local e=F.runtime(); local r=T.Runtime
+ local now=100; GetTime=function() return now end
+ InCombatLockdown=function() return false end; e.db.dispatch.mode="auto"
+ local combatOnly=row(205)
+ combatOnly.strategies={{mode="use",conditions={{kind="combat",value=true}}}}
+ assert(C:Save(e,{combatOnly,row(143)},"single","MAGE"))
+ assert(r:SetIntent(true,"RUNTIME_AUTO_WORLD"))
+ eq(e.aplCandidate.spellID,143); eq(T.Dispatch:Packet(),nil)
+ local ok=r:RequestHUDSkill(205); eq(ok,false); eq(T.Dispatch.pending,nil)
+ assert(r:RequestHUDSkill(143)); eq(T.Dispatch.pending.binding.spellID,143); assert(T.Dispatch:Packet())
+ now=101; T.Transport:Pulse(); eq(r.intent,true); eq(r.reason,"RUNTIME_AUTO_STANDBY")
+ eq(T.Dispatch:Packet(),nil)
+end)
 test("manual_apl_mode_explicit_start_can_dispatch_opener",function()
  local e=F.runtime(); C:Save(e,{row(143)},"single","MAGE"); e.db.dispatch.mode="manual"; InCombatLockdown=function() return false end
  T.Runtime:SetIntent(true); eq(e.aplCandidate.spellID,143); eq(T.Runtime.state,"running")
@@ -276,7 +290,9 @@ test("editor_order_delete_draft_and_scene_keep_saved",function()
  T.UI:RefreshCustomAPL(); eq(box.text,"2") -- periodic UI refresh preserves unsaved text
  T.UI.customSave.scripts.OnClick(); eq(C:Rows(e,"multi")[1].strategies[1].conditions[1].min,2); eq(e.scene,"single"); eq(T.Runtime.intent,false)
  eq(T.Profiles:UsePlan(e,"apl","multi"),false)
- assert(T.Profiles:SetPlanEnabled(e,"apl","multi",true)); assert(T.Profiles:UsePlan(e,"apl","multi"))
+ assert(T.Profiles:SetPlanEnabled(e,"apl","multi",true))
+ T.UI.customSave.scripts.OnClick(); eq(e.scene,"single"); eq(T.Runtime.intent,false)
+ assert(T.Profiles:UsePlan(e,"apl","multi"))
  eq(e.scene,"multi")
  eq(C:Rows(e,"single")[1].spellID,143)
  box.text="41"; T.UI.customSave.scripts.OnClick(); eq(C:Rows(e,"multi")[1].strategies[1].conditions[1].min,2)

@@ -722,7 +722,7 @@ function D:YieldCast(reason)
     end
 end
 function D:TickContinuous()
-    if TEF.engine.db.dispatch.mode=="semi" and not TEF.Runtime:SemiAutoInputActive() then return end
+    if TEF.Runtime:RequiresSemiAuto(TEF.engine) and not TEF.Runtime:SemiAutoInputActive() then return end
     if not self.continuous then return end
     local e=TEF.engine
     if TEF.Runtime and TEF.Runtime.e==e and TEF.Runtime.intent and TEF.Runtime.state~="running" then return end
@@ -805,8 +805,10 @@ function D.SkillToken(raw)
     -- A control override must never be sent as a spell key. During a deferred
     -- combat edit both the saved key and the still-installed old key are reserved.
     local dispatch=TEF.engine and TEF.engine.db.dispatch
-    if dispatch and key==dispatch.hotkey then return nil end
-    if TEF.Hotkeys and key==TEF.Hotkeys.appliedKey then return nil end
+    if dispatch and (key==dispatch.hotkey or key==dispatch.gateKey1 or key==dispatch.gateKey2) then return nil end
+    local hotkeys=TEF.Hotkeys
+    local installed=hotkeys and hotkeys.appliedGateKeys
+    if hotkeys and (key==hotkeys.appliedKey or (installed and (key==installed[1] or key==installed[2]))) then return nil end
     return D.Token(key)
 end
 function D:Cancel(reason)
@@ -911,6 +913,7 @@ function D:Request(fromContinuous,queue)
     elseif not e.running then blocked="TEK_PRACTICE_PAUSED"
     elseif e.completed then blocked="TEK_PRACTICE_COMPLETED"
     elseif TEF.Runtime and TEF.Runtime.e==e and TEF.Runtime.intent
+        and not TEF.Runtime.hudShot
         and TEF.Runtime.state=="standby" and TEF.Runtime.reason=="RUNTIME_AUTO_STANDBY" then blocked="RUNTIME_AUTO_STANDBY"
     elseif not step or step.unverified then blocked="TEK_STEP_UNRESOLVED"
     elseif queue and (queue~=self.castQueue or self:CastQueueWindow()~=queue.nextIndex) then blocked="CAST_QUEUE_WINDOW_CLOSED"
@@ -985,9 +988,16 @@ function D:BindingsChanged()
     if not self:VerifyCurrent(self.pending.binding) then self:Cancel("TEK_BINDING_CHANGED") end
 end
 function D:Packet()
-    if TEF.engine.db.dispatch.mode=="semi" and not TEF.Runtime:SemiAutoInputActive() then return nil end
+    local shot=self.pending and self.pending.hudShot
+    if shot then
+        local now=TEF.APL.State.Time()
+        if shot~=TEF.Runtime.hudShot or not now or now<shot.started or now-shot.started>=.75 then return nil end
+    end
+    if TEF.Runtime.gateRound=="opened" and not TEF.Runtime:GatePullWindowOpen() then return nil end
+    if TEF.Runtime.gateRound=="combat" and publicBoolean("InCombatLockdown")~=true then return nil end
+    if not shot and TEF.Runtime:RequiresSemiAuto(TEF.engine) and not TEF.Runtime:SemiAutoInputActive() then return nil end
     if self.preemption then
-        if TEF.engine.db.dispatch.mode=="semi" and not TEF.Runtime.semiAutoHeld then return nil end
+        if TEF.Runtime:RequiresSemiAuto(TEF.engine) and not TEF.Runtime.semiAutoHeld then return nil end
         return self:PreemptPacket()
     end
     local p,e=self.pending,TEF.engine
@@ -1011,10 +1021,10 @@ function D:Packet()
         end
     elseif not self:TransportCastAllowed(self.continuous) then self:Cancel("TEK_CAST_PRESENT_OR_UNKNOWN"); return nil end
     if self:ShootActive(p.binding)~=false then self:Cancel("SHOOT_ACTIVE_OR_UNKNOWN"); return nil end
-    if self.continuous then
+    if self.continuous or shot then
         local allowed,reason=self:ContinuousEvidence(p.binding.spellID,policyStep,p.castQueue)
         if not allowed then self:Block(reason); return nil end
-        if self.pending~=p or not self.continuous or e.generation~=p.generation or e.index~=p.index then return nil end
+        if self.pending~=p or (not self.continuous and not shot) or e.generation~=p.generation or e.index~=p.index then return nil end
     elseif TEF.APL and TEF.APL:IsActive(e) then
         -- 连续路径已在ContinuousEvidence实时复查；单次请求仍独立复查。
         local allowed,reason=TEF.APL:Allowed(e,p.binding.spellID)
@@ -1024,11 +1034,12 @@ function D:Packet()
     local combat
     if ok then combat=S.Public(rawCombat,"boolean") end
     if combat==nil then self:Cancel("TEK_COMBAT_UNKNOWN"); return nil end
+    if shot and not TEF.Runtime:CombatAllowed(e,combat) then self:Cancel("HUD_SINGLE_COMBAT_REQUIRED"); return nil end
     if TEF.Runtime and TEF.Runtime.e==e and TEF.Runtime.intent and combat==false and TEF.Runtime:ManualMode(e)
         and not TEF.Runtime:CombatAllowed(e,combat) then self:Cancel("RUNTIME_MANUAL_START_REQUIRED"); return nil end
     if e.groupRun and not e.maintenanceActive and not TEF.Runtime:CombatAllowed(e,combat) then self:Cancel("GROUP_COMBAT_REQUIRED"); return nil end
     if TEF.Runtime and TEF.Runtime.e==e and TEF.Runtime.intent
-        and e.db.dispatch.mode=="auto" and combat~=true and not TEF.Maintenance:OutsideAllowed(e) then self:Cancel("RUNTIME_AUTO_STANDBY"); return nil end
+        and e.db.dispatch.mode=="auto" and combat~=true and not TEF.Runtime:CombatAllowed(e,combat) then self:Cancel("RUNTIME_AUTO_STANDBY"); return nil end
     if p.castQueue and combat~=true then self:Cancel("CAST_QUEUE_COMBAT_REQUIRED"); return nil end
     if TEF.APL and TEF.APL:IsActive(e) and not TEF.Runtime:CombatAllowed(e,combat) then self:Cancel("APL_DISPATCH_COMBAT_REQUIRED"); return nil end
     if self.pending~=p or not self.enabled or not e.running or e.completed
@@ -1226,7 +1237,8 @@ function D:Event(event,unit,id,guidRaw)
     local u=S.Public(unit,"string"); local spell=S.ID(id)
     if not u or (u=="player" and not spell) then self:Cancel("TEK_EVENT_UNKNOWN"); return end
     if failure and not self.continuous and u=="player" and spell==self.pending.binding.spellID then
-        self:Cancel("TEK_GAME_EVENT_RECEIVED"); return
+        if not self.pending.hudShot then self:Cancel("TEK_GAME_EVENT_RECEIVED") end
+        return
     end
     if u=="player" and spell==self.pending.binding.spellID
         and (event=="UNIT_SPELLCAST_SENT" or event=="UNIT_SPELLCAST_START") and not guid then
@@ -1237,6 +1249,9 @@ function D:Event(event,unit,id,guidRaw)
     if u=="player" and guid and (event=="UNIT_SPELLCAST_SENT" or event=="UNIT_SPELLCAST_START")
         and spell==self.pending.binding.spellID
         and (not self.pending.castQueue or guid==self.pending.castQueue.guid) then
+        local shot=self.pending.hudShot
+        if shot and not self.pending.diagnosticPublished then return end
+        if shot then shot.guid=guid end
         self:ObserveDeliveryInitiation(spell,guid)
         self:TraceQueue("DISPATCH_INITIATION_CONFIRMED",event,spell,guid)
         self:Cancel("TEK_GAME_EVENT_RECEIVED")
@@ -1338,7 +1353,7 @@ function D:PreemptCandidate(origin)
  return candidate,target
 end
 function D:PreemptTick()
- if (TEF.engine.db.dispatch.mode=="semi") and not TEF.Runtime.semiAutoHeld then return false end
+ if TEF.Runtime:RequiresSemiAuto(TEF.engine) and not TEF.Runtime.semiAutoHeld then return false end
  local e=TEF.engine
  local pending=self.preemption
  if pending then

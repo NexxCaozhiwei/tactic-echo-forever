@@ -203,9 +203,13 @@ function C:Save(e,rows,scene,class)
  local clean=C.CleanRows(rows)
  local valid,errors=self:Audit(clean,nil,true); if not valid then return false,errors end
  for _,r in ipairs(clean) do if r.invalid then return false,r.invalid end end
- e:Reset(); e.db.apl.custom[class]=e.db.apl.custom[class] or {}
+ local runtime=T.Runtime
+ if not runtime then e:Reset()
+ elseif not runtime:PreparePlanSave(e,true) then return false,"RUNTIME_ENGINE_FAILED" end
+ e.db.apl.custom[class]=e.db.apl.custom[class] or {}
  e.db.apl.custom[class][scene]=clean; e.db.apl.template="custom"
  A:Invalidate(true); if A:IsActive(e) then e.steps=nil end
+ if runtime then runtime:RefreshSavedPlan(e) end
  return true
 end
 function C:Read(id,requireReady,targetMode)

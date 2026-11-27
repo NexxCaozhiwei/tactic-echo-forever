@@ -43,19 +43,26 @@ function T:Paint()
     self.sequence=(self.sequence+1)%65536; self.freshness=(self.freshness+1)%65536
     local token,inCombat,stopSequence
     if TEF.Dispatch then token,inCombat,stopSequence=TEF.Dispatch:Packet() end
+    local shot=token and TEF.Dispatch.pending and TEF.Dispatch.pending.hudShot
+    local sequence,freshness=stopSequence or self.sequence,self.freshness
+    if shot then
+        -- 单次点击重复展示同一帧，TEK 沿用现有的新鲜度去重。
+        shot.sequence=shot.sequence or sequence; shot.freshness=shot.freshness or freshness
+        sequence,freshness=shot.sequence,shot.freshness
+    end
     local triggerVK
-    if e.db.dispatch.mode=="semi" then
+    if not shot and TEF.Runtime:RequiresSemiAuto(e) then
         triggerVK=TEF.Hotkeys.SemiAutoVK(e.db.dispatch.hotkey)
         if not triggerVK then token,stopSequence=nil,nil end
     end
-    self.fields=T.Encode(e.session%65536,stopSequence or self.sequence,self.freshness,token and 1 or (e.running and 0 or 2),token,inCombat,stopSequence~=nil,triggerVK)
+    self.fields=T.Encode(e.session%65536,sequence,freshness,token and 1 or (e.running and 0 or 2),token,inCombat,stopSequence~=nil,triggerVK)
     for i,value in ipairs(self.fields) do
         if not TEF.UI:Call(self.blocks[i],"SetColorTexture",value/255,1-value/255,17/255,1) then
             -- A partial strip is not retained as a verified signal.
             return self:Fail("TRANSPORT_PAINT_FAILED")
         end
     end
-    if token and TEF.Dispatch then TEF.Dispatch:ObservePublishedFrame(self.sequence,self.freshness,token) end
+    if token and TEF.Dispatch then TEF.Dispatch:ObservePublishedFrame(sequence,freshness,token) end
     return true
 end
 -- 所有调度仍走同一心跳处理函数；事件仅要求提前执行一次相同的实时复核。

@@ -225,7 +225,7 @@ function U:ConfirmAction(message,callback,accept,cancel)
  self:Paint(self.confirmationBody,"SetScale",self.settingsFitScale or 1); self:Paint(self.confirmationShield,"Show")
 end
 local tooltipText={
- ["保存"]="保存当前草稿；配置保存后停止旧派发，关闭设置后重新开启。",
+ ["保存"]="保存当前草稿，保留派发启停状态。关闭设置后按已保存方案重新检查。",
  ["清空"]="清空当前编辑草稿；需要确认，保存后才改变已保存配置。",
  ["删"]="删除当前草稿条目；保存后生效。",
  ["↑"]="将当前条目向前移动一位。",["↓"]="将当前条目向后移动一位。",
@@ -513,49 +513,83 @@ function U:CreateStatusBadge(parent,x,y,width)
     local text=self:Text(parent,x,y,width,"GameFontNormalLarge")
     return text
 end
-function U:CreateHotkeyRow(parent,x,y,width)
-    local box=self:Frame("EditBox",parent,"BackdropTemplate","TEF_HotkeyEditor")
+function U:CreateHotkeyRow(parent,x,y,width,field,label)
+    local legacy=field==nil
+    field=field or "hotkey"
+    local box=self:Frame("EditBox",parent,"BackdropTemplate",legacy and "TEF_HotkeyEditor" or nil)
+    local capture=legacy and true or box
     self:Paint(box,"SetSize",168,self.controlHeight); self:Paint(box,"SetPoint","TOPLEFT",parent,"TOPLEFT",x,y)
     self:ApplyControlFont(box)
     self:Paint(box,"SetAutoFocus",false); self:Paint(box,"SetMaxLetters",40)
     self:Paint(box,"EnableKeyboard",true)
-    self:Paint(box,"SetText",self.engine.db.dispatch.hotkey)
-    self:StyleInput(box,"派发启停快捷键")
-    self.hotkey,self.hotkeyMessage=box,self:Text(parent,x,y-38,width)
+    local function saved() return self.engine.db.dispatch[field] or "" end
+    self:Paint(box,"SetText",saved())
+    self:StyleInput(box,label or "派发启停快捷键")
+    local message=self:Text(parent,x,y-34,width)
+    local entryError
+    local function status()
+        self:Paint(message,"SetText",TEF.Hotkeys:Status(field,entryError))
+    end
     local function submit(raw)
-        TEF.Hotkeys:Set(raw)
-        self:Paint(box,"SetText",self.engine.db.dispatch.hotkey)
-        self:Paint(self.hotkeyMessage,"SetText",TEF.Hotkeys:Status())
+        self.captureHotkey=false
+        self:Call(box,"SetPropagateKeyboardInput",true)
+        local _,reason=TEF.Hotkeys:Set(raw,field)
+        entryError=(reason=="HOTKEY_INVALID" or reason=="HOTKEY_DUPLICATE") and reason or nil
+        self:Paint(box,"SetText",saved())
+        status()
+        self:Paint(box,"ClearFocus")
+    end
+    local function cancel()
+        self.captureHotkey=false
+        self:Call(box,"SetPropagateKeyboardInput",true)
+        self:Paint(box,"SetText",saved())
         self:Paint(box,"ClearFocus")
     end
     self:Paint(box,"SetScript","OnKeyDown",function(editor,key)
-        self:Call(editor,"SetPropagateKeyboardInput",not self.captureHotkey)
+        self:Call(editor,"SetPropagateKeyboardInput",self.captureHotkey~=capture)
         self:Guard(function()
-            if not self.captureHotkey then return end
-            local done,captured=TEF.Hotkeys:Capture(editor,key)
+            if self.captureHotkey~=capture then return end
+            local done,captured=TEF.Hotkeys:Capture(editor,key,not legacy)
             if done then
                 self.captureHotkey=false
                 if captured then submit(captured)
-                else self:Paint(box,"SetText",self.engine.db.dispatch.hotkey); self:Paint(self.hotkeyMessage,"SetText","录入已取消，原快捷键保留。") end
+                else cancel(); self:Paint(message,"SetText","录入已取消，原快捷键保留。") end
             end
         end)
     end)
     self:Paint(box,"SetScript","OnEnterPressed",function()
         self:Guard(function() local ok,raw=self:Invoke(box,"GetText"); if ok then submit(raw) end end)
     end)
-    self:Paint(box,"SetScript","OnEscapePressed",function()
-        self.captureHotkey=false; self:Paint(box,"SetText",self.engine.db.dispatch.hotkey); self:Paint(box,"ClearFocus")
+    self:Paint(box,"SetScript","OnEscapePressed",cancel)
+    self:Paint(box,"SetScript","OnEditFocusLost",function()
+        self:Call(box,"SetBackdropBorderColor",unpack(self.theme.colorBorder))
+        self:Call(box,"SetPropagateKeyboardInput",true)
+        if self.captureHotkey==capture then self.captureHotkey=false; status() end
     end)
-    self.captureHotkeyButton=self:CreateActionButton(parent,"录入",x+180,y,112,function()
-        self.captureHotkey=true; self:Call(box,"SetPropagateKeyboardInput",false); self:Paint(box,"SetFocus")
-        self:Paint(self.hotkeyMessage,"SetText","按下组合键即保存并应用；Esc取消。")
+    self:Paint(box,"SetScript","OnHide",function()
+        self:HideControlTooltip(box)
+        self:Call(box,"SetPropagateKeyboardInput",true)
+        if self.captureHotkey==capture then cancel(); status() end
     end)
-    self.applyHotkeyButton=self:CreateActionButton(parent,"保存",x+304,y,112,function()
+    local captureButton=self:CreateActionButton(parent,"录入",x+180,y,112,function()
+        self.captureHotkey=capture; self:Call(box,"SetPropagateKeyboardInput",false); self:Paint(box,"SetFocus")
+        self:Paint(message,"SetText","按下组合键即保存并应用；Esc取消。")
+    end)
+    local applyButton=self:CreateActionButton(parent,"保存",x+304,y,112,function()
         local ok,raw=self:Invoke(box,"GetText"); if ok then submit(raw) end
     end)
-    self.clearHotkeyButton=self:CreateActionButton(parent,"清除",x+428,y,112,function() submit("") end)
-    self:Paint(self.hotkeyMessage,"SetText",TEF.Hotkeys:Status())
-    return box
+    local clearButton=self:CreateActionButton(parent,"清除",x+428,y,112,function() submit("") end)
+    if legacy then
+        self.hotkey,self.hotkeyMessage=box,message
+        self.captureHotkeyButton,self.applyHotkeyButton,self.clearHotkeyButton=captureButton,applyButton,clearButton
+    else
+        self:AddControlSync(function()
+            local ok,focused=self:Invoke(box,"HasFocus")
+            if self.captureHotkey~=capture and (not ok or S.Public(focused,"boolean")~=true) then status() end
+        end,box)
+    end
+    status()
+    return box,captureButton,applyButton,clearButton
 end
 function U:RefreshControls()
     for _,sync in ipairs(self.controls) do

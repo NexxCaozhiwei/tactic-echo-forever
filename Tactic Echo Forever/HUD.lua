@@ -365,7 +365,19 @@ function H:Card(x,size,primary)
             U:Guard(function()
                 if self.dragging or card.suppressClick then card.suppressClick=nil; return end
                 local button=S.Public(rawButton,"string")
-                if button=="LeftButton" then TEF_ToggleDispatchIntent()
+                if button=="LeftButton" then
+                    local ok,raw=S.Call("IsControlKeyDown")
+                    local ctrl
+                    if ok then ctrl=S.Public(raw,"boolean") end
+                    if ctrl==true then
+                        if not TEF.Runtime.intent then TEF.Runtime:SetIntent(true,"HUD_DISPATCH_START") end
+                    elseif ctrl==false then
+                        local id=card.displayStep and card.displayStep.spellID
+                        local sent,reason=TEF.Runtime:RequestHUDSkill(id)
+                        if not sent and reason then self.engine:Log("transport",reason,id) end
+                    else
+                        self.engine:Log("transport","HUD_CLICK_MODIFIER_UNKNOWN")
+                    end
                 elseif button=="RightButton" then U:OpenSettings() end
             end)
         end)
@@ -373,7 +385,8 @@ function H:Card(x,size,primary)
             card.hover=true; self:RefreshState()
             U:Call(GameTooltip,"SetOwner",f,"ANCHOR_RIGHT")
             U:Call(GameTooltip,"AddLine",self.primaryFullName or "TACTIC ECHO FOREVER")
-            U:Call(GameTooltip,"AddLine","左键：派发启/停；右键：设置",1,1,1)
+            U:Call(GameTooltip,"AddLine","左键：派发当前技能一次",1,1,1)
+            U:Call(GameTooltip,"AddLine","Ctrl＋左键：启动持续派发；右键：设置",1,1,1)
             local state=TEF.Runtime:GetViewState()
             U:Call(GameTooltip,"AddLine",state.intent==true and "派发开关：已开启（绿点）" or "派发开关：已关闭（红点）",.7,.8,.9)
             U:Call(GameTooltip,"AddLine","当前：" .. state.label,.7,.8,.9)
@@ -385,7 +398,7 @@ function H:Card(x,size,primary)
             end
             U:Call(GameTooltip,"AddLine",TEF.Runtime:TimingView(),.7,.8,.9,true)
             self:TooltipDetails(card)
-            U:Call(GameTooltip,"AddLine","不会直接施法",.7,.7,.7); U:Call(GameTooltip,"Show")
+            U:Call(GameTooltip,"Show")
         end)
         U:Call(f,"SetScript","OnLeave",function() card.hover=false; card.pressed=false; self:RefreshState(); U:Call(GameTooltip,"Hide") end)
         U:Call(f,"RegisterForDrag","LeftButton")

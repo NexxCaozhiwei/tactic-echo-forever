@@ -95,8 +95,10 @@ function M:ValidateRows(rows)
 end
 function M:Save(e,rows)
  local clean,reason=self:ValidateRows(rows); if not clean then return false,reason end
- T.Runtime:Stop("MAINTENANCE_EDITED"); e.db.maintenance[e.classToken]=e.db.maintenance[e.classToken] or {enabled=false,rows={}}
+ if not T.Runtime:PreparePlanSave(e,false) then return false,"RUNTIME_ENGINE_FAILED" end
+ e.db.maintenance[e.classToken]=e.db.maintenance[e.classToken] or {enabled=false,rows={}}
  e.db.maintenance[e.classToken].rows=clean; e.maintenanceDone={}; e.maintenanceSnapshot=nil; A:Invalidate()
+ T.Runtime:RefreshSavedPlan(e)
  return true
 end
 function M:SetEnabled(e,value)

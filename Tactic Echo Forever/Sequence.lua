@@ -301,6 +301,11 @@ function Engine:SetLoopMode(mode)
     self:Log("lifecycle","LOOP_MODE_" .. mode:upper()); return true
 end
 
+function Engine:LoopsParent()
+    local runtime=TEF.Runtime
+    return not self.groupRun and (self.db.loop or (runtime and runtime.e==self and runtime.intent and runtime.gateRound~=nil))
+end
+
 -- Explicit optional step omission is distinct from a successful cast.
 function Engine:SkipUnavailable(policyReason)
     local step=self.steps and self.steps[self.index]
@@ -313,7 +318,7 @@ function Engine:SkipUnavailable(policyReason)
     if policy then self.policySkipStreak=(self.policySkipStreak or 0)+1 else self.skipStreak=(self.skipStreak or 0)+1 end
     self.stepCasts=0
     if self.index<#self.steps then self.index=self.index+1
-    elseif self.db.loop and not self.groupRun then self.index=1
+    elseif self:LoopsParent() then self.index=1
     else self.completed=true; self.running=false end
     self:Log("observed",policy and "STRATEGY_STEP_SKIPPED" or "UNAVAILABLE_STEP_SKIPPED",step.spellID,previous,self.index)
     return true
@@ -334,7 +339,7 @@ function Engine:ConfirmAttackEnabled(generation,index,serial)
     self.stepCasts=1; self.skipStreak=0; self.policySkipStreak=0
     local current,following=self.index,self.index+1
     if following>#self.steps then
-        if self.db.loop and not self.groupRun then following=1 else following=current; self.completed=true; self.running=false end
+        if self:LoopsParent() then following=1 else following=current; self.completed=true; self.running=false end
     end
     self:Log("observed","ATTACK_ENABLE_CONFIRMED",6603,current,following)
     self.index=following; self.shootHandoff=nil
@@ -466,9 +471,10 @@ function Engine:Handle(generation, event, unitRaw, guidRaw, spellRaw)
     self:MarkUsage(usageContext)
     local current, following = self.index, self.index+1
     if following > #self.steps then
-        if self.db.loop and not self.groupRun then following=1
+        local loop=self:LoopsParent()
+        if loop then following=1
         else following=current; self.completed=true; self.running=false end
-        log("completed", self.db.loop and not self.groupRun and "LOOP_COMPLETED" or "COMPLETED", spellID, current, following)
+        log("completed", loop and "LOOP_COMPLETED" or "COMPLETED", spellID, current, following)
     else log("match", "CURRENT_MATCH", spellID, current, following) end
     self.index=following
     if spellID==5019 and not self.completed and following~=current

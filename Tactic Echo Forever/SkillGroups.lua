@@ -43,7 +43,7 @@ function G:Restore(e,reason,finished)
  e.aplCandidate=run.candidate; e.aplSnapshot=nil; e.aplPreviewSnapshot=nil; T.APL:Invalidate()
  if finished and run.source=="manual" then
   e.index=run.index+1; e.stepCasts=0; e.usageProgress=nil
-  if e.index>#e.steps then if e.db.loop then e.index=1 else e.index=run.index; e.completed=true; e.running=false end end
+  if e.index>#e.steps then if e:LoopsParent() then e.index=1 else e.index=run.index; e.completed=true; e.running=false end end
  elseif finished then
   e.groupConsumed=e.groupConsumed or {}; e.groupConsumed[run.row]=true
  end

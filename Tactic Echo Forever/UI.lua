@@ -361,7 +361,7 @@ function UI:CreateSettings()
         local saved,reason=false,"CONFIG_INVALID"
         if rows then saved,reason=TEF.Profiles:Save(e,self.editScene,rows) end
         if saved then self:CommitShareName("manual",self.editScene); self.drafts[(e.profileKey or "unknown") .. ":" .. self.editScene]=nil end
-        self:Paint(self.editorMessage,"SetText",saved and "方案已保存；旧派发已停止并重置。" or ("未保存：" .. reason))
+        self:Paint(self.editorMessage,"SetText",saved and "方案已保存，派发意图已保留。" or ("未保存：" .. reason))
         self:Paint(editor,"ClearFocus")
     end)
     self:CreateSectionCard(self.pages.overview,"派发状态",0,0,580,84)
@@ -434,7 +434,7 @@ function UI:CreateSettings()
             input.tefDisabledReason=slider.tefDisabledReason
         end,slider)
     end
-    self:CreateHintText(self.pages.hud,"简略与最小HUD固定图标大小与间距，以上几何设置仅用于标准HUD。左键主卡启停，右键设置；空白可拖动。",16,-1312,548)
+    self:CreateHintText(self.pages.hud,"以上几何设置仅用于标准 HUD。左键主图标派发一次，Ctrl＋左键启动，右键打开设置。",16,-1312,548)
     self:CreateSectionCard(self.pages.hud,"HUD底纹与外框透明度",0,-1372,580,240)
     self.hudOpacityControls={}
     for i,spec in ipairs({{"background","底纹透明度（%）"},{"border","外框透明度（%）"}}) do
@@ -449,13 +449,24 @@ function UI:CreateSettings()
     self:CreateSectionCard(self.pages.tek,"输入链许可",0,-106,580,88)
     self.signalToggle=self:CreateToggleRow(self.pages.tek,"TEAP 输出",16,-146,258,function() return e.db.dispatch.signal end,function(v) TEF.Runtime:SetSignal(v) end)
     self.permissionToggle=self:CreateToggleRow(self.pages.tek,"TEK 请求许可",306,-146,258,function() return e.db.dispatch.permission end,function(v) TEF.Runtime:SetPermission(v) end)
+    self:CreateSectionCard(self.pages.tek,"本轮派发门禁",0,-210,580,224)
+    self:CreateHintText(self.pages.tek,"按一次临时开门，" .. TEF.Runtime.GatePullWindow .. " 秒未进战或脱战后，恢复原派发意图。\n设置任一开门键后，登录或重载保持关闭。",16,-244,548)
+    self.gateHotkeyRows={}
+    for index=1,2 do
+        local y=-304-(index-1)*80
+        local label="开门键 " .. index
+        self:CreateHintText(self.pages.tek,label,16,y+20,160)
+        local box,record,save,clear=self:CreateHotkeyRow(self.pages.tek,16,y,548,"gateKey"..index,label)
+        self.gateHotkeyRows[index]={box=box,record=record,save=save,clear=clear}
+    end
+    local timingOffset=244
     self.timingInputs={}; self.timingSliders={}
     local function timingToggle(label,y,key)
-        return self:CreateToggleRow(self.pages.tek,label,16,y,548,
+        return self:CreateToggleRow(self.pages.tek,label,16,y-timingOffset,548,
             function() return e.db.dispatch[key] end,function(v) TEF.Runtime:SetTimingOption(key,v) end)
     end
     local function milliseconds(label,y,key,max,mode)
-        local slider,input=self:CreateSliderRow(self.pages.tek,label,16,y,548,0,max or 500,10,
+        local slider,input=self:CreateSliderRow(self.pages.tek,label,16,y-timingOffset,548,0,max or 500,10,
             function() return math.floor(e.db.dispatch[key]*1000+.5) end,
             function(v) TEF.Runtime:SetTimingOption(key,v/1000) end,true)
         self.timingInputs[key]=input; self.timingSliders[key]=slider
@@ -469,30 +480,30 @@ function UI:CreateSettings()
         return slider,input
     end
     local function windowMode(y,key)
-        self:CreateSelectRow(self.pages.tek,"提前量来源",{{"custom","自定义提前量"},{"client","跟随客户端窗口"}},16,y,548,
+        self:CreateSelectRow(self.pages.tek,"提前量来源",{{"custom","自定义提前量"},{"client","跟随客户端窗口"}},16,y-timingOffset,548,
             function() return e.db.dispatch[key] end,function(v) TEF.Runtime:SetTimingOption(key,v) end)
     end
-    self:CreateSectionCard(self.pages.tek,"普通读条接续 · 固定列表／自定义APL",0,-210,580,408)
+    self:CreateSectionCard(self.pages.tek,"普通读条接续 · 固定列表／自定义APL",0,-210-timingOffset,580,408)
     self.castQueueToggle=timingToggle("启用普通读条末尾排队",-254,"castQueue")
     windowMode(-302,"queueWindowMode")
     self.castQueueLeadSlider,self.castQueueLeadInput=milliseconds("自定义提前量（毫秒）",-366,"castQueueLead",500,"queueWindowMode")
     timingToggle("普通读条网络补偿（仅自定义）",-438,"latencyCompensation")
     milliseconds("额外补偿上限（毫秒）",-486,"latencyAllowanceMax",150,"queueWindowMode")
-    self:CreateHintText(self.pages.tek,"自定义模式：提前量＋有界世界延迟补偿；0等待结束。跟随模式直接使用客户端窗口，不再叠加补偿。两种模式均不超过客户端窗口及500毫秒。",16,-558,548)
-    self:CreateSectionCard(self.pages.tek,"技能组读条接续 · 组内换步／跨轮",0,-642,580,408)
+    self:CreateHintText(self.pages.tek,"自定义模式：提前量＋有界世界延迟补偿；0等待结束。跟随模式直接使用客户端窗口，不再叠加补偿。两种模式均不超过客户端窗口及500毫秒。",16,-558-timingOffset,548)
+    self:CreateSectionCard(self.pages.tek,"技能组读条接续 · 组内换步／跨轮",0,-642-timingOffset,580,408)
     self.groupQueueToggle=timingToggle("启用技能组读条末尾排队",-686,"groupQueue")
     windowMode(-734,"groupQueueWindowMode")
     milliseconds("自定义提前量（毫秒）",-798,"groupQueueLead",500,"groupQueueWindowMode")
     timingToggle("技能组网络补偿（仅自定义）",-870,"groupLatencyCompensation")
     milliseconds("额外补偿上限（毫秒）",-918,"groupLatencyAllowanceMax",150,"groupQueueWindowMode")
-    self:CreateHintText(self.pages.tek,"技能组使用本组参数，独立于上方普通读条开关；不跨到父列表。补偿参考世界往返延迟的一半，且不超过所设上限。精确成功后才推进次数及轮数。",16,-990,548)
-    self:CreateSectionCard(self.pages.tek,"引导末尾介入 · 可能截断最后一跳",0,-1074,580,252)
+    self:CreateHintText(self.pages.tek,"技能组使用本组参数，独立于上方普通读条开关；不跨到父列表。补偿参考世界往返延迟的一半，且不超过所设上限。精确成功后才推进次数及轮数。",16,-990-timingOffset,548)
+    self:CreateSectionCard(self.pages.tek,"引导末尾介入 · 可能截断最后一跳",0,-1074-timingOffset,580,252)
     timingToggle("允许引导末尾提前介入",-1118,"channelTail")
     milliseconds("引导提前量（毫秒）",-1166,"channelTailLead")
-    self:CreateHintText(self.pages.tek,"默认关闭，初测20～50毫秒；0等待自然结束。只在已确认精确成功且引导身份、时间公开时介入；不叠加网络补偿。组内还需开启技能组接续，其他来源需开启普通接续。",16,-1238,548)
-    self:CreateSectionCard(self.pages.tek,"失败重试与人工接管",0,-1350,580,332)
+    self:CreateHintText(self.pages.tek,"默认关闭，初测20～50毫秒；0等待自然结束。只在已确认精确成功且引导身份、时间公开时介入；不叠加网络补偿。组内还需开启技能组接续，其他来源需开启普通接续。",16,-1238-timingOffset,548)
+    self:CreateSectionCard(self.pages.tek,"失败重试与人工接管",0,-1350-timingOffset,580,332)
     self.retryDelaySlider,self.retryDelayInput=milliseconds("失败重试间隔（毫秒）",-1394,"retryDelay")
-    self:CreateHintText(self.pages.tek,"仅用于已确认失败后的等待，不是正常技能之间的间隔。默认150毫秒；0表示下一次心跳重试。确认起手即撤掉旧请求，不随机增加等待。",16,-1466,548)
+    self:CreateHintText(self.pages.tek,"仅用于已确认失败后的等待，不是正常技能之间的间隔。默认150毫秒；0表示下一次心跳重试。确认起手即撤掉旧请求，不随机增加等待。",16,-1466-timingOffset,548)
     self:Paint(self.readouts.diagnostics,"ClearAllPoints"); self:Paint(self.readouts.diagnostics,"SetPoint","TOPLEFT",self.pages.diagnostics,"TOPLEFT",4,-104)
     for i,option in ipairs({{"explain","策略解释"},{"audit","配置体检"},{"timeline","事件时间线"}}) do
         local mode=option[1]
@@ -500,22 +511,22 @@ function UI:CreateSettings()
     end
     self.testSingle=button("diagnostics","单步派发测试",4,-44,184,function() TEF_RequestCurrent() end)
     self:SetControlEnabled(self.testSingle,false,"设置期间禁止派发；关闭设置后使用 /tef dispatch。")
-    self:CreateSelectRow(self.pages.tek,"施放非当前步骤技能后",{{"continue","保留原进度"},{"pause","暂停等待手动继续"}},16,-1538,548,
+    self:CreateSelectRow(self.pages.tek,"施放非当前步骤技能后",{{"continue","保留原进度"},{"pause","暂停等待手动继续"}},16,-1538-timingOffset,548,
         function() return e.db.dispatch.takeover end,function(v) TEF.Runtime:Stop("TAKEOVER_SETTING_CHANGED"); e.db.dispatch.takeover=v end)
-    self:CreateToggleRow(self.pages.tek,"移动变化重新判断APL",16,-1610,548,
+    self:CreateToggleRow(self.pages.tek,"移动变化重新判断APL",16,-1610-timingOffset,548,
         function() return e.db.dispatch.movementReevaluate end,
         function(v) e.db.dispatch.movementReevaluate=v; TEF.Runtime.movementSample=nil; TEF.APL:Invalidate() end)
-    self:CreateSectionCard(self.pages.tek,"抢占施法 · 独立停止宏",0,-1706,580,180)
-    self.stopMacroStatus=self:CreateHintText(self.pages.tek,(e.db.dispatch.stopMacroSlot and ("当前停止宏槽位 "..e.db.dispatch.stopMacroSlot.."。") or "").."将仅含 /stopcasting 的宏放到动作栏并绑定按键，再检测。抢占需要新版 TEK。",16,-1746,548)
-    self:CreateActionButton(self.pages.tek,"检测／切换停止宏",16,-1802,180,function()
+    self:CreateSectionCard(self.pages.tek,"抢占施法 · 独立停止宏",0,-1706-timingOffset,580,180)
+    self.stopMacroStatus=self:CreateHintText(self.pages.tek,(e.db.dispatch.stopMacroSlot and ("当前停止宏槽位 "..e.db.dispatch.stopMacroSlot.."。") or "").."将仅含 /stopcasting 的宏放到动作栏并绑定按键，再检测。抢占需要新版 TEK。",16,-1746-timingOffset,548)
+    self:CreateActionButton(self.pages.tek,"检测／切换停止宏",16,-1802-timingOffset,180,function()
         local _,message=TEF.Dispatch:DetectStopMacro()
         self:Paint(self.stopMacroStatus,"SetText",message)
     end)
-    self:CreateActionButton(self.pages.tek,"清除停止宏",204,-1802,140,function()
+    self:CreateActionButton(self.pages.tek,"清除停止宏",204,-1802-timingOffset,140,function()
         TEF.Runtime:Stop("PREEMPT_MACRO_CHANGED"); e.db.dispatch.stopMacroSlot=nil
         self:Paint(self.stopMacroStatus,"SetText","已清除停止宏配置，抢占停止。")
     end)
-    self:Paint(self.pages.tek,"SetHeight",1910)
+    self:Paint(self.pages.tek,"SetHeight",1910+timingOffset)
     for _,panel in pairs(self.pageFrames or self.pages) do self:Paint(panel,"Hide") end
     self:CreateStudio()
     self.settingsLayoutSignature=nil
