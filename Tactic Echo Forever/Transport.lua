@@ -45,6 +45,10 @@ function T:Paint()
     if TEF.Dispatch then token,inCombat,stopSequence=TEF.Dispatch:Packet() end
     local shot=token and TEF.Dispatch.pending and TEF.Dispatch.pending.hudShot
     local sequence,freshness=stopSequence or self.sequence,self.freshness
+    local receipt=TEF.Dispatch.preemptReceipt
+    if token and receipt and TEF.Dispatch.pending==receipt.pending then
+        sequence,freshness=receipt.sequence,receipt.freshness
+    end
     if shot then
         -- 单次点击重复展示同一帧，TEK 沿用现有的新鲜度去重。
         shot.sequence=shot.sequence or sequence; shot.freshness=shot.freshness or freshness
@@ -62,7 +66,7 @@ function T:Paint()
             return self:Fail("TRANSPORT_PAINT_FAILED")
         end
     end
-    if token and TEF.Dispatch then TEF.Dispatch:ObservePublishedFrame(sequence,freshness,token) end
+    if token and not stopSequence and TEF.Dispatch then TEF.Dispatch:ObservePublishedFrame(sequence,freshness,token) end
     return true
 end
 -- 所有调度仍走同一心跳处理函数；事件仅要求提前执行一次相同的实时复核。

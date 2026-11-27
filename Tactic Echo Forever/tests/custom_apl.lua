@@ -658,10 +658,14 @@ n=n+assert(loadfile((arg and arg[1] or ".") .. "/tests/strategy_lifecycle.lua"))
 n=n+assert(loadfile((arg and arg[1] or ".") .. "/tests/studio_workbench.lua"))("TEF",T,F)
 n=n+assert(loadfile((arg and arg[1] or ".") .. "/tests/plan_share.lua"))("TEF",T,F)
 test("preemption_macro_and_two_phase_handoff",function()
- for _,mode in ipairs({"normal","macro","channel","timeout","condition","edge","edgeChannel"}) do
+ for _,mode in ipairs({"normal","macro","channel","timeout","condition","edge","edgeChannel","group","followup","followupExpired"}) do
  local mutateMacro=mode=="macro"
  local e=F.runtime()
  local c=row(205); c.behavior={trigger="continuous",scope="entry",preempt=true}
+ if mode=="group" then
+  c.group={name="抢发组",rounds=1,steps={{name="C",spellID=205,matchIDs={205},enabled=true,repeatCount=1,
+   strategies={{mode="use",conditions={{kind="combat",value=false}}}}}}}
+ end
  local edge=mode=="edge" or mode=="edgeChannel"
  if edge then
   c.behavior.trigger="edge"
@@ -697,6 +701,10 @@ test("preemption_macro_and_two_phase_handoff",function()
  ready=true; clock=10.1; A:Invalidate()
  local initiation=T.Dispatch.initiation
  initiation.dispatched=false; eq(T.Dispatch:PreemptTick(),false); initiation.dispatched=true
+ if mode=="group" then
+  eq(T.Dispatch:PreemptTick(),false)
+  C:Rows(e)[1].group.steps[1].strategies[1].conditions[1].value=true
+ end
  local baseline=0
  if mode=="channel" then
   UnitCastingInfo=function() return nil end
@@ -740,7 +748,26 @@ test("preemption_macro_and_two_phase_handoff",function()
  else F.receipt("UNIT_SPELLCAST_INTERRUPTED",143,"preempt-B") end
  clock=clock+.3; A:Invalidate(); T.Runtime:Reconcile(); T.Dispatch:TickContinuous()
  assert(T.Dispatch.pending); eq(T.Dispatch.pending.binding.spellID,205)
- assert(T.Dispatch:Packet())
+ local followupToken=assert(T.Dispatch:Packet())
+ if mode=="group" then assert(e.groupRun); eq(e.index,1); eq(e.stepCasts,0) end
+ if mode=="followup" or mode=="followupExpired" then
+  T.Dispatch:ObservePublishedFrame(20,20,followupToken)
+  assert(T.Dispatch.preemptReceipt)
+  assert(T.Transport:Paint())
+  eq(T.Transport.fields[7],20); eq(T.Transport.fields[9],20)
+  local generation=e.generation
+  ready=false; clock=clock+.155; A:Invalidate()
+  eq(T.Dispatch:Packet(),nil)
+  T.Runtime:Reconcile(); T.Dispatch:TickContinuous()
+  eq(T.Runtime.reason,"PREEMPT_WAIT_INITIATION")
+  eq(e.generation,generation); eq(T.Dispatch.pending,nil)
+  eq(e.aplCandidate.spellID,205)
+  clock=clock+(mode=="followupExpired" and .75 or .129)
+  if mode=="followupExpired" then
+   T.Runtime:Reconcile()
+   eq(T.Dispatch.preemptReceipt,nil); eq(e.aplCandidate.spellID,143)
+  end
+ end
  F.receipt("UNIT_SPELLCAST_SENT",205,"preempt-C")
  if edge then
   assert(T.Dispatch.preemptProtected)
@@ -761,8 +788,9 @@ test("preemption_macro_and_two_phase_handoff",function()
   F.receipt("UNIT_SPELLCAST_CHANNEL_STOP",205,"preempt-C")
  end
  if edge then eq(T.Dispatch.preemptProtected,nil) end
- eq(e.receiptSerial,baseline+1)
- F.receipt("UNIT_SPELLCAST_SUCCEEDED",143,"preempt-B"); eq(e.receiptSerial,baseline+1)
+ local successes=mode=="followupExpired" and baseline or baseline+1
+ eq(e.receiptSerial or 0,successes)
+ F.receipt("UNIT_SPELLCAST_SUCCEEDED",143,"preempt-B"); eq(e.receiptSerial or 0,successes)
  T.Runtime:Stop()
  ActionButton1,ActionButton2,ActionButton3=old1,old2,old3
  end

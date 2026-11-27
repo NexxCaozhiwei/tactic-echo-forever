@@ -22,10 +22,12 @@ function G:Clean(raw)
  for i=1,size do local _,kind=S.Field(S.Field(rows,i,"table"),"group","table"); if kind~="NO_DATA" then return nil,"GROUP_NESTED" end end
  local clean=T.Profiles:Clean(rows,self.MaxSteps); if not clean then return nil,"GROUP_STEPS_INVALID" end
  local maintain,maintainType=S.Field(record,"maintain","boolean")
+ local adopt,adoptType=S.Field(record,"adoptCurrentCast","boolean")
  local exit,exitType=S.Field(record,"exit","string")
  if (maintainType~="PUBLIC" and maintainType~="NO_DATA") or (exitType~="PUBLIC" and exitType~="NO_DATA")
+  or (adoptType~="PUBLIC" and adoptType~="NO_DATA")
   or (exit and exit~="next" and exit~="stop") then return nil,"GROUP_POLICY_INVALID" end
- return {name=name,rounds=rounds,steps=clean,maintain=maintain==true,exit=exit or "next"}
+ return {name=name,rounds=rounds,steps=clean,maintain=maintain==true,adoptCurrentCast=adopt==true or nil,exit=exit or "next"}
 end
 function G:Row(group,strategies,enabled)
  local first=group.steps[1]
@@ -73,8 +75,19 @@ function G:Begin(e,row,source,observedGUID)
  e:Log("observed","GROUP_ENTERED"); return true
 end
 function G:ObserveStart(e,event,unit,id,guid)
- if (event~="UNIT_SPELLCAST_SENT" and event~="UNIT_SPELLCAST_START") or unit~="player" or not id or not guid then return false end
+ if unit~="player" then return false end
  local runtime=T.Runtime
+ if event=="UNIT_SPELLCAST_START" then
+  e.groupObservedCast=nil
+  if id and guid and runtime.e==e and runtime.intent and e.running and not e.groupRun
+   and not e.maintenanceActive and not T.UI.settingsOpen and not e.seen[guid] then
+   local cast={guid=guid,spellID=id,generation=e.generation,target=target(),targetSerial=e.usageTargetSerial or 0}
+   if cast.target and T.Dispatch:PreemptCast(cast) then e.groupObservedCast=cast end
+  end
+ elseif e.groupObservedCast and e.groupObservedCast.guid==guid and event~="UNIT_SPELLCAST_SENT" then
+  e.groupObservedCast=nil
+ end
+ if (event~="UNIT_SPELLCAST_SENT" and event~="UNIT_SPELLCAST_START") or not id or not guid then return false end
  if runtime.e~=e or not runtime.intent or e.groupRun or e.maintenanceActive or T.UI.settingsOpen
   or e.identitySaturated or e.seen[guid] or e.associationCount>0 or T.Dispatch.castQueue then return false end
  local generation,index,serial=e.generation,e.index,e.receiptSerial or 0
@@ -101,6 +114,62 @@ function G:ObserveStart(e,event,unit,id,guid)
  end
  if runtime.e~=e or T.engine~=e or not runtime.intent or generation~=e.generation or index~=e.index or serial~=(e.receiptSerial or 0) then return false end
  return self:Begin(e,row,source,guid)
+end
+function G:AdoptCurrentCast(e,identity)
+ local cast=e.groupObservedCast
+ local runtime,dispatch=T.Runtime,T.Dispatch
+ if not cast or runtime.e~=e or not runtime.intent or not e.running or e.identitySaturated
+  or runtime.targetChangePending or dispatch.castQueue or dispatch.preemption
+  or e.seen[cast.guid] or cast.generation~=e.generation
+  or cast.target~=identity or cast.targetSerial~=(e.usageTargetSerial or 0)
+  or not runtime:CombatAllowed(e,T.APL.State.Boolean("InCombatLockdown"))
+  or not dispatch:PreemptCast(cast) then return false end
+ local source=T.Recommendation:BaseSource(e)
+ local row,snapshot,candidate
+ if source=="manual" then row=e.steps and e.steps[e.index]
+ else
+  local rows=T.APL.Custom:Rows(e)
+  local eligible=false
+  for _,entry in ipairs(rows) do
+   if entry.enabled and entry.spellID==cast.spellID and entry.group and entry.group.adoptCurrentCast then
+    eligible=true; break
+   end
+  end
+  if not eligible then return false end
+  snapshot=e.aplPreviewSnapshot
+  if not snapshot or snapshot.generation~=e.generation or snapshot.receiptSerial~=(e.receiptSerial or 0)
+   or snapshot.revision~=(T.APL.State.revision or 0) then return false end
+  local now=T.APL.State.Time()
+  if not now or not snapshot.sampledAt or now<snapshot.sampledAt
+   or now-snapshot.sampledAt>T.ConditionSampleInterval then return false end
+  local preview=setmetatable({readOnly=true},{__index=snapshot})
+  candidate=T.APL:Evaluate(preview,e.db.apl,e.classToken)
+  row=candidate and rows[candidate.customIndex]
+ end
+ local first=row and row.group and row.group.adoptCurrentCast and row.group.steps[1]
+ if not first or first.unverified or first.spellID~=cast.spellID then return false end
+ if source=="manual" then
+  if dispatch:ManualPolicy(e,row,true,true,true)~=true then return false end
+ else
+  local key=T.APL:QueueTargetIdentity(e)
+  if not key or T.APL:Allowed(e,cast.spellID,{candidate=candidate,snapshot=snapshot,targetIdentity=key})~=true then return false end
+ end
+ if dispatch:CheckStepPolicy(e,first,true,false,true)~=true then return false end
+ if e.groupObservedCast~=cast or e.generation~=cast.generation or target()~=identity
+  or cast.targetSerial~=(e.usageTargetSerial or 0) or not dispatch:PreemptCast(cast) then return false end
+ -- 将同一个公开起手交给组内第一步，其余旧身份仍由 Invalidate 退役。
+ local association=e.associations[cast.guid]
+ if association and (association.failed or association.spellID~=cast.spellID
+  or association.index~=e.index or association.generation~=e.generation
+  or association.receiptSerial~=(e.receiptSerial or 0)) then return false end
+ if association then e.associations[cast.guid]=nil; e.associationCount=e.associationCount-1 end
+ if not self:Begin(e,row,source,cast.guid) then
+  if association then e.associations[cast.guid]=association; e.associationCount=e.associationCount+1 end
+  return false
+ end
+ e:Handle(e.generation,"UNIT_SPELLCAST_START","player",cast.guid,cast.spellID)
+ e:Log("observed","GROUP_CURRENT_CAST_ADOPTED",cast.spellID)
+ return true
 end
 function G:Refresh(e,phase)
  if e.maintenanceActive or T.UI.settingsOpen then return end
@@ -138,6 +207,7 @@ function G:Refresh(e,phase)
   return
  end
  if phase=="progress" then return end
+ if self:AdoptCurrentCast(e,identity) then return end
  if T.Recommendation:BaseSource(e)=="manual" then
   local row=e.steps and e.steps[e.index]
   if row and row.group then

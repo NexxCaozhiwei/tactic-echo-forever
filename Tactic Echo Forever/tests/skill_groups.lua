@@ -349,6 +349,42 @@ test("manual_group_start_failure_or_secret_identity_never_advances",function()
  F.receipt("UNIT_SPELLCAST_SUCCEEDED",143,"new-group-start")
  eq(e.receiptSerial,1); T.Runtime:Stop()
 end)
+test("group_can_adopt_an_already_casting_first_step_after_policy_changes",function()
+ for _,mode in ipairs({"disabled","success","failed","otherTarget"}) do
+  local e=F.runtime()
+  local g=group(); g.adoptCurrentCast=mode~="disabled"
+  g.steps={spell(143),spell(143),spell(205)}
+  local rows={{group=g,spellID=143,enabled=true,
+   strategies={{mode="use",conditions={{kind="moving",value=true}}}}},
+   {spellID=143,enabled=true}}
+  assert(T.APL.Custom:Save(e,rows,"single","MAGE"))
+  local plan=assert(T.PlanShare:Export("MAGE","apl","测试",T.APL.Custom:Rows(e)))
+  eq(assert(T.PlanShare:Import(plan,"MAGE","apl")).rows[1].group.adoptCurrentCast,g.adoptCurrentCast or nil)
+  local now,moving,guid=10,false,"target-1"
+  GetTime=function() return now end
+  UnitGUID=function() return guid end
+  IsPlayerMoving=function() return moving end
+  assert(T.Runtime:SetIntent(true))
+  F.receipt("UNIT_SPELLCAST_SENT",143,"existing-cast")
+  UnitCastingInfo=function() return "火球术",nil,nil,10000,13000,nil,nil,false,143 end
+  F.receipt("UNIT_SPELLCAST_START",143,"existing-cast")
+  eq(e.groupRun,nil)
+  if mode=="otherTarget" then guid="target-2" end
+  now=10.2; moving=true; T.APL:Invalidate(); T.Runtime:Reconcile()
+  if mode=="disabled" or mode=="otherTarget" then
+   eq(e.groupRun,nil)
+  else
+   assert(e.groupRun,mode); eq(e.index,1); eq(e.stepCasts,0); eq(e.receiptSerial or 0,0)
+   UnitCastingInfo=function() return nil end
+   if mode=="failed" then F.receipt("UNIT_SPELLCAST_INTERRUPTED",143,"existing-cast") end
+   F.receipt("UNIT_SPELLCAST_SUCCEEDED",143,"existing-cast")
+   F.receipt("UNIT_SPELLCAST_SUCCEEDED",143,"existing-cast")
+   eq(e.index,mode=="success" and 2 or 1)
+   eq(e.receiptSerial or 0,mode=="success" and 1 or 0)
+  end
+  T.Runtime:Stop()
+ end
+end)
 test("last_channel_success_waits_for_finish_before_next_round",function()
  local e=F.runtime(); assert(T.Recommendation:SetSource(e,"manual","single"))
  local g=group(); g.steps={spell(143),spell(5144)}; g.rounds=2

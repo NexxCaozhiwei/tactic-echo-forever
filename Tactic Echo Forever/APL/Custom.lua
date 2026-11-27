@@ -646,7 +646,7 @@ end
 -- 运行中的边沿观察只重新武装下一次资格，当前施法仍由精确回执持有。
 function C:ObservePreemptPolicies(e,state)
  for i,row in ipairs(self:Rows(e)) do
-  if row.enabled and not row.invalid and not row.group and row.behavior
+  if row.enabled and not row.invalid and row.behavior
    and row.behavior.preempt and row.behavior.trigger=="edge" then self:ObservePolicy(e,row,state,i) end
  end
 end

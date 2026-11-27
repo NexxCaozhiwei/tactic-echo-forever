@@ -380,7 +380,7 @@ function U:RefreshStrategyForm()
     behavior().scope=v
    end); y=y-60
   self:CreateHintText(form,"成功后消耗，未知不重新武装；条件重触发仅本条目。",0,y,390); y=y-36
-  if self.strategySource=="apl" and not row.group then
+  if self.strategySource=="apl" then
    self:CreateToggleRow(form,"允许打断当前读条并优先释放",0,y,390,function() return row.behavior and row.behavior.preempt or false end,
     function(v) local b=behavior(); b.preempt=v; if not v then b.preemptChannel=false end end); y=y-36
    self:CreateToggleRow(form,"同时允许打断当前引导",0,y,390,function() return row.behavior and row.behavior.preemptChannel or false end,
@@ -395,6 +395,9 @@ function U:RefreshStrategyForm()
    self:CreateHintText(form,"紧急规则沿用已确认的增益／解控技能资格；不自动中断读条。",0,y,390); y=y-40
   end
   if row.group then
+   local adopt=self:CreateToggleRow(form,"将当前施法纳入技能组",0,y,390,function() return row.group.adoptCurrentCast==true end,
+    function(v) row.group.adoptCurrentCast=v==true or nil end); y=y-36
+   self:BindControlTooltip(adopt,"将当前施法纳入技能组","组条件满足且当前读条技能与第一步匹配时，本次施法成功后计入第一步。")
    self:CreateToggleRow(form,"执行期间继续满足入口策略",0,y,390,function() return row.group.maintain end,function(v) row.group.maintain=v end); y=y-36
    self:CreateSelectRow(form,"保持条件明确不满足时（未知等待）",{{"next","结束组并回到父列表"},{"stop","结束组并停止派发"}},0,y,390,
     function() return row.group.exit or "next" end,function(v) row.group.exit=v end); y=y-60

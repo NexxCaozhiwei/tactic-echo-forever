@@ -98,6 +98,7 @@ function C:PreparePlanSave(e,reset)
     self.hudShot=nil
     self.retryWait=nil; self.targetChangePending=nil; e.finishOldTargetReceipt=nil
     TEF.Dispatch.preemption=nil; TEF.Dispatch.preemptProtected=nil; TEF.Dispatch.handoff=nil
+    TEF.Dispatch.preemptFollowup=nil; TEF.Dispatch.preemptReceipt=nil
     if e.maintenanceActive then TEF.Maintenance:Restore(e,"MAINTENANCE_EDITED") end
     if not reset and e.groupRun then TEF.SkillGroups:Restore(e,"GROUP_PLAN_SAVED") end
     e.groupConsumed={}
@@ -123,6 +124,7 @@ function C:Initialize(e)
     TEF.Dispatch.preemption=nil; TEF.Dispatch.preemptedGUID=nil
     TEF.Dispatch.preemptProtected=nil; TEF.Dispatch.preemptCapacityLogged=nil
     TEF.Dispatch.publishedAttempt=nil
+    TEF.Dispatch.preemptFollowup=nil; TEF.Dispatch.preemptReceipt=nil
     self.retryWait=nil; self.movementSample=nil; self.timingFingerprint=nil; self.targetChangePending=nil
     self.maintenanceManual=false
     self.hudShot=nil
@@ -150,6 +152,7 @@ function C:Stop(reason,state)
     self:ClearGateRound()
     self.hudShot=nil
     self.semiAutoReleasedAt=nil
+    TEF.Dispatch.preemptFollowup=nil; TEF.Dispatch.preemptReceipt=nil
     TEF.Dispatch.preemption=nil
     TEF.Dispatch.preemptProtected=nil
     TEF.Dispatch.handoff=nil
@@ -188,6 +191,7 @@ function C:CloseGateRound(reason)
     self.maintenanceManual=base.maintenanceManual
     self.retryWait=nil; self.targetChangePending=nil; self.e.finishOldTargetReceipt=nil
     TEF.Dispatch.preemption=nil; TEF.Dispatch.handoff=nil
+    TEF.Dispatch.preemptFollowup=nil; TEF.Dispatch.preemptReceipt=nil
     self:Suspend(reason,"standby")
 end
 function C:UpdateGateCombat(combat)
@@ -520,6 +524,7 @@ function C:TryConfirmAttackEnabled()
 end
 function C:TargetChanged()
  local e,d=self.e,TEF.Dispatch
+ d.preemptFollowup=nil; d.preemptReceipt=nil
  TEF.APL:Invalidate(); d.aplQueuePreparation=nil
  d:Cancel("TARGET_REEVALUATE")
  if d:HasCurrentInitiation() or not d:CastIdle() then
@@ -570,6 +575,9 @@ function C:ReconcileCore()
         if e.db.loopMode=="target" then self:ResetCycle("LOOP_TARGET_RESET")
         else self:Suspend("RUNTIME_TARGET_CHANGED"); e:ClearUsage() end
         TEF.APL:Invalidate()
+    end
+    if TEF.Dispatch:WaitingPreemptReceipt() then
+        self:Changed("blocked","PREEMPT_WAIT_INITIATION"); return
     end
     TEF.APL.Custom:ReconcilePolicyProgress(e)
     TEF.SkillGroups:Refresh(e,"progress")
@@ -794,6 +802,17 @@ end
 function C:DisplayBlockDetail(reason)
     local d,e=self.displayBlock,self.e
     if d and e and d.engine==e and d.generation==e.generation and d.index==e.index and d.serial==(e.receiptSerial or 0) and d.reason==reason then return d end
+end
+function C:DispatchGateOpen()
+    local e=self.e
+    if not self.intent or not e or e~=TEF.engine or TEF.UI.settingsOpen or self.state=="error"
+        or (e.completed and not e.groupRun) or not e.db.dispatch.permission or not e.db.dispatch.signal
+        or not TEF.Dispatch.enabled or not TEF.Transport.enabled or not TEF.Dispatch:InputIdle() then return false end
+    if self:RequiresSemiAuto(e) and not self:SemiAutoInputActive() then return false end
+    local combat=TEF.APL.State.Boolean("InCombatLockdown")
+    if self.gateRound=="opened" and not self:GatePullWindowOpen() then return false end
+    if self.gateRound=="combat" and combat~=true then return false end
+    return self:CombatAllowed(e,combat)==true
 end
 function C:GetViewState()
     local e=self.e

@@ -118,7 +118,7 @@ end
 local expected={name="string",spellID="number",matchIDs="table",unverified="boolean",repeatCount="number",usagePolicy="string",skipUnavailable="boolean",enabled="boolean",
  strategies="table",targetMode="string",behavior="table",group="table",requireReady="boolean",moving="string",activity="string",experimentalEnemies="boolean",
  enemyMin="number",enemyMax="number",manaOp="string",manaValue="number",distanceOp="string",distanceValue="number",cdmKind="string",cdmState="string",cdmSpellID="number",
- rounds="number",steps="table",maintain="boolean",exit="string"}
+ rounds="number",steps="table",maintain="boolean",adoptCurrentCast="boolean",exit="string"}
 local function types(record,path)
  for key,value in pairs(record) do if expected[key] and type(value)~=expected[key] then fail(path..key.."类型无效。") end end
 end
@@ -130,7 +130,7 @@ end
 local manual={name=true,spellID=true,matchIDs=true,unverified=true,repeatCount=true,usagePolicy=true,skipUnavailable=true,enabled=true,strategies=true,targetMode=true,behavior=true,group=true}
 local apl={spellID=true,enabled=true,strategies=true,targetMode=true,behavior=true,group=true,requireReady=true,moving=true,activity=true,experimentalEnemies=true,
  enemyMin=true,enemyMax=true,manaOp=true,manaValue=true,distanceOp=true,distanceValue=true,cdmKind=true,cdmState=true,cdmSpellID=true}
-local groupFields={name=true,rounds=true,steps=true,maintain=true,exit=true}
+local groupFields={name=true,rounds=true,steps=true,maintain=true,adoptCurrentCast=true,exit=true}
 function X:Clean(raw)
  fields(raw,{schema=true,class=true,source=true,name=true,rows=true},"方案")
  if raw.schema~=1 then fail("不支持此分享格式版本。") end

@@ -67,6 +67,7 @@ local statusReasons={
  CONTINUOUS_USABLE_UNKNOWN_OR_BLOCKED={"技能受阻","技能不可用、资源不足或状态未知"},
  TEK_EXACT_DIRECT_BINDING_UNAVAILABLE={"缺少键位","未找到已核对的技能或宏按键"},
  PREEMPT_WAIT_STOP={"抢占施法","等待当前施法停止，随后重新确认推荐"},
+ PREEMPT_WAIT_INITIATION={"抢占施法","等待抢发技能起手回执"},
  APL_NO_CANDIDATE={"无符合技能","当前策略没有符合条件的技能"},
  SEQUENCE_POLICY_ALL_BLOCKED={"条件未满足","等待列表技能策略条件满足"},
  SEQUENCE_POLICY_UNKNOWN={"条件未知","无法确认策略条件，暂不派发"},
@@ -659,6 +660,7 @@ function H:Refresh(cooldownEvent)
     self:RefreshState()
 end
 H.colors={paused={.48,.52,.60},standby={.36,.78,.90},running={.22,.96,.56},blocked={.96,.72,.18},completed={.96,.83,.45},error={1,.25,.25}}
+local dispatchDotColors={off={1,.25,.25},ready={.18,.55,1},active={.08,.9,.22}}
 function H:RefreshState()
     if not self.frame or not self.cards then return end
     local e=self.engine; local v=TEF.Runtime:GetViewState()
@@ -680,7 +682,10 @@ function H:RefreshState()
         ["暂无可用技能"]="暂无可用",["无符合技能"]="暂无推荐",["方案未配置"]="方案缺失"})[badge] or U:ShortLabel(badge,4)
     U:Paint(self.badgeText,"SetText",self.battlePreview and "战斗预览" or shortBadge)
     U:Paint(self.badgeText,"SetTextColor",tint[1],tint[2],tint[3],1)
-    local dot=v.intent==true and self.colors.running or self.colors.error
+    local dot=dispatchDotColors.off
+    if v.intent==true then
+        dot=TEF.Runtime.e==e and TEF.Runtime:DispatchGateOpen() and dispatchDotColors.active or dispatchDotColors.ready
+    end
     U:Paint(self.statusDot,"SetVertexColor",dot[1],dot[2],dot[3],1)
     U:Paint(self.role,"SetText",U:ShortLabel(description,20))
     U:Paint(self.role,"SetTextColor",v.state=="blocked" and tint[1] or .45,v.state=="blocked" and tint[2] or .8,v.state=="blocked" and tint[3] or 1,1)

@@ -223,7 +223,7 @@ function Engine.New(config, db)
 end
 
 function Engine:Invalidate(reason)
-    self.shootHandoff=nil
+    self.shootHandoff=nil; self.groupObservedCast=nil
     -- Public initiation identities already accepted by Handle must stay retired
     -- across reset/pause. A late START must not recreate an old association in
     -- the new generation. Share the existing bounded identity budget.
@@ -276,7 +276,7 @@ function Engine:RecommendationLocked()
             and step.matches[a.spellID] then return true end
     end
     local d=TEF.Dispatch
-    return d and (d:HasCurrentInitiation() or (not d:CastIdle() and not d:ChannelTailAllowed())) or false
+    return d and ((self==TEF.engine and d:WaitingPreemptReceipt()) or d:HasCurrentInitiation() or (not d:CastIdle() and not d:ChannelTailAllowed())) or false
 end
 function Engine:ReplaceRecommendation(rows)
     if self:RecommendationLocked() then return false end
