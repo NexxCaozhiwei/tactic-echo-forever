@@ -434,7 +434,7 @@ function UI:CreateSettings()
             input.tefDisabledReason=slider.tefDisabledReason
         end,slider)
     end
-    self:CreateHintText(self.pages.hud,"以上几何设置仅用于标准 HUD。左键主图标派发一次，Ctrl＋左键启动，右键打开设置。",16,-1312,548)
+    self:CreateHintText(self.pages.hud,"以上几何设置仅用于标准 HUD。主图标左键派发一次，右键临时开门。\nCtrl＋左键启停派发，Ctrl＋右键打开设置。",16,-1312,548)
     self:CreateSectionCard(self.pages.hud,"HUD底纹与外框透明度",0,-1372,580,240)
     self.hudOpacityControls={}
     for i,spec in ipairs({{"background","底纹透明度（%）"},{"border","外框透明度（%）"}}) do
